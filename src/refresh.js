@@ -1,9 +1,27 @@
 import { engine } from 'hyper-html-api'
 import { buildForm } from './form-builder.js'
 import { morphForm } from './morph.js'
+import { withoutShell } from './shell-isolation.js'
+import { injectDefaults } from './templates.js'
+import { deriveFormRules } from './form-rules.js'
 
 export function refreshForm(ctx) {
-  const newData = engine.extract(ctx.pageRoot, ctx.pageRules)
+  // Re-read rules tag every refresh so a livesync-replaced rules tag is picked up.
+  const found =
+    engine.findRulesIn(ctx.pageRoot) ||
+    (ctx.doc.documentElement && engine.findRulesIn(ctx.doc.documentElement)) ||
+    engine.findRulesIn(ctx.doc)
+  if (found) {
+    ctx.pageRules = found.rules
+    ctx.rulesTagNode = found.tagNode
+  }
+  // Re-derive formRules so schema changes (rule shape, template overrides) flow through.
+  injectDefaults(ctx.doc)
+  ctx.formRules = deriveFormRules(ctx.pageRules, ctx.doc)
+
+  const newData = withoutShell(ctx.pageRoot, ctx.shellRoot, (root) =>
+    engine.extract(root, ctx.pageRules)
+  )
   const fragment = buildForm({
     pageRules: ctx.pageRules,
     formRules: ctx.formRules,
@@ -11,6 +29,8 @@ export function refreshForm(ctx) {
     doc: ctx.doc,
   })
   morphForm(ctx.formRoot, fragment)
+  // Update fingerprint so subsequent commits against the new page state compare correctly.
+  if (ctx.updateFingerprint) ctx.updateFingerprint()
 }
 
 export function installObserver({ pageRoot, doc, debounce = 100, onRefresh, shellRoot }) {

@@ -13,6 +13,16 @@ export function buildForm({ pageRules, formRules: _formRules, data, doc }) {
   return fragment
 }
 
+export function buildItem({ shape, itemShape, pathArr, data, doc }) {
+  if (shape === 'object-array-item') {
+    return buildObjectArrayItem(itemShape, pathArr, data, doc)
+  }
+  if (shape === 'scalar-array-item') {
+    return buildScalarArrayItem(pathArr, data, doc)
+  }
+  throw new Error(`hypercms: buildItem called with unknown shape "${shape}"`)
+}
+
 function buildNode(rule, pathArr, data, doc) {
   const kind = shapeKindOf(rule)
   if (kind === 'scalar') return buildScalar(pathArr, data, doc)
@@ -41,11 +51,12 @@ function buildObject(rule, pathArr, data, doc) {
   setLabel(node, lastKey(pathArr))
 
   if (isInlineTemplate(tpl)) {
+    stampInlineFieldPaths(node, rule, pathArr)
     populateInlineFields(node, rule, data)
     return node
   }
 
-  const slot = node.querySelector('.hcms-object-fields') || node
+  const slot = requireSlot(node, '.hcms-object-fields', tpl, pathArr)
   for (const [k, child] of Object.entries(rule)) {
     const childData = data == null ? null : data[k]
     const childNode = buildNode(child, [...pathArr, k], childData, doc)
@@ -60,7 +71,7 @@ function buildObjectArray(rule, pathArr, data, doc) {
   const node = cloneTemplate(tpl, doc)
   stampPath(node, pathArr)
   setLabel(node, lastKey(pathArr))
-  applyArrayConstraints(node, tpl)
+  copyArrayConstraintAttrs(node, tpl)
   wireSortable(node, tpl, pathArr)
 
   const slot = findItemsSlot(node)
@@ -70,6 +81,7 @@ function buildObjectArray(rule, pathArr, data, doc) {
     const itemNode = buildObjectArrayItem(itemShape, [...pathArr, i], itemData, doc)
     if (itemNode) slot.appendChild(itemNode)
   })
+  applyConstraintVisibility(node)
   return node
 }
 
@@ -83,12 +95,13 @@ function buildObjectArrayItem(itemShape, pathArr, data, doc) {
 
   if (isInlineTemplate(tpl)) {
     if (itemShape && typeof itemShape === 'object' && !Array.isArray(itemShape)) {
+      stampInlineFieldPaths(node, itemShape, pathArr)
       populateInlineFields(node, itemShape, data)
     }
     return node
   }
 
-  const slot = node.querySelector('.hcms-card-fields') || node
+  const slot = requireSlot(node, '.hcms-card-fields', tpl, pathArr)
   if (itemShape && typeof itemShape === 'object' && !Array.isArray(itemShape)) {
     for (const [k, child] of Object.entries(itemShape)) {
       const childData = data == null ? null : data[k]
@@ -105,7 +118,7 @@ function buildScalarArray(rule, pathArr, data, doc) {
   const node = cloneTemplate(tpl, doc)
   stampPath(node, pathArr)
   setLabel(node, lastKey(pathArr))
-  applyArrayConstraints(node, tpl)
+  copyArrayConstraintAttrs(node, tpl)
   wireSortable(node, tpl, pathArr)
 
   const slot = findItemsSlot(node)
@@ -114,6 +127,7 @@ function buildScalarArray(rule, pathArr, data, doc) {
     const itemNode = buildScalarArrayItem([...pathArr, i], itemValue, doc)
     if (itemNode) slot.appendChild(itemNode)
   })
+  applyConstraintVisibility(node)
   return node
 }
 
@@ -182,19 +196,36 @@ function findItemsSlot(node) {
   return node.querySelector('.hcms-array-items') || node
 }
 
-function applyArrayConstraints(node, tpl) {
+function copyArrayConstraintAttrs(node, tpl) {
   ;['data-hcms-no-add', 'data-hcms-no-remove', 'data-hcms-no-reorder'].forEach((attr) => {
     if (tpl.hasAttribute(attr)) node.setAttribute(attr, '')
   })
   ;['data-hcms-min-items', 'data-hcms-max-items'].forEach((attr) => {
     if (tpl.hasAttribute(attr)) node.setAttribute(attr, tpl.getAttribute(attr))
   })
-  if (node.hasAttribute('data-hcms-no-add')) {
-    node.querySelectorAll('[data-hcms-action="add"]').forEach((b) => (b.hidden = true))
-  }
-  if (node.hasAttribute('data-hcms-no-remove')) {
-    node.querySelectorAll('[data-hcms-action="remove"]').forEach((b) => (b.hidden = true))
-  }
+}
+
+function applyConstraintVisibility(arrayEl) {
+  const slot = arrayEl.querySelector ? arrayEl.querySelector('.hcms-array-items') : null
+  if (!slot) return
+  const items = slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]')
+  const count = items.length
+  const max = readIntAttr(arrayEl, 'data-hcms-max-items')
+  const min = readIntAttr(arrayEl, 'data-hcms-min-items')
+  const noAdd = arrayEl.hasAttribute('data-hcms-no-add')
+  const noRemove = arrayEl.hasAttribute('data-hcms-no-remove')
+  const addBtn = arrayEl.querySelector('[data-hcms-action="add"]')
+  if (addBtn) addBtn.hidden = noAdd || (max != null && count >= max)
+  items.forEach((item) => {
+    const rm = item.querySelector('[data-hcms-action="remove"]')
+    if (rm) rm.hidden = noRemove || (min != null && count <= min)
+  })
+}
+
+function readIntAttr(el, name) {
+  if (!el || !el.hasAttribute(name)) return null
+  const n = parseInt(el.getAttribute(name), 10)
+  return Number.isFinite(n) ? n : null
 }
 
 function wireSortable(node, tpl, pathArr) {
@@ -203,10 +234,10 @@ function wireSortable(node, tpl, pathArr) {
   if (!slot) return
   const groupName = 'hcms-' + pathArr.join('.')
   slot.setAttribute('sortable', groupName)
-  slot.setAttribute(
-    'onsorted',
-    'window.hyperclay && window.hyperclay.hypercms && window.hyperclay.hypercms._commit && window.hyperclay.hypercms._commit()'
-  )
+  // hyperclayjs's [sortable] attribute compiles `onsorted` as a code body
+  // (new Function), so we invoke a top-level callable instead of pointing at
+  // a function reference. The callable is installed by hypercms.js open().
+  slot.setAttribute('onsorted', 'hypercmsCommit && hypercmsCommit()')
 }
 
 function lastKey(pathArr) {
@@ -225,10 +256,37 @@ function populateInlineFields(node, shape, data) {
   fields.forEach((el) => {
     const key = el.getAttribute('data-hcms-field')
     if (!key) return
-    if (!shape || typeof shape !== 'object' || !(key in shape)) return
+    if (!shape || typeof shape !== 'object' || !(key in shape)) {
+      console.warn(`[hypercms] inline template field "${key}" is not in the rule shape; ignoring`)
+      return
+    }
     const childValue = data == null ? null : data[key]
     writeValue(el, childValue)
   })
+}
+
+function stampInlineFieldPaths(node, shape, parentPath) {
+  if (!node.querySelectorAll) return
+  const fields = node.querySelectorAll('[data-hcms-field]')
+  fields.forEach((el) => {
+    const key = el.getAttribute('data-hcms-field')
+    if (!key) return
+    if (shape && typeof shape === 'object' && !(key in shape)) return
+    const childPath = [...parentPath, key].join('.')
+    el.setAttribute('data-hcms-path', childPath)
+  })
+}
+
+function requireSlot(node, slotSelector, tpl, pathArr) {
+  if (!node.querySelector) return node
+  const slot = node.querySelector(slotSelector)
+  if (slot) return slot
+  // Slotted templates must declare their slot. Inline-template detection has
+  // already short-circuited above, so missing slot here is a real authoring bug.
+  const id = tpl?.getAttribute?.('data-hcms-tpl') || pathArr.join('.')
+  throw new Error(
+    `hypercms: template "${id}" is in slotted mode but has no ${slotSelector} element`
+  )
 }
 
 function writeValue(el, value) {

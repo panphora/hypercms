@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>hypercms — comprehensive demo</title>
+<style>
+  body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 820px; margin: 1.5rem auto; padding: 0 1rem; color: #1f2532; background: #F6F7F9; }
+  h1 { margin-top: 0; }
+  section.demo { border: 1px solid #d8dde6; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; background: white; }
+  section.demo h2 { margin: 0 0 .5rem; font-size: 1rem; color: #475064; text-transform: uppercase; letter-spacing: .04em; }
+  .field-row { display: flex; gap: 1rem; align-items: center; }
+  .field-row label { display: flex; flex-direction: column; gap: .15rem; flex: 1; }
+  .article { padding: .5rem 0; }
+  .product { border: 1px dashed #cfd5e0; padding: .5rem; margin: .25rem 0; border-radius: 4px; }
+  .variants { margin-left: 1rem; padding-left: 1rem; border-left: 2px solid #e3e7ef; }
+  ul.tags { list-style: none; padding: 0; display: flex; gap: .5rem; flex-wrap: wrap; }
+  ul.tags li { padding: .15rem .5rem; background: #e9eef7; border-radius: 1rem; }
+  .toolbar { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
+  button.tool { font: inherit; padding: .25rem .6rem; border-radius: 4px; border: 1px solid #b9c1d1; background: #f9fafd; cursor: pointer; }
+  #event-log { font-family: ui-monospace, Menlo, monospace; background: #1f2532; color: #e6ebf3; padding: .5rem; border-radius: 4px; max-height: 200px; overflow: auto; font-size: .8rem; }
+  #event-log .err { color: #ffb4a8; }
+</style>
+
+<!-- Rules tag: complete shape — scalars, object, scalar-array, object-array, nested object-array -->
+<script id="hyper-html-api" data-rules-version="1" type="application/json">
+{
+  "title": "h1.page-title",
+  "tagline": ".tagline",
+  "published": ".meta@data-published",
+  "color": ".meta@data-color",
+  "avatar": "img.avatar@src",
+  "homepage": "a.homepage@href",
+  "bio": "textarea.bio@value",
+  "author": {
+    "name": ".author .author-name",
+    "email": ".author .author-email"
+  },
+  "tags": "ul.tags li[]",
+  "products": [
+    ".product",
+    {
+      "name": ".product-name",
+      "price": ".product-price",
+      "variants": [
+        ".variant",
+        {
+          "label": ".variant-label",
+          "stock": ".variant-stock"
+        }
+      ]
+    }
+  ]
+}
+</script>
+
+<!-- Path-bound inline template: render author as a side-by-side row with both fields stamped -->
+<template data-hcms-tpl="author">
+  <section class="hcms-object author-inline" data-hcms-shape="object">
+    <h3 class="hcms-object-title" data-hcms-label></h3>
+    <div class="field-row">
+      <label>Name<input class="hcms-input" data-hcms-field="name"/></label>
+      <label>Email<input class="hcms-input" type="email" data-hcms-field="email"/></label>
+    </div>
+  </section>
+</template>
+
+<!-- Path-bound slotted template for products with min-items / max-items / explicit slot -->
+<template data-hcms-tpl="@object-array" data-hcms-min-items="1" data-hcms-max-items="6">
+  <section class="hcms-array hcms-object-array" data-hcms-shape="object-array">
+    <header class="hcms-array-header"><h3 class="hcms-array-title" data-hcms-label></h3></header>
+    <div class="hcms-array-items"></div>
+    <button type="button" class="hcms-add" data-hcms-action="add">+ Add product</button>
+  </section>
+</template>
+
+<!-- Inline template for radio-group field — color picker -->
+<template data-hcms-tpl="color">
+  <label class="hcms-field" data-hcms-shape="scalar">
+    <span class="hcms-label" data-hcms-label></span>
+    <span class="field-row">
+      <label><input type="radio" name="color" value="red" data-hcms-field="color"/> red</label>
+      <label><input type="radio" name="color" value="green" data-hcms-field="color"/> green</label>
+      <label><input type="radio" name="color" value="blue" data-hcms-field="color"/> blue</label>
+    </span>
+  </label>
+</template>
+
+<!-- Inline template for checkbox -->
+<template data-hcms-tpl="published">
+  <label class="hcms-field" data-hcms-shape="scalar">
+    <span class="hcms-label" data-hcms-label></span>
+    <input type="checkbox" data-hcms-field="published"/>
+  </label>
+</template>
+
+</head>
+<body>
+
+<header>
+  <h1 class="page-title">hypercms — comprehensive demo</h1>
+  <p class="tagline">Edit the right-side panel; the page updates live.</p>
+  <p class="meta" data-published="true" data-color="green"></p>
+</header>
+
+<section class="demo">
+  <h2>Author</h2>
+  <div class="author">
+    <p>Name: <span class="author-name">Pat Doe</span></p>
+    <p>Email: <span class="author-email">pat@example.com</span></p>
+  </div>
+  <img class="avatar" src="https://placehold.co/64x64/333/eee?text=PD" alt="avatar" width="64" height="64"/>
+  <p><a class="homepage" href="https://example.com">homepage</a></p>
+  <textarea class="bio" readonly>Short bio about Pat goes here.</textarea>
+</section>
+
+<section class="demo">
+  <h2>Tags (scalar-array)</h2>
+  <ul class="tags">
+    <li>foo</li>
+    <li>bar</li>
+    <li>baz</li>
+  </ul>
+</section>
+
+<section class="demo">
+  <h2>Products (nested object-array)</h2>
+  <div class="products-list">
+    <div class="product">
+      <h3 class="product-name">Widget</h3>
+      <p>$<span class="product-price">9.99</span></p>
+      <div class="variants">
+        <div class="variant"><strong class="variant-label">Small</strong> — <em class="variant-stock">12</em></div>
+        <div class="variant"><strong class="variant-label">Large</strong> — <em class="variant-stock">3</em></div>
+      </div>
+    </div>
+    <div class="product">
+      <h3 class="product-name">Gadget</h3>
+      <p>$<span class="product-price">19.99</span></p>
+      <div class="variants">
+        <div class="variant"><strong class="variant-label">Default</strong> — <em class="variant-stock">8</em></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="demo">
+  <h2>Toolbox — calls cms.api methods</h2>
+  <div class="toolbar">
+    <button class="tool" id="t-get">api.getData()</button>
+    <button class="tool" id="t-set">api.setValue('title', 'Hello!')</button>
+    <button class="tool" id="t-add">api.addItem('products')</button>
+    <button class="tool" id="t-rm">api.removeItem('products.0')</button>
+    <button class="tool" id="t-refresh">cms.refresh()</button>
+    <button class="tool" id="t-close">cms.close()</button>
+    <button class="tool" id="t-open">cms.open()</button>
+  </div>
+</section>
+
+<section class="demo">
+  <h2>Event log</h2>
+  <div id="event-log"></div>
+</section>
+
+<script src="../dist/hypercms.min.js"></script>
+<script type="module">
+  // dist bundle creates `window.hypercms = { cms }` IIFE.
+  const cms = window.hypercms.cms
+  window.cms = cms
+  window.hyperclay = { hypercms: cms }
+
+  const log = document.getElementById('event-log')
+  function record(name, detail) {
+    const time = new Date().toLocaleTimeString()
+    const row = document.createElement('div')
+    if (name.endsWith(':error')) row.className = 'err'
+    row.textContent = `[${time}] ${name} — ${detail ? JSON.stringify(detail).slice(0, 240) : ''}`
+    log.prepend(row)
+  }
+  for (const e of ['hcms:open','hcms:change','hcms:save','hcms:error','hcms:close']) {
+    document.addEventListener(e, (ev) => record(e, ev.detail))
+  }
+
+  document.getElementById('t-get').addEventListener('click', () => record('api.getData', cms.api.getData()))
+  document.getElementById('t-set').addEventListener('click', () => cms.api.setValue('title', 'Hello!'))
+  document.getElementById('t-add').addEventListener('click', () => cms.api.addItem('products'))
+  document.getElementById('t-rm').addEventListener('click', () => cms.api.removeItem('products.0'))
+  document.getElementById('t-refresh').addEventListener('click', () => cms.refresh())
+  document.getElementById('t-close').addEventListener('click', () => cms.close())
+  document.getElementById('t-open').addEventListener('click', () => cms.open())
+
+  cms.open({ showSaveButton: true })
+</script>
+
+</body>
+</html>

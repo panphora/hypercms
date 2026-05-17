@@ -29,6 +29,8 @@ export function fieldSelectorFor(el, key) {
   return `[data-hcms-field="${key}"]`
 }
 
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
 export function deriveFormRules(pageRules, doc) {
   return derive(pageRules, [])
 
@@ -38,8 +40,11 @@ export function deriveFormRules(pageRules, doc) {
     if (kind === 'scalar-array') return scalarArrayRule(pathArr)
     if (kind === 'object-array') return objectArrayRule(rule, pathArr)
     if (kind === 'object') {
-      const out = {}
+      const out = Object.create(null)
       for (const [k, child] of Object.entries(rule)) {
+        if (FORBIDDEN_KEYS.has(k)) {
+          throw new Error(`hypercms: rule key "${k}" is forbidden at "${pathArr.join('.') || '<root>'}"`)
+        }
         out[k] = derive(child, [...pathArr, k])
       }
       return out
@@ -59,21 +64,42 @@ export function deriveFormRules(pageRules, doc) {
     // The engine's "selector[]" form is text-only; for an editable form we need
     // per-item @value reads, so emit the [selector, shape] form with a scalar
     // shape that targets the inner field's value property.
-    return ['[data-hcms-array-item]', '[data-hcms-field]@value']
+    return [itemSelectorFor(pathArr, '[data-hcms-array-item]'), '[data-hcms-field]@value']
   }
 
   function objectArrayRule(rule, pathArr) {
     const [, itemShape] = rule
     const itemPath = [...pathArr, '*']
-    const itemSelector = '[data-hcms-card]'
+    const itemSelector = itemSelectorFor(pathArr, '[data-hcms-card]')
     if (itemShape && typeof itemShape === 'object' && !Array.isArray(itemShape)) {
-      const obj = {}
+      const obj = Object.create(null)
       for (const [k, child] of Object.entries(itemShape)) {
+        if (FORBIDDEN_KEYS.has(k)) {
+          throw new Error(`hypercms: rule key "${k}" is forbidden at "${itemPath.join('.')}"`)
+        }
         obj[k] = derive(child, [...itemPath, k])
       }
       return [itemSelector, obj]
     }
     return [itemSelector, derive(itemShape, [...itemPath, 0])]
+  }
+
+  // Build a selector that scopes item matching to the right array container.
+  // Without scoping, a nested object-array's `[data-hcms-card]` selector at
+  // the form root level matches ALL cards (top-level + nested), inflating
+  // extraction. We scope by the array container's data-hcms-path attribute:
+  //   - top-level path "foo" → `[data-hcms-path="foo"] > .hcms-array-items > ...`
+  //   - nested path with wildcards → `[data-hcms-path$=".lastKey"] > ...`
+  // The engine recurses INTO each item, so within an item ctx the suffix
+  // match resolves uniquely to that item's nested array.
+  function itemSelectorFor(pathArr, itemTag) {
+    const lastKey = pathArr.length ? pathArr[pathArr.length - 1] : ''
+    const hasWildcard = pathArr.some((s) => s === '*')
+    const pathStr = pathArr.join('.')
+    const containerSel = hasWildcard
+      ? `[data-hcms-path$=".${lastKey}"]`
+      : `[data-hcms-path="${pathStr}"]`
+    return `${containerSel} > .hcms-array-items > ${itemTag}`
   }
 
   function findInlineFieldEl(pathArr, fieldKey) {

@@ -1,11 +1,20 @@
 const SHELL_STYLE_ID = 'hcms-shell-styles'
+const SHELL_BUNDLED_FLAG = 'hcms-bundled-styles-installed'
 const FOCUSABLE = 'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-let stylesInjected = false
+const styledDocs = new WeakSet()
 let cssText = ''
 
 export function setShellStyles(text) {
   cssText = text
+}
+
+export function markStylesBundled(doc) {
+  // Bundler emits a <style data-hcms-bundled-styles> tag and sets this so
+  // the link-based path doesn't double-install.
+  if (!doc) return
+  styledDocs.add(doc)
+  doc[SHELL_BUNDLED_FLAG] = true
 }
 
 export function mountShell({ mountTo, side = 'right', overlay = false, showSaveButton = false, doc }) {
@@ -27,6 +36,9 @@ export function mountShell({ mountTo, side = 'right', overlay = false, showSaveB
     </footer>
   `
 
+  // mountTo may be a nested element inside pageRoot. Use it as-is for the
+  // visual hierarchy; the shell-isolation walk-up in apply-loop/refresh will
+  // detach the correct ancestor when needed.
   const host = mountTo || doc.body
   host.appendChild(root)
 
@@ -51,17 +63,40 @@ export function mountShell({ mountTo, side = 'right', overlay = false, showSaveB
 }
 
 function ensureStyles(doc) {
-  if (stylesInjected) return
-  if (!cssText) return
-  if (doc.getElementById(SHELL_STYLE_ID)) {
-    stylesInjected = true
+  if (!doc) return
+  if (styledDocs.has(doc)) return
+  if (doc[SHELL_BUNDLED_FLAG]) {
+    styledDocs.add(doc)
     return
   }
-  const style = doc.createElement('style')
-  style.id = SHELL_STYLE_ID
-  style.textContent = cssText
-  ;(doc.head || doc.documentElement).appendChild(style)
-  stylesInjected = true
+  if (doc.getElementById(SHELL_STYLE_ID) || doc.querySelector('style[data-hcms-bundled-styles]')) {
+    styledDocs.add(doc)
+    return
+  }
+  if (cssText) {
+    const style = doc.createElement('style')
+    style.id = SHELL_STYLE_ID
+    style.textContent = cssText
+    ;(doc.head || doc.documentElement).appendChild(style)
+    styledDocs.add(doc)
+    return
+  }
+  // No bundled CSS — try resolving the sibling styles.css via import.meta.url.
+  // Browsers ESM-resolved imports place a co-located styles.css next to
+  // hypercms.js. Falls back silently if resolution fails (e.g., bundlers
+  // without an asset emitter).
+  try {
+    const href = new URL('./styles.css', import.meta.url).href
+    const link = doc.createElement('link')
+    link.rel = 'stylesheet'
+    link.id = SHELL_STYLE_ID
+    link.href = href
+    ;(doc.head || doc.documentElement).appendChild(link)
+    styledDocs.add(doc)
+  } catch (_) {
+    // SSR or environments without import.meta.url — author can call
+    // installStyles(text) manually.
+  }
 }
 
 function installFocusTrap(root, doc) {

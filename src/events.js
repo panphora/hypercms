@@ -1,6 +1,8 @@
 import { engine } from 'hyper-html-api'
 import { applyWithRollback } from './apply-loop.js'
-import { fromString as pathFromString, setAtPath, getValueAtPath } from './path.js'
+import { fromString as pathFromString } from './path.js'
+import { buildItem } from './form-builder.js'
+import { scaffold } from './scaffold.js'
 
 const BOUND = new WeakSet()
 
@@ -33,6 +35,13 @@ export function bindEvents(ctx) {
     const actionEl = target.closest('[data-hcms-action]')
     if (!actionEl) return
     const action = actionEl.getAttribute('data-hcms-action')
+    // add/remove must live inside the form root; close/save inside the shell.
+    // Ignore stray data-hcms-action attributes elsewhere on the page.
+    if (action === 'add' || action === 'remove') {
+      if (!actionEl.closest('[data-hcms-form-root]')) return
+    } else if (action === 'close' || action === 'save') {
+      if (!actionEl.closest('[data-hcms-shell]')) return
+    }
     if (action === 'add') {
       const arrayEl = actionEl.closest('[data-hcms-path]')
       if (!arrayEl) return
@@ -81,23 +90,43 @@ export function onAdd(arrayPath, ctx) {
   const isScalarArray = typeof ruleAtPath === 'string' && ruleAtPath.endsWith('[]')
   if (!isObjectArray && !isScalarArray) throw new Error(`hypercms: path "${arrayPath}" is not an array`)
 
+  const maxItems = readIntAttr(arrayEl, 'data-hcms-max-items')
   const existingItems = slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]')
+  if (arrayEl.hasAttribute('data-hcms-no-add')) return
+  if (maxItems != null && existingItems.length >= maxItems) return
   const nextIndex = existingItems.length
 
-  const tpl = findTemplateForItem(arrayPath, isObjectArray ? 'object-array-item' : 'scalar-array-item', ctx.doc)
-  if (!tpl) throw new Error(`hypercms: no item template available for "${arrayPath}"`)
-
-  const itemNode = cloneAndStampItem(tpl, [...pathArr, nextIndex], isObjectArray, ctx.doc)
+  const itemShape = isObjectArray ? ruleAtPath[1] : ruleAtPath.replace(/\[\]$/, '')
+  const itemData = scaffold(isObjectArray ? itemShape : 'string')
+  const itemNode = buildItem({
+    shape: isObjectArray ? 'object-array-item' : 'scalar-array-item',
+    itemShape,
+    pathArr: [...pathArr, nextIndex],
+    data: itemData,
+    doc: ctx.doc,
+  })
   slot.appendChild(itemNode)
+  updateArrayButtonsVisibility(arrayEl)
   commit(extractFormData(ctx), { path: arrayPath, structural: true }, ctx)
 }
 
 export function onRemove(itemEl, ctx) {
   const path = itemEl.getAttribute('data-hcms-path') || ''
   const parent = itemEl.parentElement
+  const arrayEl = itemEl.closest('[data-hcms-shape="object-array"], [data-hcms-shape="scalar-array"]')
+  if (arrayEl?.hasAttribute('data-hcms-no-remove')) return
+  if (arrayEl) {
+    const minItems = readIntAttr(arrayEl, 'data-hcms-min-items')
+    const slot = arrayEl.querySelector('.hcms-array-items')
+    const count = slot
+      ? slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]').length
+      : 0
+    if (minItems != null && count <= minItems) return
+  }
   itemEl.remove()
   // After removal, re-stamp sibling paths to keep indices contiguous.
   if (parent) restampSiblingPaths(parent)
+  if (arrayEl) updateArrayButtonsVisibility(arrayEl)
   commit(extractFormData(ctx), { path, structural: true }, ctx)
 }
 
@@ -111,7 +140,11 @@ export function commit(newData, info, ctx) {
   const fingerprint = stableStringify(newData)
   if (fingerprint === ctx.lastFingerprint) return { ok: true, skipped: true }
 
-  const result = applyWithRollback(ctx.pageRoot, ctx.pageRules, newData, ctx.observerHandle, ctx.shellRoot)
+  const result = applyWithRollback(ctx.pageRoot, ctx.pageRules, newData, {
+    observerHandle: ctx.observerHandle,
+    shellRoot: ctx.shellRoot,
+    structural: !!info.structural,
+  })
   if (result.ok) {
     ctx.lastFingerprint = fingerprint
     ctx.lastData = newData
@@ -127,8 +160,35 @@ export function commit(newData, info, ctx) {
 }
 
 export function extractFormData(ctx) {
-  return engine.extract(ctx.formRoot, ctx.formRules)
+  const raw = engine.extract(ctx.formRoot, ctx.formRules)
+  return coerceBooleans(raw, ctx.formRules)
 }
+
+function coerceBooleans(data, rules) {
+  if (rules == null || data == null) return data
+  if (typeof rules === 'string') {
+    if (rules.endsWith('@checked')) {
+      return data === true || data === 'true'
+    }
+    return data
+  }
+  if (Array.isArray(rules)) {
+    if (!Array.isArray(data)) return data
+    const [, itemShape] = rules
+    return data.map((item) => coerceBooleans(item, itemShape))
+  }
+  if (typeof rules === 'object') {
+    if (typeof data !== 'object' || Array.isArray(data)) return data
+    const out = {}
+    for (const [k, child] of Object.entries(rules)) {
+      out[k] = coerceBooleans(data[k], child)
+    }
+    return out
+  }
+  return data
+}
+
+export { stableStringify }
 
 function setError(ctx, message) {
   if (!ctx.errorEl) return
@@ -174,29 +234,33 @@ function ruleAt(rules, pathArr) {
   return node
 }
 
-function cloneAndStampItem(tpl, pathArr, isObjectArray, doc) {
-  const content = tpl.content || tpl
-  const wrapper = doc.createElement('div')
-  wrapper.appendChild(content.cloneNode(true))
-  const node = wrapper.firstElementChild || wrapper
-  if (isObjectArray) {
-    node.setAttribute('data-hcms-card', '')
-    if (!node.classList.contains('hcms-card')) node.classList.add('hcms-card')
-  } else {
-    node.setAttribute('data-hcms-array-item', '')
-    if (!node.classList.contains('hcms-array-item')) node.classList.add('hcms-array-item')
-  }
-  node.setAttribute('data-hcms-path', pathArr.join('.'))
-  return node
+function readIntAttr(el, name) {
+  if (!el || !el.hasAttribute(name)) return null
+  const n = parseInt(el.getAttribute(name), 10)
+  return Number.isFinite(n) ? n : null
 }
 
-function findTemplateForItem(arrayPath, defaultShape, doc) {
-  const pathArr = pathFromString(arrayPath)
-  const wildcardKey = pathArr.map((s) => (typeof s === 'number' ? '*' : s)).concat('*').join('.')
-  return (
-    doc.querySelector(`template[data-hcms-tpl="${cssEscape(wildcardKey)}"]`) ||
-    doc.querySelector(`template[data-hcms-tpl="@${defaultShape}"]`)
-  )
+export function updateArrayButtonsVisibility(arrayEl) {
+  if (!arrayEl) return
+  const slot = arrayEl.querySelector('.hcms-array-items')
+  if (!slot) return
+  const count = slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]').length
+  const max = readIntAttr(arrayEl, 'data-hcms-max-items')
+  const min = readIntAttr(arrayEl, 'data-hcms-min-items')
+  const noAdd = arrayEl.hasAttribute('data-hcms-no-add')
+  const noRemove = arrayEl.hasAttribute('data-hcms-no-remove')
+  const addBtn = arrayEl.querySelector(':scope > .hcms-add, :scope > * > .hcms-add, :scope > [data-hcms-action="add"]')
+  if (addBtn) addBtn.hidden = noAdd || (max != null && count >= max)
+  const items = slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]')
+  items.forEach((item) => {
+    const rm = item.querySelector('[data-hcms-action="remove"]')
+    if (rm) rm.hidden = noRemove || (min != null && count <= min)
+  })
+}
+
+export function restampAllSiblings(formRoot) {
+  if (!formRoot || !formRoot.querySelectorAll) return
+  formRoot.querySelectorAll('.hcms-array-items').forEach((slot) => restampSiblingPaths(slot))
 }
 
 function restampSiblingPaths(parent) {
@@ -229,7 +293,9 @@ function restampSubtree(root, oldPrefix, newPrefix) {
 function stableStringify(value) {
   return JSON.stringify(value, (_, v) => {
     if (v && typeof v === 'object' && !Array.isArray(v)) {
-      const sorted = {}
+      // Use a null-prototype container so `__proto__` keys survive sorting and
+      // serialize as data rather than mutating object prototype.
+      const sorted = Object.create(null)
       for (const k of Object.keys(v).sort()) sorted[k] = v[k]
       return sorted
     }

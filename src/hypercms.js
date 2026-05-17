@@ -5,12 +5,25 @@ import { morphForm } from './morph.js'
 import { injectDefaults } from './templates.js'
 import { deriveFormRules } from './form-rules.js'
 import { buildForm } from './form-builder.js'
-import { bindEvents, commit, onAdd as evOnAdd, onRemove as evOnRemove, extractFormData } from './events.js'
-import { mountShell, setShellStyles } from './shell.js'
+import {
+  bindEvents,
+  commit,
+  onAdd as evOnAdd,
+  onRemove as evOnRemove,
+  extractFormData,
+  stableStringify,
+  restampAllSiblings,
+} from './events.js'
+import { mountShell, setShellStyles, markStylesBundled } from './shell.js'
 import { refreshForm, installObserver } from './refresh.js'
+import { warnUnmatchedTemplates } from './diagnostics.js'
 
 export function installStyles(text) {
   setShellStyles(text)
+}
+
+export function markBundledStyles(doc) {
+  markStylesBundled(doc)
 }
 
 const state = {
@@ -38,6 +51,7 @@ export function open(opts = {}) {
   const rulesTagNode = found.tagNode
 
   injectDefaults(doc)
+  warnUnmatchedTemplates(doc, pageRules)
   const formRules = deriveFormRules(pageRules, doc)
   const data = engine.extract(pageRoot, pageRules)
 
@@ -64,6 +78,7 @@ export function open(opts = {}) {
     onChange: opts.onChange,
     onError: opts.onError,
     onSave: opts.onSave,
+    previouslyFocused: doc.activeElement,
     dispatch(name, detail) {
       const Ctor = (doc.defaultView && doc.defaultView.CustomEvent) || (typeof CustomEvent !== 'undefined' ? CustomEvent : null)
       if (!Ctor) return
@@ -74,11 +89,15 @@ export function open(opts = {}) {
       close()
     },
   }
+  ctx.updateFingerprint = () => {
+    ctx.lastFingerprint = stableStringify(extractFormData(ctx))
+  }
 
   const fragment = buildForm({ pageRules, formRules, data, doc })
   shell.formRoot.appendChild(fragment)
 
   bindEvents(ctx)
+  ctx.updateFingerprint()
 
   ctx.observerHandle = installObserver({
     pageRoot,
@@ -86,6 +105,13 @@ export function open(opts = {}) {
     onRefresh: () => refreshForm(ctx),
     shellRoot: shell.root,
   })
+
+  // Wire global sortable callback to current ctx (replaced by close()).
+  globalCommitTarget.ctx = ctx
+  installGlobalSortableCommit(doc)
+
+  // Move focus into the shell — survives close+restore via previouslyFocused.
+  focusFirstIn(shell.root)
 
   state.isOpen = true
   state.ctx = ctx
@@ -95,9 +121,35 @@ export function open(opts = {}) {
   ctx.dispatch('hcms:open', { pageRoot })
 }
 
+function focusFirstIn(root) {
+  const sel = 'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  const target = root.querySelector(sel)
+  if (target && typeof target.focus === 'function') target.focus()
+}
+
+const globalCommitTarget = { ctx: null }
+
+function installGlobalSortableCommit(doc) {
+  const win = doc.defaultView || (typeof globalThis !== 'undefined' ? globalThis : null)
+  if (!win) return
+  const hypercmsCommitFn = function hypercmsCommitGlobal() {
+    const ctx = globalCommitTarget.ctx
+    if (!ctx) return
+    restampAllSiblings(ctx.formRoot)
+    commit(extractFormData(ctx), { path: '', structural: true }, ctx)
+  }
+  if (typeof win.hypercmsCommit !== 'function') win.hypercmsCommit = hypercmsCommitFn
+  // Also mirror to globalThis so non-window contexts (Node tests, workers)
+  // can resolve the bare name from `new Function('hypercmsCommit()')`.
+  if (typeof globalThis !== 'undefined' && typeof globalThis.hypercmsCommit !== 'function') {
+    globalThis.hypercmsCommit = hypercmsCommitFn
+  }
+}
+
 export function close() {
   if (!state.isOpen) return
   const { ctx, shell } = state
+  const previouslyFocused = ctx.previouslyFocused
   ctx.dispatch('hcms:close', null)
   ctx.observerHandle?.unsubscribe?.()
   ctx.detachEvents?.()
@@ -106,6 +158,10 @@ export function close() {
   state.ctx = null
   state.shell = null
   state.opts = null
+  globalCommitTarget.ctx = null
+  if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+    try { previouslyFocused.focus() } catch (_) {}
+  }
 }
 
 export function refresh() {
@@ -125,10 +181,15 @@ export const api = {
   setValue(path, value) {
     if (!state.isOpen) throw new Error('hypercms: cms is not open')
     const ctx = state.ctx
-    const el = ctx.formRoot.querySelector(`[data-hcms-path="${cssEscape(path)}"] [data-hcms-field], [data-hcms-path="${cssEscape(path)}"][data-hcms-field]`)
-    if (!el) throw new Error(`hypercms: no element at path "${path}"`)
-    if ('value' in el) el.value = value == null ? '' : String(value)
-    else el.textContent = value == null ? '' : String(value)
+    const pathArr = pathUtil.fromString(path)
+    const rule = pathUtil.getRuleAtPath(ctx.pageRules, pathArr)
+    if (rule === undefined) throw new Error(`hypercms: no rule at path "${path}"`)
+    if (typeof rule !== 'string' || rule.endsWith('[]')) {
+      throw new Error(`hypercms: setValue requires a leaf scalar path; "${path}" is not a leaf`)
+    }
+    const field = findLeafField(ctx.formRoot, path)
+    if (!field) throw new Error(`hypercms: no field element at path "${path}"`)
+    writeFieldValue(field, value, ctx.formRoot, path)
     commit(extractFormData(ctx), { path, structural: false }, ctx)
   },
   addItem(arrayPath) {
@@ -145,8 +206,55 @@ export const api = {
   _commit() {
     if (!state.isOpen) return
     const ctx = state.ctx
+    restampAllSiblings(ctx.formRoot)
     commit(extractFormData(ctx), { path: '', structural: true }, ctx)
   },
+}
+
+function findLeafField(formRoot, path) {
+  const esc = cssEscape(path)
+  // Field may be the element with data-hcms-path itself (scalar template that
+  // is also the field) or a [data-hcms-field] inside that container, or an
+  // element stamped with the leaf path directly (inline path-stamped field).
+  return (
+    formRoot.querySelector(`[data-hcms-path="${esc}"][data-hcms-field]`) ||
+    formRoot.querySelector(`[data-hcms-path="${esc}"] [data-hcms-field]`)
+  )
+}
+
+function writeFieldValue(el, value, formRoot, path) {
+  const tag = (el.tagName || '').toUpperCase()
+  const type = (el.getAttribute('type') || '').toLowerCase()
+  if (tag === 'INPUT' && type === 'checkbox') {
+    el.checked = value === true || value === 'true'
+    return
+  }
+  if (tag === 'INPUT' && type === 'radio') {
+    // Radios sharing the same path act as a group. Toggle the matching option.
+    const esc = cssEscape(path)
+    const group = formRoot.querySelectorAll(
+      `[data-hcms-path="${esc}"][data-hcms-field][type="radio"], [data-hcms-path="${esc}"] [data-hcms-field][type="radio"]`
+    )
+    if (group.length) {
+      group.forEach((r) => { r.checked = String(r.value) === String(value ?? '') })
+    } else {
+      el.checked = String(el.value) === String(value ?? '')
+    }
+    return
+  }
+  if (tag === 'IMG') {
+    el.src = value == null ? '' : String(value)
+    return
+  }
+  if (tag === 'A') {
+    el.href = value == null ? '' : String(value)
+    return
+  }
+  if ('value' in el) {
+    el.value = value == null ? '' : String(value)
+    return
+  }
+  el.textContent = value == null ? '' : String(value)
 }
 
 const cms = {

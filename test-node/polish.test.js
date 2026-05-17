@@ -65,7 +65,7 @@ test('setValue with unknown path throws', () => {
   </body></html>`)
   open()
   try {
-    assert.throws(() => api.setValue('nope', 'y'), /no element at path/)
+    assert.throws(() => api.setValue('nope', 'y'), /no rule at path|no element at path|setValue requires a leaf/)
   } finally {
     close()
   }

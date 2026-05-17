@@ -1,35 +1,69 @@
 import { engine } from 'hyper-html-api'
+import { withoutShell } from './shell-isolation.js'
 
-// The shell is mounted INSIDE pageRoot (usually document.body). If we snapshot
-// pageRoot directly and rollback replaces its children, the live shell node
-// becomes orphaned and its dispatched events stop bubbling. Detach the shell
-// briefly so snapshot/apply/rollback never touches it, then reattach.
-export function applyWithRollback(pageRoot, pageRules, newData, observerHandle, shellRoot) {
+// Scalar applies never throw on user input — engine ShapeMismatch only fires
+// for object/array data, which a string keystroke can't produce. We skip
+// the snapshot entirely so the focused input is preserved across every commit.
+// If apply does throw (programmer error: rule shape vs data type), the form
+// stays ahead of the page until the next refresh reconciles.
+//
+// Structural applies (add/remove/reorder) can hit EmptyListInsert and other
+// engine errors. We snapshot just the non-shell page content so rollback
+// works without orphaning the shell or losing focus elsewhere.
+export function applyWithRollback(pageRoot, pageRules, newData, options = {}) {
+  const { observerHandle, shellRoot, structural } = options
   observerHandle?.pause?.()
-  const detached = detachIfChild(pageRoot, shellRoot)
-  const snapshot = pageRoot.cloneNode(true)
   try {
-    engine.apply(pageRoot, pageRules, newData)
-    reattach(detached)
+    if (!structural) {
+      try {
+        engine.apply(pageRoot, pageRules, newData)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err }
+      }
+    }
+
+    // Structural path: snapshot non-shell children so we can rollback without
+    // touching the live shell.
+    const snapshot = captureNonShellSnapshot(pageRoot, shellRoot)
+    try {
+      withoutShell(pageRoot, shellRoot, (root) => engine.apply(root, pageRules, newData))
+      return { ok: true }
+    } catch (err) {
+      restoreNonShellSnapshot(pageRoot, shellRoot, snapshot)
+      return { ok: false, error: err }
+    }
+  } finally {
     observerHandle?.resume?.()
-    return { ok: true }
-  } catch (err) {
-    while (pageRoot.firstChild) pageRoot.removeChild(pageRoot.firstChild)
-    while (snapshot.firstChild) pageRoot.appendChild(snapshot.firstChild)
-    reattach(detached)
-    observerHandle?.resume?.()
-    return { ok: false, error: err }
   }
 }
 
-function detachIfChild(pageRoot, shellRoot) {
-  if (!shellRoot || shellRoot.parentNode !== pageRoot) return null
-  const nextSibling = shellRoot.nextSibling
-  pageRoot.removeChild(shellRoot)
-  return { pageRoot, shellRoot, nextSibling }
+function captureNonShellSnapshot(pageRoot, shellRoot) {
+  const clones = []
+  for (const child of Array.from(pageRoot.childNodes)) {
+    if (child === shellRoot || (shellRoot && child.contains?.(shellRoot))) continue
+    clones.push(child.cloneNode(true))
+  }
+  return clones
 }
 
-function reattach(info) {
-  if (!info) return
-  info.pageRoot.insertBefore(info.shellRoot, info.nextSibling)
+function restoreNonShellSnapshot(pageRoot, shellRoot, clones) {
+  // Remove all non-shell children, leaving the live shell intact.
+  for (const child of Array.from(pageRoot.childNodes)) {
+    if (child === shellRoot || (shellRoot && child.contains?.(shellRoot))) continue
+    pageRoot.removeChild(child)
+  }
+  // Insert clones before the shell host (or at end if no shell)
+  const host = findShellHostChild(pageRoot, shellRoot)
+  for (const clone of clones) {
+    pageRoot.insertBefore(clone, host || null)
+  }
+}
+
+function findShellHostChild(pageRoot, shellRoot) {
+  if (!shellRoot) return null
+  for (const child of Array.from(pageRoot.childNodes)) {
+    if (child === shellRoot || child.contains?.(shellRoot)) return child
+  }
+  return null
 }
