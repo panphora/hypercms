@@ -36,6 +36,8 @@ const DEFAULT_TEMPLATES = {
     <li class="hcms-array-item" draggable="true">
       <span class="hcms-drag-handle" aria-hidden="true">::</span>
       <input class="hcms-input" data-hcms-field />
+      <button type="button" class="hcms-move hcms-move-up hcms-sr-only" data-hcms-action="move-up" aria-label="Move up">↑</button>
+      <button type="button" class="hcms-move hcms-move-down hcms-sr-only" data-hcms-action="move-down" aria-label="Move down">↓</button>
       <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove">x</button>
     </li>
   `,
@@ -52,6 +54,8 @@ const DEFAULT_TEMPLATES = {
     <article class="hcms-card" draggable="true">
       <header class="hcms-card-header">
         <span class="hcms-drag-handle" aria-hidden="true">::</span>
+        <button type="button" class="hcms-move hcms-move-up hcms-sr-only" data-hcms-action="move-up" aria-label="Move up">↑</button>
+        <button type="button" class="hcms-move hcms-move-down hcms-sr-only" data-hcms-action="move-down" aria-label="Move down">↓</button>
         <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove">x</button>
       </header>
       <div class="hcms-card-fields"></div>

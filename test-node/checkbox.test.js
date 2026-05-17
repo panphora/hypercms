@@ -39,6 +39,35 @@ test('checkbox: round-trip preserves true and false', () => {
   }
 })
 
+// v0.3 fix #4 (Critical): engine.extract returns "true" / "false" strings for
+// @checked rules. open() / refresh() must coerce before hydrating the form,
+// otherwise writeValue's old Boolean("false")===true would flip an unchecked
+// page state to checked at first open.
+test('checkbox: page state "false" opens unchecked (pre-coerce on extract)', () => {
+  if (isOpen()) close()
+  const dom = loadPage(`<!DOCTYPE html><html><body>
+    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    { "published": ".p@data-pub" }
+    </script>
+    <template data-hcms-tpl="published">
+      <label class="hcms-field" data-hcms-shape="scalar">
+        <span data-hcms-label></span>
+        <input type="checkbox" data-hcms-field="published"/>
+      </label>
+    </template>
+    <div class="p" data-pub="false"></div>
+  </body></html>`)
+  open()
+  try {
+    const box = document.querySelector('[data-hcms-form-root] input[type="checkbox"]')
+    assert.strictEqual(box.checked, false, 'string "false" hydrates as unchecked')
+    assert.strictEqual(api.getData().published, false)
+  } finally {
+    close()
+    dom.window.close()
+  }
+})
+
 test('checkbox: starts unchecked when data-pub absent', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>

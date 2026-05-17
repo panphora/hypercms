@@ -11,7 +11,16 @@ export function getRuleAtPath(rules, path) {
   let node = rules
   for (const seg of path) {
     if (node == null) return undefined
-    if (typeof node === 'string') return undefined
+    if (typeof node === 'string') {
+      // Scalar-array rules like 'li[]' contain leaf scalars at integer indices.
+      // Descend by stripping the trailing []; the leaf is treated as a plain
+      // scalar string for path queries.
+      if (node.endsWith('[]') && (typeof seg === 'number' || seg === '*')) {
+        node = node.slice(0, -2)
+        continue
+      }
+      return undefined
+    }
     if (Array.isArray(node)) {
       if (typeof seg !== 'number' && seg !== '*') return undefined
       node = node[1]

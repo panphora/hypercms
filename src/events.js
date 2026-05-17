@@ -35,9 +35,9 @@ export function bindEvents(ctx) {
     const actionEl = target.closest('[data-hcms-action]')
     if (!actionEl) return
     const action = actionEl.getAttribute('data-hcms-action')
-    // add/remove must live inside the form root; close/save inside the shell.
+    // add/remove/move must live inside the form root; close/save inside the shell.
     // Ignore stray data-hcms-action attributes elsewhere on the page.
-    if (action === 'add' || action === 'remove') {
+    if (action === 'add' || action === 'remove' || action === 'move-up' || action === 'move-down') {
       if (!actionEl.closest('[data-hcms-form-root]')) return
     } else if (action === 'close' || action === 'save') {
       if (!actionEl.closest('[data-hcms-shell]')) return
@@ -51,6 +51,10 @@ export function bindEvents(ctx) {
       const itemEl = actionEl.closest('[data-hcms-card], [data-hcms-array-item]')
       if (!itemEl) return
       onRemove(itemEl, ctx)
+    } else if (action === 'move-up' || action === 'move-down') {
+      const itemEl = actionEl.closest('[data-hcms-card], [data-hcms-array-item]')
+      if (!itemEl) return
+      onMove(itemEl, action === 'move-up' ? -1 : 1, ctx)
     } else if (action === 'close') {
       ctx.onCloseRequested?.()
     } else if (action === 'save') {
@@ -110,6 +114,34 @@ export function onAdd(arrayPath, ctx) {
   commit(extractFormData(ctx), { path: arrayPath, structural: true }, ctx)
 }
 
+export function onMove(itemEl, direction, ctx) {
+  const arrayEl = itemEl.closest('[data-hcms-shape="object-array"], [data-hcms-shape="scalar-array"]')
+  if (!arrayEl) return
+  if (arrayEl.hasAttribute('data-hcms-no-reorder')) return
+  const slot = arrayEl.querySelector('.hcms-array-items')
+  if (!slot) return
+  const siblings = Array.from(slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]'))
+  const idx = siblings.indexOf(itemEl)
+  if (idx < 0) return
+  const targetIdx = idx + direction
+  if (targetIdx < 0 || targetIdx >= siblings.length) return
+  const moveAction = itemEl.querySelector(`[data-hcms-action="${direction < 0 ? 'move-up' : 'move-down'}"]`)
+  if (direction < 0) {
+    slot.insertBefore(itemEl, siblings[targetIdx])
+  } else {
+    slot.insertBefore(itemEl, siblings[targetIdx].nextSibling)
+  }
+  restampSiblingPaths(slot)
+  updateArrayButtonsVisibility(arrayEl)
+  // Restore focus to the moved button so keyboard users can continue pressing
+  // the same button (now landed in its new position).
+  if (moveAction && typeof moveAction.focus === 'function') {
+    const newAction = itemEl.querySelector(`[data-hcms-action="${direction < 0 ? 'move-up' : 'move-down'}"]`)
+    newAction?.focus?.()
+  }
+  commit(extractFormData(ctx), { path: arrayEl.getAttribute('data-hcms-path') || '', structural: true }, ctx)
+}
+
 export function onRemove(itemEl, ctx) {
   const path = itemEl.getAttribute('data-hcms-path') || ''
   const parent = itemEl.parentElement
@@ -144,6 +176,7 @@ export function commit(newData, info, ctx) {
     observerHandle: ctx.observerHandle,
     shellRoot: ctx.shellRoot,
     structural: !!info.structural,
+    structuralPath: info.path || null,
   })
   if (result.ok) {
     ctx.lastFingerprint = fingerprint
@@ -164,7 +197,11 @@ export function extractFormData(ctx) {
   return coerceBooleans(raw, ctx.formRules)
 }
 
-function coerceBooleans(data, rules) {
+// Walks either pageRules OR formRules (both use the same `endsWith('@checked')`
+// semantics) and coerces leaf strings "true" / "false" to booleans. Engine
+// extract stringifies @checked properties; the form layer wants real booleans
+// so writeValue's Boolean(value) doesn't flip "false" → true on hydration.
+export function coerceBooleans(data, rules) {
   if (rules == null || data == null) return data
   if (typeof rules === 'string') {
     if (rules.endsWith('@checked')) {
@@ -244,17 +281,22 @@ export function updateArrayButtonsVisibility(arrayEl) {
   if (!arrayEl) return
   const slot = arrayEl.querySelector('.hcms-array-items')
   if (!slot) return
-  const count = slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]').length
+  const items = Array.from(slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]'))
+  const count = items.length
   const max = readIntAttr(arrayEl, 'data-hcms-max-items')
   const min = readIntAttr(arrayEl, 'data-hcms-min-items')
   const noAdd = arrayEl.hasAttribute('data-hcms-no-add')
   const noRemove = arrayEl.hasAttribute('data-hcms-no-remove')
+  const noReorder = arrayEl.hasAttribute('data-hcms-no-reorder')
   const addBtn = arrayEl.querySelector(':scope > .hcms-add, :scope > * > .hcms-add, :scope > [data-hcms-action="add"]')
   if (addBtn) addBtn.hidden = noAdd || (max != null && count >= max)
-  const items = slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]')
-  items.forEach((item) => {
+  items.forEach((item, i) => {
     const rm = item.querySelector('[data-hcms-action="remove"]')
     if (rm) rm.hidden = noRemove || (min != null && count <= min)
+    const up = item.querySelector('[data-hcms-action="move-up"]')
+    if (up) up.hidden = noReorder || i === 0
+    const dn = item.querySelector('[data-hcms-action="move-down"]')
+    if (dn) dn.hidden = noReorder || i === count - 1
   })
 }
 

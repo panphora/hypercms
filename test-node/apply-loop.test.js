@@ -45,6 +45,33 @@ test('applyWithRollback: structural failure restores snapshot', () => {
   assert.equal(root.querySelector('.items').children.length, 0)
 })
 
+// v0.3 fix #5 (Should-fix): structural rollback should snapshot only the
+// affected array container, not the entire non-shell page. A listener
+// attached to an unrelated button outside the array survives rollback.
+test('applyWithRollback: subtree-only snapshot preserves listeners on unrelated nodes', () => {
+  const dom = new JSDOM(`<!DOCTYPE html><html><body>
+    <button id="unrelated">Click me</button>
+    <ul class="items"></ul>
+  </body></html>`)
+  const root = dom.window.document.body
+  let clicks = 0
+  const btn = root.querySelector('#unrelated')
+  btn.addEventListener('click', () => { clicks++ })
+  // Trigger a structural error against the empty list — engine raises
+  // EmptyListInsert and the rollback runs against just the .items subtree.
+  const result = applyWithRollback(
+    root,
+    { items: ['.items li', { text: '.text' }] },
+    { items: [{ text: 'first' }] },
+    { structural: true, structuralPath: 'items' }
+  )
+  assert.equal(result.ok, false)
+  // The unrelated button is the same DOM node (subtree snapshot didn't
+  // clone+replace it), so its listener still fires.
+  btn.click()
+  assert.equal(clicks, 1, 'listener on unrelated node survived structural rollback')
+})
+
 test('applyWithRollback: observer pause/resume invoked', () => {
   const root = setupPage()
   const calls = []

@@ -23,6 +23,28 @@ test('slotted object template missing .hcms-object-fields throws', () => {
   }
 })
 
+// v0.3 fix #7 (Should-fix): array templates missing .hcms-array-items must
+// throw — the silent fallback (use the template root) hid author bugs.
+test('object-array template missing .hcms-array-items throws', () => {
+  if (isOpen()) close()
+  const dom = loadPage(`<!DOCTYPE html><html><head>
+    <template data-hcms-tpl="products">
+      <section class="bag"></section>
+    </template>
+  </head><body>
+    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    { "products": [".product", { "name": ".n" }] }
+    </script>
+    <div><div class="product"><span class="n">a</span></div></div>
+  </body></html>`)
+  try {
+    assert.throws(() => open(), /\.hcms-array-items/)
+  } finally {
+    if (isOpen()) close()
+    dom.window.close()
+  }
+})
+
 test('slotted card template missing .hcms-card-fields throws', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><head>

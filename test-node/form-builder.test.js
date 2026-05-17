@@ -118,6 +118,31 @@ test('buildForm: inline template for items', () => {
   assert.equal(items[0].querySelector('input').value, 'A')
 })
 
+// v0.3 fix #6 (Should-fix): radio templates have multiple inputs at the
+// same field — populateScalarValue must hydrate all of them, not just the
+// first. Previously only the first radio got `checked` set, so re-opening
+// with the third option selected showed the first option highlighted.
+test('buildForm: radio group hydrates the matching input across all options', () => {
+  const doc = setupDoc(`<!DOCTYPE html><html><head>
+    <template data-hcms-tpl="color">
+      <fieldset class="hcms-field" data-hcms-shape="scalar">
+        <legend data-hcms-label></legend>
+        <label><input type="radio" data-hcms-field="color" value="red"/>red</label>
+        <label><input type="radio" data-hcms-field="color" value="green"/>green</label>
+        <label><input type="radio" data-hcms-field="color" value="blue"/>blue</label>
+      </fieldset>
+    </template>
+  </head><body></body></html>`)
+  injectDefaults(doc)
+  const pageRules = { color: '.c@data-color' }
+  const formRules = deriveFormRules(pageRules, doc)
+  const fragment = buildForm({ pageRules, formRules, data: { color: 'blue' }, doc })
+  const radios = fragment.querySelectorAll('input[type="radio"][data-hcms-field="color"]')
+  assert.equal(radios.length, 3, 'all three radios rendered')
+  const checked = Array.from(radios).filter((r) => r.checked).map((r) => r.value)
+  assert.deepEqual(checked, ['blue'], 'only the matching option is checked')
+})
+
 test('buildForm: labels humanized from key', () => {
   const doc = setupDoc()
   injectDefaults(doc)

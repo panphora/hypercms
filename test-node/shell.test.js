@@ -48,6 +48,31 @@ test('mountShell: save button hidden by default', () => {
   destroy()
 })
 
+// v0.3 fix #12 (Nice-to-have): shell already traps focus + locks body, so
+// dialog ARIA semantics belong on the root. aria-labelledby points at the
+// shell title's auto-generated id.
+test('mountShell: dialog ARIA semantics on shell root', () => {
+  const doc = setupDom()
+  const { root, destroy } = mountShell({ mountTo: doc.body, doc })
+  assert.equal(root.getAttribute('role'), 'dialog')
+  assert.equal(root.getAttribute('aria-modal'), 'true')
+  const labelId = root.getAttribute('aria-labelledby')
+  assert.ok(labelId, 'aria-labelledby is set')
+  const titleEl = root.querySelector('#' + labelId)
+  assert.ok(titleEl, 'aria-labelledby resolves inside the shell')
+  assert.equal(titleEl.textContent, 'Edit')
+  destroy()
+})
+
+test('mountShell: each instance gets a distinct title id', () => {
+  const doc = setupDom()
+  const a = mountShell({ mountTo: doc.body, doc })
+  const b = mountShell({ mountTo: doc.body, doc })
+  assert.notEqual(a.root.getAttribute('aria-labelledby'), b.root.getAttribute('aria-labelledby'))
+  a.destroy()
+  b.destroy()
+})
+
 test('mountShell: save button shown when showSaveButton: true', () => {
   const doc = setupDom()
   const { root, destroy } = mountShell({ mountTo: doc.body, doc, showSaveButton: true })

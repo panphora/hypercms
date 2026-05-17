@@ -4,6 +4,7 @@ import { morphForm } from './morph.js'
 import { withoutShell } from './shell-isolation.js'
 import { injectDefaults } from './templates.js'
 import { deriveFormRules } from './form-rules.js'
+import { coerceBooleans } from './events.js'
 
 export function refreshForm(ctx) {
   // Re-read rules tag every refresh so a livesync-replaced rules tag is picked up.
@@ -19,8 +20,11 @@ export function refreshForm(ctx) {
   injectDefaults(ctx.doc)
   ctx.formRules = deriveFormRules(ctx.pageRules, ctx.doc)
 
-  const newData = withoutShell(ctx.pageRoot, ctx.shellRoot, (root) =>
-    engine.extract(root, ctx.pageRules)
+  const newData = coerceBooleans(
+    withoutShell(ctx.pageRoot, ctx.shellRoot, (root) =>
+      engine.extract(root, ctx.pageRules)
+    ),
+    ctx.pageRules
   )
   const fragment = buildForm({
     pageRules: ctx.pageRules,

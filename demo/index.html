@@ -15,6 +15,11 @@
   .variants { margin-left: 1rem; padding-left: 1rem; border-left: 2px solid #e3e7ef; }
   ul.tags { list-style: none; padding: 0; display: flex; gap: .5rem; flex-wrap: wrap; }
   ul.tags li { padding: .15rem .5rem; background: #e9eef7; border-radius: 1rem; }
+  .product-card { border: 1px solid #d8dde6; padding: .5rem .75rem; border-radius: 6px; margin-bottom: .5rem; background: #fcfdff; }
+  .product-card-head { display: flex; align-items: center; gap: .5rem; font-weight: 600; }
+  .product-card-grip { color: #9aa5bb; cursor: grab; }
+  .product-card-title { flex: 1; }
+  .product-card-x { background: transparent; border: 1px solid #cfd5e0; border-radius: 4px; cursor: pointer; }
   .toolbar { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
   button.tool { font: inherit; padding: .25rem .6rem; border-radius: 4px; border: 1px solid #b9c1d1; background: #f9fafd; cursor: pointer; }
   #event-log { font-family: ui-monospace, Menlo, monospace; background: #1f2532; color: #e6ebf3; padding: .5rem; border-radius: 4px; max-height: 200px; overflow: auto; font-size: .8rem; }
@@ -28,6 +33,7 @@
   "tagline": ".tagline",
   "published": ".meta@data-published",
   "color": ".meta@data-color",
+  "priority": ".meta@data-priority",
   "avatar": "img.avatar@src",
   "homepage": "a.homepage@href",
   "bio": "textarea.bio@value",
@@ -45,7 +51,8 @@
         ".variant",
         {
           "label": ".variant-label",
-          "stock": ".variant-stock"
+          "stock": ".variant-stock",
+          "quantity": ".variant-qty"
         }
       ]
     }
@@ -93,13 +100,48 @@
   </label>
 </template>
 
+<!-- Inline template for <select> field — exercises select@value extract/apply -->
+<template data-hcms-tpl="priority">
+  <label class="hcms-field" data-hcms-shape="scalar">
+    <span class="hcms-label" data-hcms-label></span>
+    <select data-hcms-field="priority">
+      <option value="low">low</option>
+      <option value="medium">medium</option>
+      <option value="high">high</option>
+    </select>
+  </label>
+</template>
+
+<!-- Inline template for number field with HTML5 min/max + step -->
+<template data-hcms-tpl="products.*.variants.*.quantity">
+  <label class="hcms-field" data-hcms-shape="scalar">
+    <span class="hcms-label" data-hcms-label></span>
+    <input type="number" data-hcms-field="quantity" min="0" max="999" step="1"/>
+  </label>
+</template>
+
+<!-- Real path-bound slotted template at products.*: a custom per-item shell
+     that demos a slotted card with its own header + drag-handle ornament -->
+<template data-hcms-tpl="products.*">
+  <article class="hcms-card product-card" draggable="true">
+    <header class="product-card-head">
+      <span class="product-card-grip" aria-hidden="true">⋮⋮</span>
+      <span class="product-card-title" data-hcms-label></span>
+      <button type="button" class="hcms-sr-only" data-hcms-action="move-up" aria-label="Move up">↑</button>
+      <button type="button" class="hcms-sr-only" data-hcms-action="move-down" aria-label="Move down">↓</button>
+      <button type="button" class="product-card-x" data-hcms-action="remove" aria-label="Remove product">×</button>
+    </header>
+    <div class="hcms-card-fields"></div>
+  </article>
+</template>
+
 </head>
 <body>
 
 <header>
   <h1 class="page-title">hypercms — comprehensive demo</h1>
   <p class="tagline">Edit the right-side panel; the page updates live.</p>
-  <p class="meta" data-published="true" data-color="green"></p>
+  <p class="meta" data-published="true" data-color="green" data-priority="medium"></p>
 </header>
 
 <section class="demo">
@@ -129,15 +171,15 @@
       <h3 class="product-name">Widget</h3>
       <p>$<span class="product-price">9.99</span></p>
       <div class="variants">
-        <div class="variant"><strong class="variant-label">Small</strong> — <em class="variant-stock">12</em></div>
-        <div class="variant"><strong class="variant-label">Large</strong> — <em class="variant-stock">3</em></div>
+        <div class="variant"><strong class="variant-label">Small</strong> — <em class="variant-stock">12</em> (qty <em class="variant-qty">100</em>)</div>
+        <div class="variant"><strong class="variant-label">Large</strong> — <em class="variant-stock">3</em> (qty <em class="variant-qty">25</em>)</div>
       </div>
     </div>
     <div class="product">
       <h3 class="product-name">Gadget</h3>
       <p>$<span class="product-price">19.99</span></p>
       <div class="variants">
-        <div class="variant"><strong class="variant-label">Default</strong> — <em class="variant-stock">8</em></div>
+        <div class="variant"><strong class="variant-label">Default</strong> — <em class="variant-stock">8</em> (qty <em class="variant-qty">50</em>)</div>
       </div>
     </div>
   </div>

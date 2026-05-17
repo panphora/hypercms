@@ -37,7 +37,12 @@ function buildScalar(pathArr, data, doc) {
   if (!tpl) throw new Error(`hypercms: missing template for scalar at "${pathArr.join('.')}"`)
   const node = cloneTemplate(tpl, doc)
   stampPath(node, pathArr)
+  // Stamp leaf input(s) FIRST so the container's data-hcms-field doesn't
+  // make stampScalarField early-return (which would leave the input without
+  // a key).
   stampScalarField(node, lastKey(pathArr))
+  // Then stamp the wrapping container so engine selectors can scope by key.
+  stampContainerField(node, lastKey(pathArr))
   setLabel(node, lastKey(pathArr))
   populateScalarValue(node, data)
   return node
@@ -48,6 +53,7 @@ function buildObject(rule, pathArr, data, doc) {
   if (!tpl) throw new Error(`hypercms: missing template for object at "${pathArr.join('.')}"`)
   const node = cloneTemplate(tpl, doc)
   stampPath(node, pathArr)
+  stampContainerField(node, lastKey(pathArr))
   setLabel(node, lastKey(pathArr))
 
   if (isInlineTemplate(tpl)) {
@@ -70,11 +76,12 @@ function buildObjectArray(rule, pathArr, data, doc) {
   if (!tpl) throw new Error(`hypercms: missing template for object-array at "${pathArr.join('.')}"`)
   const node = cloneTemplate(tpl, doc)
   stampPath(node, pathArr)
+  stampContainerField(node, lastKey(pathArr))
   setLabel(node, lastKey(pathArr))
   copyArrayConstraintAttrs(node, tpl)
   wireSortable(node, tpl, pathArr)
 
-  const slot = findItemsSlot(node)
+  const slot = requireSlot(node, '.hcms-array-items', tpl, pathArr)
   const [, itemShape] = rule
   const items = Array.isArray(data) ? data : []
   items.forEach((itemData, i) => {
@@ -117,11 +124,12 @@ function buildScalarArray(rule, pathArr, data, doc) {
   if (!tpl) throw new Error(`hypercms: missing template for scalar-array at "${pathArr.join('.')}"`)
   const node = cloneTemplate(tpl, doc)
   stampPath(node, pathArr)
+  stampContainerField(node, lastKey(pathArr))
   setLabel(node, lastKey(pathArr))
   copyArrayConstraintAttrs(node, tpl)
   wireSortable(node, tpl, pathArr)
 
-  const slot = findItemsSlot(node)
+  const slot = requireSlot(node, '.hcms-array-items', tpl, pathArr)
   const items = Array.isArray(data) ? data : []
   items.forEach((itemValue, i) => {
     const itemNode = buildScalarArrayItem([...pathArr, i], itemValue, doc)
@@ -175,10 +183,24 @@ function stampScalarField(node, key) {
     if (!node.getAttribute('data-hcms-field')) node.setAttribute('data-hcms-field', targetKey)
     return
   }
-  const field = node.querySelector('[data-hcms-field]')
-  if (field && !field.getAttribute('data-hcms-field')) {
-    field.setAttribute('data-hcms-field', targetKey)
-  }
+  // Stamp every descendant input that's marked as a field but missing its key
+  // (radio groups have multiple inputs sharing the same key).
+  const fields = node.querySelectorAll ? node.querySelectorAll('[data-hcms-field]') : []
+  fields.forEach((field) => {
+    if (!field.getAttribute('data-hcms-field')) field.setAttribute('data-hcms-field', targetKey)
+  })
+}
+
+// Stamp data-hcms-field on the WRAPPING container so engine selectors can
+// scope by key (e.g. nested arrays sharing a terminal name). The leaf input's
+// data-hcms-field carries the same key — form-rules selectors use tag-specific
+// qualifiers (`input[data-hcms-field=...]`) so the container doesn't shadow.
+function stampContainerField(node, key) {
+  if (key == null || key === '' || !node.setAttribute) return
+  // Don't overwrite an existing data-hcms-field attribute (e.g. when the
+  // template author already stamped it deliberately).
+  if (node.hasAttribute?.('data-hcms-field')) return
+  node.setAttribute('data-hcms-field', String(key))
 }
 
 function setLabel(node, key) {
@@ -190,10 +212,6 @@ function setLabel(node, key) {
     const t = el.textContent || ''
     if (t.trim() === '') el.textContent = humanize(String(key))
   })
-}
-
-function findItemsSlot(node) {
-  return node.querySelector('.hcms-array-items') || node
 }
 
 function copyArrayConstraintAttrs(node, tpl) {
@@ -208,17 +226,22 @@ function copyArrayConstraintAttrs(node, tpl) {
 function applyConstraintVisibility(arrayEl) {
   const slot = arrayEl.querySelector ? arrayEl.querySelector('.hcms-array-items') : null
   if (!slot) return
-  const items = slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]')
+  const items = Array.from(slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]'))
   const count = items.length
   const max = readIntAttr(arrayEl, 'data-hcms-max-items')
   const min = readIntAttr(arrayEl, 'data-hcms-min-items')
   const noAdd = arrayEl.hasAttribute('data-hcms-no-add')
   const noRemove = arrayEl.hasAttribute('data-hcms-no-remove')
+  const noReorder = arrayEl.hasAttribute('data-hcms-no-reorder')
   const addBtn = arrayEl.querySelector('[data-hcms-action="add"]')
   if (addBtn) addBtn.hidden = noAdd || (max != null && count >= max)
-  items.forEach((item) => {
+  items.forEach((item, i) => {
     const rm = item.querySelector('[data-hcms-action="remove"]')
     if (rm) rm.hidden = noRemove || (min != null && count <= min)
+    const up = item.querySelector('[data-hcms-action="move-up"]')
+    if (up) up.hidden = noReorder || i === 0
+    const dn = item.querySelector('[data-hcms-action="move-down"]')
+    if (dn) dn.hidden = noReorder || i === count - 1
   })
 }
 
@@ -246,9 +269,36 @@ function lastKey(pathArr) {
 }
 
 function populateScalarValue(node, value) {
-  const target = node.matches && node.matches('[data-hcms-field]') ? node : node.querySelector('[data-hcms-field]')
-  if (!target) return
-  writeValue(target, value)
+  // Radio groups have multiple <input data-hcms-field>s; writeValue handles
+  // each radio individually (checks against its `value`). Write to ALL leaf
+  // fields under the wrapper, skipping the wrapper itself if it happens to
+  // carry data-hcms-field too.
+  const targets = collectLeafFields(node)
+  if (targets.length === 0) return
+  for (const t of targets) writeValue(t, value)
+}
+
+function collectLeafFields(node) {
+  if (!node) return []
+  const out = []
+  // The node itself is a leaf only if it's a recognized leaf tag (input,
+  // textarea, select, img, a, or contenteditable). Container shapes — even
+  // shape="scalar" wrappers — have child inputs we should target instead.
+  if (node.matches?.('[data-hcms-field]') && isLeafFieldEl(node)) {
+    out.push(node)
+  }
+  const descendants = node.querySelectorAll
+    ? node.querySelectorAll('input[data-hcms-field], textarea[data-hcms-field], select[data-hcms-field], img[data-hcms-field], a[data-hcms-field], [contenteditable][data-hcms-field]')
+    : []
+  descendants.forEach((d) => out.push(d))
+  return out
+}
+
+function isLeafFieldEl(el) {
+  const tag = (el.tagName || '').toUpperCase()
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'IMG' || tag === 'A') return true
+  if (el.hasAttribute?.('contenteditable')) return true
+  return false
 }
 
 function populateInlineFields(node, shape, data) {
@@ -298,7 +348,9 @@ function writeValue(el, value) {
     return
   }
   if (prop === 'checked') {
-    el.checked = Boolean(value)
+    // Coerce strings "true"/"false" the same way coerceBooleans does, so even
+    // raw page-extract values (which engine stringifies) don't flip false → true.
+    el.checked = value === true || value === 'true'
     return
   }
   if (prop) {

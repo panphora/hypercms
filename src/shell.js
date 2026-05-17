@@ -17,16 +17,25 @@ export function markStylesBundled(doc) {
   doc[SHELL_BUNDLED_FLAG] = true
 }
 
+let titleIdCounter = 0
+
 export function mountShell({ mountTo, side = 'right', overlay = false, showSaveButton = false, doc }) {
   ensureStyles(doc)
+  const titleId = `hcms-shell-title-${++titleIdCounter}`
   const root = doc.createElement('div')
   root.setAttribute('data-hcms-shell', '')
   root.setAttribute('save-ignore', '')
   root.setAttribute('tabindex', '-1')
+  // Dialog semantics: focus is trapped + body scrolling locked, so screen
+  // readers should announce this as a modal dialog with the shell title as
+  // its accessible name.
+  root.setAttribute('role', 'dialog')
+  root.setAttribute('aria-modal', 'true')
+  root.setAttribute('aria-labelledby', titleId)
   root.className = 'hcms-shell hcms-side-' + side + (overlay ? ' hcms-overlay' : '')
   root.innerHTML = `
     <header class="hcms-shell-header">
-      <h2 class="hcms-shell-title">Edit</h2>
+      <h2 class="hcms-shell-title" id="${titleId}">Edit</h2>
       <button type="button" class="hcms-shell-close" data-hcms-action="close" aria-label="Close">×</button>
     </header>
     <div class="hcms-shell-error" role="alert" hidden></div>

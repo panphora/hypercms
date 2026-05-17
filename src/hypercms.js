@@ -13,6 +13,7 @@ import {
   extractFormData,
   stableStringify,
   restampAllSiblings,
+  coerceBooleans,
 } from './events.js'
 import { mountShell, setShellStyles, markStylesBundled } from './shell.js'
 import { refreshForm, installObserver } from './refresh.js'
@@ -53,7 +54,7 @@ export function open(opts = {}) {
   injectDefaults(doc)
   warnUnmatchedTemplates(doc, pageRules)
   const formRules = deriveFormRules(pageRules, doc)
-  const data = engine.extract(pageRoot, pageRules)
+  const data = coerceBooleans(engine.extract(pageRoot, pageRules), pageRules)
 
   const shell = mountShell({
     mountTo: opts.mountTo || doc.body,
@@ -198,9 +199,22 @@ export const api = {
   },
   removeItem(itemPath) {
     if (!state.isOpen) throw new Error('hypercms: cms is not open')
-    const itemEl = state.ctx.formRoot.querySelector(`[data-hcms-path="${cssEscape(itemPath)}"]`)
+    const ctx = state.ctx
+    const pathArr = pathUtil.fromString(itemPath)
+    // Validate path: must be an array item — last segment is a non-negative
+    // integer, parent rule must be an array (object-array or scalar-array).
+    const lastSeg = pathArr[pathArr.length - 1]
+    if (typeof lastSeg !== 'number') {
+      throw new Error(`hypercms: removeItem requires an item path; "${itemPath}" is not an array index`)
+    }
+    const parentRule = pathUtil.getRuleAtPath(ctx.pageRules, pathArr.slice(0, -1))
+    const parentIsArray = Array.isArray(parentRule) || (typeof parentRule === 'string' && parentRule.endsWith('[]'))
+    if (!parentIsArray) {
+      throw new Error(`hypercms: removeItem requires an item path; parent of "${itemPath}" is not an array`)
+    }
+    const itemEl = ctx.formRoot.querySelector(`[data-hcms-path="${cssEscape(itemPath)}"]`)
     if (!itemEl) throw new Error(`hypercms: no element at path "${itemPath}"`)
-    evOnRemove(itemEl, state.ctx)
+    evOnRemove(itemEl, ctx)
   },
   refresh,
   _commit() {
@@ -213,13 +227,24 @@ export const api = {
 
 function findLeafField(formRoot, path) {
   const esc = cssEscape(path)
-  // Field may be the element with data-hcms-path itself (scalar template that
-  // is also the field) or a [data-hcms-field] inside that container, or an
-  // element stamped with the leaf path directly (inline path-stamped field).
-  return (
-    formRoot.querySelector(`[data-hcms-path="${esc}"][data-hcms-field]`) ||
-    formRoot.querySelector(`[data-hcms-path="${esc}"] [data-hcms-field]`)
-  )
+  // Prefer a tag-qualified leaf (input/textarea/select/img/a) — since v0.3
+  // stamps data-hcms-field on the wrapping container too, a bare attribute
+  // match would resolve to the container and lose the value write.
+  const leafSel =
+    `[data-hcms-path="${esc}"] input[data-hcms-field], ` +
+    `[data-hcms-path="${esc}"] textarea[data-hcms-field], ` +
+    `[data-hcms-path="${esc}"] select[data-hcms-field], ` +
+    `[data-hcms-path="${esc}"] img[data-hcms-field], ` +
+    `[data-hcms-path="${esc}"] a[data-hcms-field], ` +
+    `[data-hcms-path="${esc}"] [contenteditable][data-hcms-field], ` +
+    // Leaf is the path-stamped element itself (inline-stamped fields):
+    `input[data-hcms-path="${esc}"][data-hcms-field], ` +
+    `textarea[data-hcms-path="${esc}"][data-hcms-field], ` +
+    `select[data-hcms-path="${esc}"][data-hcms-field], ` +
+    `img[data-hcms-path="${esc}"][data-hcms-field], ` +
+    `a[data-hcms-path="${esc}"][data-hcms-field], ` +
+    `[contenteditable][data-hcms-path="${esc}"][data-hcms-field]`
+  return formRoot.querySelector(leafSel)
 }
 
 function writeFieldValue(el, value, formRoot, path) {

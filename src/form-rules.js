@@ -18,15 +18,41 @@ export function fieldPropertyFor(el) {
   return null
 }
 
+// Tag-specific scalar field selector. Returns a selector that uniquely
+// identifies the leaf input under data-hcms-field="key" — necessary because
+// data-hcms-field is now stamped on every keyed node (containers + leaves),
+// so a bare `[data-hcms-field="key"]` would match the wrapping container too.
 export function fieldSelectorFor(el, key) {
   const tag = (el.tagName || '').toUpperCase()
   const type = (el.getAttribute && el.getAttribute('type') || '').toLowerCase()
   const prop = fieldPropertyFor(el)
+  const tagSel = tagSelectorFor(tag, type)
+  const fieldSel = `${tagSel}[data-hcms-field="${cssEscape(key)}"]`
   if (tag === 'INPUT' && type === 'radio') {
-    return `[data-hcms-field="${key}"]:checked@value`
+    return `${fieldSel}:checked@value`
   }
-  if (prop) return `[data-hcms-field="${key}"]@${prop}`
-  return `[data-hcms-field="${key}"]`
+  if (prop) return `${fieldSel}@${prop}`
+  return fieldSel
+}
+
+function tagSelectorFor(tag, type) {
+  if (tag === 'INPUT') {
+    if (type) return `input[type="${type}"]`
+    return 'input'
+  }
+  if (tag === 'TEXTAREA') return 'textarea'
+  if (tag === 'SELECT') return 'select'
+  if (tag === 'IMG') return 'img'
+  if (tag === 'A') return 'a'
+  // Custom/unknown element (e.g. contenteditable div) — match by attribute
+  // and exclude container shapes so the wrapping object/array node doesn't
+  // shadow the leaf.
+  return ':not([data-hcms-shape="object"]):not([data-hcms-shape="object-array"]):not([data-hcms-shape="scalar-array"])'
+}
+
+function cssEscape(value) {
+  if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value)
+  return String(value).replace(/[^a-zA-Z0-9_\-.*]/g, (c) => '\\' + c)
 }
 
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
@@ -57,14 +83,16 @@ export function deriveFormRules(pageRules, doc) {
     const fieldKey = typeof key === 'string' ? key : '__value'
     const inlineEl = findInlineFieldEl(pathArr, fieldKey)
     if (inlineEl) return fieldSelectorFor(inlineEl, fieldKey)
-    return `[data-hcms-field="${fieldKey}"]@value`
+    // Default scalar template uses <input>; match input to skip the label wrapper
+    // (which also carries data-hcms-field="key").
+    return `input[data-hcms-field="${cssEscape(fieldKey)}"]@value`
   }
 
   function scalarArrayRule(pathArr) {
     // The engine's "selector[]" form is text-only; for an editable form we need
     // per-item @value reads, so emit the [selector, shape] form with a scalar
     // shape that targets the inner field's value property.
-    return [itemSelectorFor(pathArr, '[data-hcms-array-item]'), '[data-hcms-field]@value']
+    return [itemSelectorFor(pathArr, '[data-hcms-array-item]'), 'input[data-hcms-field]@value']
   }
 
   function objectArrayRule(rule, pathArr) {
@@ -85,20 +113,18 @@ export function deriveFormRules(pageRules, doc) {
   }
 
   // Build a selector that scopes item matching to the right array container.
-  // Without scoping, a nested object-array's `[data-hcms-card]` selector at
-  // the form root level matches ALL cards (top-level + nested), inflating
-  // extraction. We scope by the array container's data-hcms-path attribute:
-  //   - top-level path "foo" → `[data-hcms-path="foo"] > .hcms-array-items > ...`
-  //   - nested path with wildcards → `[data-hcms-path$=".lastKey"] > ...`
-  // The engine recurses INTO each item, so within an item ctx the suffix
-  // match resolves uniquely to that item's nested array.
+  // Top-level paths use exact data-hcms-path match. Nested paths use the
+  // stable data-hcms-field key (which the form-builder stamps on every keyed
+  // container) — this disambiguates sibling arrays that share a terminal key
+  // (e.g. products.*.primary.variants vs products.*.secondary.variants would
+  // both have a `variants` array with the same last segment).
   function itemSelectorFor(pathArr, itemTag) {
     const lastKey = pathArr.length ? pathArr[pathArr.length - 1] : ''
     const hasWildcard = pathArr.some((s) => s === '*')
     const pathStr = pathArr.join('.')
     const containerSel = hasWildcard
-      ? `[data-hcms-path$=".${lastKey}"]`
-      : `[data-hcms-path="${pathStr}"]`
+      ? `[data-hcms-field="${cssEscape(lastKey)}"]`
+      : `[data-hcms-path="${cssEscape(pathStr)}"]`
     return `${containerSel} > .hcms-array-items > ${itemTag}`
   }
 
@@ -118,7 +144,7 @@ export function deriveFormRules(pageRules, doc) {
       if (!tpl || !isInlineTemplate(tpl)) continue
       const content = tpl.content || tpl
       const el =
-        content.querySelector(`[data-hcms-field="${fieldKey}"]`) ||
+        content.querySelector(`[data-hcms-field="${cssEscape(fieldKey)}"]`) ||
         content.querySelector('[data-hcms-field]')
       if (el) return el
     }
