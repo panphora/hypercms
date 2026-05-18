@@ -35,6 +35,20 @@ export function fieldSelectorFor(el, key) {
   return fieldSel
 }
 
+// Build a per-item leaf selector with no key qualifier — used by scalar-array
+// rules where the leaf is scoped by the surrounding per-item context, so the
+// data-hcms-field key isn't needed (and items don't have a stable key anyway).
+function keylessFieldSelectorFor(el) {
+  const tag = (el.tagName || '').toUpperCase()
+  const type = (el.getAttribute && el.getAttribute('type') || '').toLowerCase()
+  const prop = fieldPropertyFor(el)
+  const tagSel = tagSelectorFor(tag, type)
+  const base = `${tagSel}[data-hcms-field]`
+  if (tag === 'INPUT' && type === 'radio') return `${base}:checked@value`
+  if (prop) return `${base}@${prop}`
+  return base
+}
+
 function tagSelectorFor(tag, type) {
   if (tag === 'INPUT') {
     if (type) return `input[type="${type}"]`
@@ -45,9 +59,11 @@ function tagSelectorFor(tag, type) {
   if (tag === 'IMG') return 'img'
   if (tag === 'A') return 'a'
   // Custom/unknown element (e.g. contenteditable div) — match by attribute
-  // and exclude container shapes so the wrapping object/array node doesn't
-  // shadow the leaf.
-  return ':not([data-hcms-shape="object"]):not([data-hcms-shape="object-array"]):not([data-hcms-shape="scalar-array"])'
+  // and exclude every container shape (scalar wrapper too) so the wrapping
+  // node never shadows the inner leaf. v0.3 stamps data-hcms-field on the
+  // scalar wrapper as well, so omitting `scalar` here would otherwise match
+  // the wrapper first and extract its full text instead of the leaf's.
+  return ':not([data-hcms-shape="scalar"]):not([data-hcms-shape="object"]):not([data-hcms-shape="object-array"]):not([data-hcms-shape="scalar-array"])'
 }
 
 function cssEscape(value) {
@@ -83,16 +99,23 @@ export function deriveFormRules(pageRules, doc) {
     const fieldKey = typeof key === 'string' ? key : '__value'
     const inlineEl = findInlineFieldEl(pathArr, fieldKey)
     if (inlineEl) return fieldSelectorFor(inlineEl, fieldKey)
-    // Default scalar template uses <input>; match input to skip the label wrapper
-    // (which also carries data-hcms-field="key").
+    // No path-bound override: look up the actual @scalar template (which
+    // sites may override globally with e.g. <textarea>) and derive the
+    // selector from its leaf tag instead of assuming <input>.
+    const shapeEl = findShapeFieldEl('@scalar', fieldKey)
+    if (shapeEl) return fieldSelectorFor(shapeEl, fieldKey)
     return `input[data-hcms-field="${cssEscape(fieldKey)}"]@value`
   }
 
   function scalarArrayRule(pathArr) {
     // The engine's "selector[]" form is text-only; for an editable form we need
     // per-item @value reads, so emit the [selector, shape] form with a scalar
-    // shape that targets the inner field's value property.
-    return [itemSelectorFor(pathArr, '[data-hcms-array-item]'), 'input[data-hcms-field]@value']
+    // shape that targets the inner field's value property. If the site
+    // overrides @scalar-array-item with a non-<input> leaf (textarea, etc.),
+    // derive the inner-leaf selector from the override.
+    const shapeEl = findShapeFieldEl('@scalar-array-item', null)
+    const itemSel = shapeEl ? keylessFieldSelectorFor(shapeEl) : 'input[data-hcms-field]@value'
+    return [itemSelectorFor(pathArr, '[data-hcms-array-item]'), itemSel]
   }
 
   function objectArrayRule(rule, pathArr) {
@@ -126,6 +149,22 @@ export function deriveFormRules(pageRules, doc) {
       ? `[data-hcms-field="${cssEscape(lastKey)}"]`
       : `[data-hcms-path="${cssEscape(pathStr)}"]`
     return `${containerSel} > .hcms-array-items > ${itemTag}`
+  }
+
+  // Look up the field leaf inside a shape-default template (@scalar,
+  // @scalar-array-item, etc.). Sites can override these globally, so the
+  // selector emitted must reflect the actual leaf tag/type, not assume input.
+  // Returns null if the template isn't found or has no [data-hcms-field].
+  function findShapeFieldEl(shapeKey, fieldKey) {
+    if (!doc) return null
+    const tpl = findTemplate(doc, shapeKey)
+    if (!tpl) return null
+    const content = tpl.content || tpl
+    if (fieldKey) {
+      const keyed = content.querySelector(`[data-hcms-field="${cssEscape(fieldKey)}"]`)
+      if (keyed) return keyed
+    }
+    return content.querySelector('[data-hcms-field]')
   }
 
   function findInlineFieldEl(pathArr, fieldKey) {

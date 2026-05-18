@@ -121,6 +121,71 @@ test('deriveFormRules: scalar-array emits [selector, @value] form', () => {
   assert.deepEqual(form.tags, ['[data-hcms-path="tags"] > .hcms-array-items > [data-hcms-array-item]', 'input[data-hcms-field]@value'])
 })
 
+// v0.4 fix #1 (P2): when a site globally overrides @scalar with a non-input
+// control (textarea), the fallback selector must reflect the actual leaf
+// tag — otherwise extractFormData returns null and the next write nulls the
+// page. Same logic applies to @scalar-array-item.
+test('deriveFormRules: globally-overridden @scalar emits selector matching the override tag', () => {
+  const doc = setupDoc(`<!DOCTYPE html><html><head>
+    <template data-hcms-tpl="@scalar">
+      <label class="hcms-field" data-hcms-shape="scalar">
+        <span data-hcms-label></span>
+        <textarea data-hcms-field></textarea>
+      </label>
+    </template>
+  </head><body></body></html>`)
+  injectDefaults(doc)
+  const form = deriveFormRules({ bio: '.b' }, doc)
+  assert.equal(form.bio, 'textarea[data-hcms-field="bio"]@value')
+})
+
+test('deriveFormRules: globally-overridden @scalar-array-item emits matching item selector', () => {
+  const doc = setupDoc(`<!DOCTYPE html><html><head>
+    <template data-hcms-tpl="@scalar-array-item">
+      <li class="hcms-scalar-array-item" data-hcms-array-item>
+        <textarea data-hcms-field></textarea>
+      </li>
+    </template>
+  </head><body></body></html>`)
+  injectDefaults(doc)
+  const form = deriveFormRules({ tags: 'li.tag[]' }, doc)
+  assert.equal(form.tags[1], 'textarea[data-hcms-field]@value')
+})
+
+// v0.4 fix #2 (P2): for custom/unknown leaf tags (e.g. contenteditable div)
+// the generic selector must exclude the scalar wrapper too. v0.3 stamped
+// data-hcms-field on the wrapper as well, so omitting `scalar` from the
+// exclusion list let the selector resolve to the wrapper first.
+test('deriveFormRules: contenteditable in scalar wrapper does not get shadowed by wrapper', () => {
+  const doc = setupDoc(`<!DOCTYPE html><html><head>
+    <template data-hcms-tpl="title">
+      <label class="hcms-field" data-hcms-shape="scalar">
+        <span data-hcms-label></span>
+        <div contenteditable data-hcms-field="title"></div>
+      </label>
+    </template>
+  </head><body></body></html>`)
+  injectDefaults(doc)
+  const form = deriveFormRules({ title: '.title' }, doc)
+  // The selector must NOT match the wrapper (data-hcms-shape="scalar"),
+  // only the contenteditable div inside.
+  assert.match(
+    form.title,
+    /:not\(\[data-hcms-shape="scalar"\]\).*data-hcms-field="title"/
+  )
+  // End-to-end: synthesize the form fragment and confirm querySelector
+  // resolves to the contenteditable, not the wrapper.
+  const wrapper = doc.createElement('label')
+  wrapper.setAttribute('data-hcms-shape', 'scalar')
+  wrapper.setAttribute('data-hcms-field', 'title')
+  wrapper.innerHTML = '<span>Title</span><div contenteditable data-hcms-field="title">Hello</div>'
+  const matched = wrapper.parentNode || (() => { const p = doc.createElement('div'); p.appendChild(wrapper); return p })()
+  const selector = form.title.replace(/@value$/, '')
+  const found = matched.querySelector(selector)
+  assert.ok(found, 'selector resolves')
+  assert.equal(found.tagName, 'DIV', 'leaf is the contenteditable div, not the wrapping label')
+})
+
 test('deriveFormRules: inline template overrides default selector', () => {
   const doc = setupDoc(`<!DOCTYPE html><html><head>
     <template data-hcms-tpl="products.*">

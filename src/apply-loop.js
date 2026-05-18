@@ -92,13 +92,18 @@ function resolveContainerByPath(pageRoot, pageRules, arrPath) {
     const sub = rule[key]
     if (sub == null) return null
     if (i === arrPath.length - 1) {
-      // Final step: the array's selector resolves to the container.
+      // Final step: the array's selector resolves to ITEMS, not the
+      // container. Walk to the items' shared parent so the snapshot covers
+      // the whole list (cards/scalars siblings). Without this, an object
+      // array's selector like `.product` returns the first item, and
+      // rollback restores only that item's children — leaving any earlier
+      // list-level insert/reorder mutated.
       if (Array.isArray(sub)) {
         const [selector] = sub
-        return ctx.querySelector?.(selector) || null
+        const first = ctx.querySelector?.(selector)
+        return first?.parentElement || null
       }
       if (typeof sub === 'string' && sub.endsWith('[]')) {
-        // Scalar array's container is the parent element of the matched items.
         const selector = sub.slice(0, -2)
         const first = ctx.querySelector?.(selector)
         return first?.parentElement || null
