@@ -1,10 +1,11 @@
 import { engine } from 'hyper-html-api'
 import { buildForm } from './form-builder.js'
 import { morphForm } from './morph.js'
-import { withoutShell } from './shell-isolation.js'
 import { injectDefaults } from './templates.js'
 import { deriveFormRules } from './form-rules.js'
 import { coerceBooleans } from './events.js'
+
+const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 
 export function refreshForm(ctx) {
   // Re-read rules tag every refresh so a livesync-replaced rules tag is picked up.
@@ -21,9 +22,7 @@ export function refreshForm(ctx) {
   ctx.formRules = deriveFormRules(ctx.pageRules, ctx.doc)
 
   const newData = coerceBooleans(
-    withoutShell(ctx.pageRoot, ctx.shellRoot, (root) =>
-      engine.extract(root, ctx.pageRules)
-    ),
+    engine.extract(ctx.pageRoot, ctx.pageRules, ENGINE_OPTS),
     ctx.pageRules
   )
   const fragment = buildForm({
@@ -37,38 +36,18 @@ export function refreshForm(ctx) {
   if (ctx.updateFingerprint) ctx.updateFingerprint()
 }
 
-export function installObserver({ pageRoot, doc, debounce = 100, onRefresh, shellRoot }) {
-  let paused = 0
+export function installObserver({ debounce = 100, onRefresh }) {
   const M = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.Mutation) || null
-  if (M && typeof M.onAnyChange === 'function') {
-    const unsub = M.onAnyChange({ debounce }, () => {
-      if (paused > 0) return
-      onRefresh()
-    })
-    return {
-      unsubscribe: typeof unsub === 'function' ? unsub : () => {},
-      pause() { paused++ },
-      resume() { paused = Math.max(0, paused - 1) },
-    }
+  if (!M || typeof M.onAnyChange !== 'function') {
+    throw new Error('hypercms: window.hyperclay.Mutation is required. Load hyperclayjs (or just the mutation utility) before initializing hypercms.')
   }
-
-  let timer = null
-  const observer = new (doc.defaultView || globalThis).MutationObserver((mutations) => {
+  let paused = 0
+  const unsub = M.onAnyChange({ debounce }, () => {
     if (paused > 0) return
-    const relevant = mutations.some((m) => {
-      const t = m.target
-      if (!t || !t.closest) return true
-      return !t.closest('[data-hcms-shell]')
-    })
-    if (!relevant) return
-    clearTimeout(timer)
-    timer = setTimeout(() => {
-      try { onRefresh() } catch (err) { console.error('hypercms: refresh failed', err) }
-    }, debounce)
+    onRefresh()
   })
-  observer.observe(pageRoot, { childList: true, attributes: true, subtree: true, characterData: true })
   return {
-    unsubscribe() { clearTimeout(timer); observer.disconnect() },
+    unsubscribe: typeof unsub === 'function' ? unsub : () => {},
     pause() { paused++ },
     resume() { paused = Math.max(0, paused - 1) },
   }

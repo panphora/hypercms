@@ -32,7 +32,26 @@ export function loadPage(html) {
       try { globalThis[k] = v } catch {}
     }
   }
+  // hypercms requires window.hyperclay.Mutation. In tests we don't exercise
+  // page-change-driven refresh, so a stub that satisfies the API contract is
+  // enough. Tests that want to trigger refresh call cms.refresh() directly.
+  installMutationStub(dom.window)
   return dom
+}
+
+function installMutationStub(win) {
+  const stub = {
+    onAnyChange: (_opts, _callback) => () => {},
+    onAddOrRemove: (_opts, _callback) => () => {},
+    onAddElement: (_opts, _callback) => () => {},
+    onRemoveElement: (_opts, _callback) => () => {},
+    onAttribute: (_opts, _callback) => () => {},
+    pause() {},
+    resume() {},
+  }
+  win.hyperclay = win.hyperclay || {}
+  win.hyperclay.Mutation = stub
+  globalThis.hyperclay = win.hyperclay
 }
 
 export function reset(dom) {

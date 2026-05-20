@@ -14,7 +14,18 @@ function loadPage(html) {
       try { globalThis[k] = v } catch {}
     }
   }
+  installMutationStub(dom.window)
   return dom
+}
+
+function installMutationStub(win) {
+  const noop = () => () => {}
+  win.hyperclay = win.hyperclay || {}
+  win.hyperclay.Mutation = {
+    onAnyChange: noop, onAddOrRemove: noop, onAddElement: noop,
+    onRemoveElement: noop, onAttribute: noop,
+    pause() {}, resume() {},
+  }
 }
 
 test('addItem on empty list shows seed-item error message', () => {

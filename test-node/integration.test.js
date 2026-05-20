@@ -19,6 +19,17 @@ function exposeJsdomGlobals(win) {
       try { globalThis[k] = v } catch {}
     }
   }
+  installMutationStub(win)
+}
+
+function installMutationStub(win) {
+  const noop = () => () => {}
+  win.hyperclay = win.hyperclay || {}
+  win.hyperclay.Mutation = {
+    onAnyChange: noop, onAddOrRemove: noop, onAddElement: noop,
+    onRemoveElement: noop, onAttribute: noop,
+    pause() {}, resume() {},
+  }
 }
 
 const FIXTURE = `<!DOCTYPE html><html><head></head><body>

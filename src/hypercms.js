@@ -54,7 +54,7 @@ export function open(opts = {}) {
   injectDefaults(doc)
   warnUnmatchedTemplates(doc, pageRules)
   const formRules = deriveFormRules(pageRules, doc)
-  const data = coerceBooleans(engine.extract(pageRoot, pageRules), pageRules)
+  const data = coerceBooleans(engine.extract(pageRoot, pageRules, { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }), pageRules)
 
   const shell = mountShell({
     mountTo: opts.mountTo || doc.body,
@@ -101,10 +101,7 @@ export function open(opts = {}) {
   ctx.updateFingerprint()
 
   ctx.observerHandle = installObserver({
-    pageRoot,
-    doc,
     onRefresh: () => refreshForm(ctx),
-    shellRoot: shell.root,
   })
 
   // Wire global sortable callback to current ctx (replaced by close()).

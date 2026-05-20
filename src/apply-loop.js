@@ -1,11 +1,13 @@
 import { engine } from 'hyper-html-api'
-import { withoutShell } from './shell-isolation.js'
 import { fromString as pathFromString, getRuleAtPath } from './path.js'
 
-// Both scalar and structural applies run through withoutShell so the engine
-// never sees the form's own DOM. Scalar applies skip snapshot — string user
-// input can't produce a ShapeMismatch and the focused input must survive
-// every keystroke.
+const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
+
+// Engine reads/writes against pageRoot pass skip + templateAttr so the
+// engine never traverses into the form's own DOM, and so [cms-template]
+// nodes are treated as seed templates (not real data). Scalar applies skip
+// snapshot — string user input can't produce a ShapeMismatch and the focused
+// input must survive every keystroke.
 //
 // Structural applies (add/remove/reorder) can hit EmptyListInsert and other
 // engine errors. We snapshot just the affected array container's slot so
@@ -17,7 +19,7 @@ export function applyWithRollback(pageRoot, pageRules, newData, options = {}) {
   try {
     if (!structural) {
       try {
-        withoutShell(pageRoot, shellRoot, (root) => engine.apply(root, pageRules, newData))
+        engine.apply(pageRoot, pageRules, newData, ENGINE_OPTS)
         return { ok: true }
       } catch (err) {
         return { ok: false, error: err }
@@ -31,7 +33,7 @@ export function applyWithRollback(pageRoot, pageRules, newData, options = {}) {
     const subtreeSnapshot = target ? captureChildren(target) : null
     const pageSnapshot = target ? null : captureNonShellSnapshot(pageRoot, shellRoot)
     try {
-      withoutShell(pageRoot, shellRoot, (root) => engine.apply(root, pageRules, newData))
+      engine.apply(pageRoot, pageRules, newData, ENGINE_OPTS)
       return { ok: true }
     } catch (err) {
       if (subtreeSnapshot) {

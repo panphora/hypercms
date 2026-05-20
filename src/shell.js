@@ -46,8 +46,8 @@ export function mountShell({ mountTo, side = 'right', overlay = false, showSaveB
   `
 
   // mountTo may be a nested element inside pageRoot. Use it as-is for the
-  // visual hierarchy; the shell-isolation walk-up in apply-loop/refresh will
-  // detach the correct ancestor when needed.
+  // visual hierarchy; engine reads/writes pass { skip: '[data-hcms-shell]' }
+  // so the engine never traverses into the form regardless of where it's mounted.
   const host = mountTo || doc.body
   host.appendChild(root)
 

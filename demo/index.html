@@ -173,6 +173,7 @@
       <div class="variants">
         <div class="variant"><strong class="variant-label">Small</strong> — <em class="variant-stock">12</em> (qty <em class="variant-qty">100</em>)</div>
         <div class="variant"><strong class="variant-label">Large</strong> — <em class="variant-stock">3</em> (qty <em class="variant-qty">25</em>)</div>
+        <div class="variant" cms-template hidden><strong class="variant-label"></strong> — <em class="variant-stock"></em> (qty <em class="variant-qty"></em>)</div>
       </div>
     </div>
     <div class="product">
@@ -180,6 +181,14 @@
       <p>$<span class="product-price">19.99</span></p>
       <div class="variants">
         <div class="variant"><strong class="variant-label">Default</strong> — <em class="variant-stock">8</em> (qty <em class="variant-qty">50</em>)</div>
+        <div class="variant" cms-template hidden><strong class="variant-label"></strong> — <em class="variant-stock"></em> (qty <em class="variant-qty"></em>)</div>
+      </div>
+    </div>
+    <div class="product" cms-template hidden>
+      <h3 class="product-name"></h3>
+      <p>$<span class="product-price"></span></p>
+      <div class="variants">
+        <div class="variant" cms-template hidden><strong class="variant-label"></strong> — <em class="variant-stock"></em> (qty <em class="variant-qty"></em>)</div>
       </div>
     </div>
   </div>
@@ -205,10 +214,17 @@
 
 <script src="../dist/hypercms.min.js"></script>
 <script type="module">
+  // Load hyperclay's Mutation utility before initializing hypercms.
+  // It auto-installs onto window.hyperclay.Mutation as a side effect of the import.
+  // hyperclayjs-mutation.js is a symlink to ../../hyperclayjs/src/utilities/mutation.js
+  // (http-server only serves files under hypercms/, so we expose it via symlink).
+  await import('./hyperclayjs-mutation.js')
+
   // dist bundle creates `window.hypercms = { cms }` IIFE.
   const cms = window.hypercms.cms
   window.cms = cms
-  window.hyperclay = { hypercms: cms }
+  window.hyperclay = window.hyperclay || {}
+  window.hyperclay.hypercms = cms
 
   const log = document.getElementById('event-log')
   function record(name, detail) {
