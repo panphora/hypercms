@@ -24,7 +24,7 @@ export function mountShell({ mountTo, side = 'right', overlay = false, showSaveB
   const titleId = `hcms-shell-title-${++titleIdCounter}`
   const root = doc.createElement('div')
   root.setAttribute('data-hcms-shell', '')
-  root.setAttribute('save-ignore', '')
+  root.setAttribute('save-remove', '')
   root.setAttribute('tabindex', '-1')
   // Dialog semantics: focus is trapped + body scrolling locked, so screen
   // readers should announce this as a modal dialog with the shell title as
@@ -85,6 +85,7 @@ function ensureStyles(doc) {
   if (cssText) {
     const style = doc.createElement('style')
     style.id = SHELL_STYLE_ID
+    style.setAttribute('save-remove', '')
     style.textContent = cssText
     ;(doc.head || doc.documentElement).appendChild(style)
     styledDocs.add(doc)
@@ -99,6 +100,7 @@ function ensureStyles(doc) {
     const link = doc.createElement('link')
     link.rel = 'stylesheet'
     link.id = SHELL_STYLE_ID
+    link.setAttribute('save-remove', '')
     link.href = href
     ;(doc.head || doc.documentElement).appendChild(link)
     styledDocs.add(doc)

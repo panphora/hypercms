@@ -15,6 +15,7 @@ const DEFAULT_TEMPLATES = {
     <label class="hcms-field" data-hcms-shape="scalar">
       <span class="hcms-label" data-hcms-label></span>
       <input class="hcms-input" data-hcms-field />
+      <div class="hcms-error" hidden></div>
     </label>
   `,
   '@object': `
@@ -29,6 +30,7 @@ const DEFAULT_TEMPLATES = {
         <h3 class="hcms-array-title" data-hcms-label></h3>
       </header>
       <ul class="hcms-array-items"></ul>
+      <div class="hcms-error" hidden></div>
       <button type="button" class="hcms-add" data-hcms-action="add">+ Add</button>
     </section>
   `,
@@ -47,6 +49,7 @@ const DEFAULT_TEMPLATES = {
         <h3 class="hcms-array-title" data-hcms-label></h3>
       </header>
       <div class="hcms-array-items"></div>
+      <div class="hcms-error" hidden></div>
       <button type="button" class="hcms-add" data-hcms-action="add">+ Add</button>
     </section>
   `,
@@ -72,6 +75,7 @@ export function injectDefaults(doc) {
     if (findTemplate(doc, key)) continue
     const tpl = doc.createElement('template')
     tpl.setAttribute('data-hcms-tpl', key)
+    tpl.setAttribute('save-remove', '')
     tpl.innerHTML = DEFAULT_TEMPLATES[key].trim()
     head.appendChild(tpl)
   }

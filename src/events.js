@@ -185,7 +185,8 @@ export function commit(newData, info, ctx) {
     ctx.dispatch?.('hcms:change', { data: newData, path: info.path, structural: !!info.structural })
     ctx.onChange?.(newData, info)
   } else {
-    setError(ctx, formatError(result.error))
+    const { message, path: errorPath } = formatError(result.error, info.path)
+    setError(ctx, message, errorPath)
     ctx.dispatch?.('hcms:error', { error: result.error, attemptedData: newData })
     ctx.onError?.(result.error)
   }
@@ -227,27 +228,70 @@ export function coerceBooleans(data, rules) {
 
 export { stableStringify }
 
-function setError(ctx, message) {
-  if (!ctx.errorEl) return
-  if (message) {
-    ctx.errorEl.textContent = message
-    ctx.errorEl.hidden = false
-  } else {
+// Errors render inline when we can match a path to a slot in the form (a `.hcms-error`
+// direct child of the path's container — added by the default scalar / array templates).
+// Custom templates that omit the slot, and path-less errors, fall back to the global banner.
+function setError(ctx, message, path) {
+  ctx.lastError = message ? { message, path } : null
+  applyErrorState(ctx)
+}
+
+// Re-apply ctx.lastError to the DOM. Exported so refreshForm can call this
+// after morphForm rebuilds the form — the morph wipes inline error slots
+// (they're inside the form), so we restore them post-morph.
+export function applyErrorState(ctx) {
+  clearInlineErrors(ctx)
+  if (ctx.errorEl) {
     ctx.errorEl.textContent = ''
     ctx.errorEl.hidden = true
   }
+  if (!ctx.lastError) return
+  const { message, path } = ctx.lastError
+
+  if (path != null && path !== '') {
+    const target = findInlineErrorSlot(ctx.formRoot, path)
+    if (target) {
+      target.textContent = message
+      target.hidden = false
+      return
+    }
+  }
+
+  if (ctx.errorEl) {
+    ctx.errorEl.textContent = message
+    ctx.errorEl.hidden = false
+  }
 }
 
-function formatError(err) {
-  if (!err) return 'unknown error'
+function clearInlineErrors(ctx) {
+  if (!ctx.formRoot) return
+  for (const el of ctx.formRoot.querySelectorAll('.hcms-error')) {
+    el.textContent = ''
+    el.hidden = true
+  }
+}
+
+function findInlineErrorSlot(formRoot, path) {
+  if (!formRoot) return null
+  const esc = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(path) : path.replace(/[^a-zA-Z0-9_\-.*]/g, (c) => '\\' + c)
+  const container = formRoot.querySelector(`[data-hcms-path="${esc}"]`)
+  if (!container) return null
+  for (const child of container.children) {
+    if (child.classList && child.classList.contains('hcms-error')) return child
+  }
+  return null
+}
+
+function formatError(err, fallbackPath) {
+  if (!err) return { message: 'unknown error', path: fallbackPath }
   if (err.name === 'EmptyListInsert') {
-    return 'This list has no items to use as a template. Add a hidden seed item directly in the HTML first.'
+    return { message: 'Add a seed item in HTML first.', path: fallbackPath }
   }
   if (err.name === 'ShapeMismatch') {
     const first = err.mismatches?.[0]
-    if (first) return `Shape mismatch at "${first.path}": expected ${first.expected}, got ${first.got}`
+    if (first) return { message: `Shape mismatch: expected ${first.expected}, got ${first.got}`, path: first.path }
   }
-  return err.message || String(err)
+  return { message: err.message || String(err), path: fallbackPath }
 }
 
 function ruleAt(rules, pathArr) {

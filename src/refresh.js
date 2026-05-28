@@ -3,7 +3,7 @@ import { buildForm } from './form-builder.js'
 import { morphForm } from './morph.js'
 import { injectDefaults } from './templates.js'
 import { deriveFormRules } from './form-rules.js'
-import { coerceBooleans } from './events.js'
+import { coerceBooleans, applyErrorState } from './events.js'
 
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 
@@ -32,6 +32,10 @@ export function refreshForm(ctx) {
     doc: ctx.doc,
   })
   morphForm(ctx.formRoot, fragment)
+  // morphForm rebuilds the form structure; inline error slots get wiped. Re-apply
+  // the last error state so error messages survive across observer-driven refreshes
+  // (e.g., the rollback after a failed add).
+  applyErrorState(ctx)
   // Update fingerprint so subsequent commits against the new page state compare correctly.
   if (ctx.updateFingerprint) ctx.updateFingerprint()
 }
