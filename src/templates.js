@@ -22,6 +22,7 @@ const DEFAULT_TEMPLATES = {
     <section class="hcms-object" data-hcms-shape="object">
       <h3 class="hcms-object-title" data-hcms-label></h3>
       <div class="hcms-object-fields"></div>
+      <div class="hcms-error" hidden></div>
     </section>
   `,
   '@scalar-array': `
@@ -41,6 +42,7 @@ const DEFAULT_TEMPLATES = {
       <button type="button" class="hcms-move hcms-move-up hcms-sr-only" data-hcms-action="move-up" aria-label="Move up">↑</button>
       <button type="button" class="hcms-move hcms-move-down hcms-sr-only" data-hcms-action="move-down" aria-label="Move down">↓</button>
       <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove">x</button>
+      <div class="hcms-error" hidden></div>
     </li>
   `,
   '@object-array': `
@@ -62,6 +64,7 @@ const DEFAULT_TEMPLATES = {
         <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove">x</button>
       </header>
       <div class="hcms-card-fields"></div>
+      <div class="hcms-error" hidden></div>
     </article>
   `,
 }

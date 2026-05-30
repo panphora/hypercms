@@ -6,6 +6,46 @@ import { scaffold } from './scaffold.js'
 
 const BOUND = new WeakSet()
 
+// Wraps a structural apply in the pause-before / commit-on-success pattern.
+// Pauses the undo recorder, runs fn, then either commits the captured
+// records (if the apply succeeded) or discards them (if it failed). Either
+// way, the undo stack only ever contains successful applies — never an
+// apply+rollback no-op pair.
+//
+// No-op pass-through when window.hyperclay.undo isn't loaded.
+export function commitWithUndo(label, fn) {
+  const u = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.undo) || null
+  if (!u) return fn()
+  u.pause()
+  try {
+    const result = fn()
+    if (result && result.ok) {
+      u.commitCaptured(label)
+    } else {
+      u.discardCaptured()
+    }
+    return result
+  } finally {
+    u.resume()
+  }
+}
+
+// Runs fn with the undo recorder paused and its captured records discarded, so
+// editor-chrome-only DOM mutations (e.g. the body class toggles the shell adds
+// on mount/unmount) never enter the undo stack. No-op pass-through when undo
+// isn't loaded.
+export function suppressUndo(fn) {
+  const u = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.undo) || null
+  if (!u) return fn()
+  u.pause()
+  try {
+    return fn()
+  } finally {
+    u.discardCaptured()
+    u.resume()
+  }
+}
+
 export function bindEvents(ctx) {
   const { formRoot } = ctx
   if (!formRoot || BOUND.has(formRoot)) return
@@ -111,7 +151,9 @@ export function onAdd(arrayPath, ctx) {
   })
   slot.appendChild(itemNode)
   updateArrayButtonsVisibility(arrayEl)
-  commit(extractFormData(ctx), { path: arrayPath, structural: true }, ctx)
+  return commitWithUndo(`Add ${arrayPath}`, () =>
+    commit(extractFormData(ctx), { path: arrayPath, structural: true }, ctx)
+  )
 }
 
 export function onMove(itemEl, direction, ctx) {
@@ -139,7 +181,9 @@ export function onMove(itemEl, direction, ctx) {
     const newAction = itemEl.querySelector(`[data-hcms-action="${direction < 0 ? 'move-up' : 'move-down'}"]`)
     newAction?.focus?.()
   }
-  commit(extractFormData(ctx), { path: arrayEl.getAttribute('data-hcms-path') || '', structural: true }, ctx)
+  return commitWithUndo(`Reorder ${arrayEl.getAttribute('data-hcms-path') || ''}`, () =>
+    commit(extractFormData(ctx), { path: arrayEl.getAttribute('data-hcms-path') || '', structural: true }, ctx)
+  )
 }
 
 export function onRemove(itemEl, ctx) {
@@ -159,7 +203,9 @@ export function onRemove(itemEl, ctx) {
   // After removal, re-stamp sibling paths to keep indices contiguous.
   if (parent) restampSiblingPaths(parent)
   if (arrayEl) updateArrayButtonsVisibility(arrayEl)
-  commit(extractFormData(ctx), { path, structural: true }, ctx)
+  return commitWithUndo(`Remove ${path}`, () =>
+    commit(extractFormData(ctx), { path, structural: true }, ctx)
+  )
 }
 
 export function onSave(ctx) {
@@ -181,12 +227,11 @@ export function commit(newData, info, ctx) {
   if (result.ok) {
     ctx.lastFingerprint = fingerprint
     ctx.lastData = newData
-    setError(ctx, '')
+    setError(ctx, null)
     ctx.dispatch?.('hcms:change', { data: newData, path: info.path, structural: !!info.structural })
     ctx.onChange?.(newData, info)
   } else {
-    const { message, path: errorPath } = formatError(result.error, info.path)
-    setError(ctx, message, errorPath)
+    setError(ctx, formatError(result.error, info.path))
     ctx.dispatch?.('hcms:error', { error: result.error, attemptedData: newData })
     ctx.onError?.(result.error)
   }
@@ -230,13 +275,15 @@ export { stableStringify }
 
 // Errors render inline when we can match a path to a slot in the form (a `.hcms-error`
 // direct child of the path's container — added by the default scalar / array templates).
-// Custom templates that omit the slot, and path-less errors, fall back to the global banner.
-function setError(ctx, message, path) {
-  ctx.lastError = message ? { message, path } : null
+// A single commit can produce multiple mismatches (ShapeMismatch carries an array); each one
+// tries to land at its own path. Custom templates that omit the slot, and path-less errors,
+// fall back to the global banner (joined when there's more than one).
+function setError(ctx, errors) {
+  ctx.lastErrors = errors && errors.length ? errors : null
   applyErrorState(ctx)
 }
 
-// Re-apply ctx.lastError to the DOM. Exported so refreshForm can call this
+// Re-apply ctx.lastErrors to the DOM. Exported so refreshForm can call this
 // after morphForm rebuilds the form — the morph wipes inline error slots
 // (they're inside the form), so we restore them post-morph.
 export function applyErrorState(ctx) {
@@ -245,20 +292,24 @@ export function applyErrorState(ctx) {
     ctx.errorEl.textContent = ''
     ctx.errorEl.hidden = true
   }
-  if (!ctx.lastError) return
-  const { message, path } = ctx.lastError
+  if (!ctx.lastErrors) return
 
-  if (path != null && path !== '') {
-    const target = findInlineErrorSlot(ctx.formRoot, path)
-    if (target) {
-      target.textContent = message
-      target.hidden = false
-      return
+  const unplaced = []
+  for (const { message, path } of ctx.lastErrors) {
+    if (path != null && path !== '') {
+      const target = findInlineErrorSlot(ctx.formRoot, path)
+      if (target) {
+        // Two errors at the same path concatenate into one slot, separated by a newline.
+        target.textContent = target.textContent ? `${target.textContent}\n${message}` : message
+        target.hidden = false
+        continue
+      }
     }
+    unplaced.push(message)
   }
 
-  if (ctx.errorEl) {
-    ctx.errorEl.textContent = message
+  if (unplaced.length && ctx.errorEl) {
+    ctx.errorEl.textContent = unplaced.join('\n')
     ctx.errorEl.hidden = false
   }
 }
@@ -273,25 +324,36 @@ function clearInlineErrors(ctx) {
 
 function findInlineErrorSlot(formRoot, path) {
   if (!formRoot) return null
-  const esc = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(path) : path.replace(/[^a-zA-Z0-9_\-.*]/g, (c) => '\\' + c)
-  const container = formRoot.querySelector(`[data-hcms-path="${esc}"]`)
-  if (!container) return null
-  for (const child of container.children) {
-    if (child.classList && child.classList.contains('hcms-error')) return child
+  // Walk up the path: try the exact match first, then trim the last segment, etc.
+  // Lets deep-path errors land at the nearest ancestor that has a slot — useful when
+  // engine paths go deeper than the form's stamped structure (e.g., migration data).
+  const segs = path.split('.')
+  while (segs.length > 0) {
+    const candidate = segs.join('.')
+    const esc = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(candidate) : candidate.replace(/[^a-zA-Z0-9_\-.*]/g, (c) => '\\' + c)
+    const container = formRoot.querySelector(`[data-hcms-path="${esc}"]`)
+    if (container) {
+      for (const child of container.children) {
+        if (child.classList && child.classList.contains('hcms-error')) return child
+      }
+    }
+    segs.pop()
   }
   return null
 }
 
 function formatError(err, fallbackPath) {
-  if (!err) return { message: 'unknown error', path: fallbackPath }
+  if (!err) return [{ message: 'unknown error', path: fallbackPath }]
   if (err.name === 'EmptyListInsert') {
-    return { message: 'Add a seed item in HTML first.', path: fallbackPath }
+    return [{ message: 'Add a seed item in HTML first.', path: fallbackPath }]
   }
-  if (err.name === 'ShapeMismatch') {
-    const first = err.mismatches?.[0]
-    if (first) return { message: `Shape mismatch: expected ${first.expected}, got ${first.got}`, path: first.path }
+  if (err.name === 'ShapeMismatch' && Array.isArray(err.mismatches) && err.mismatches.length) {
+    return err.mismatches.map((m) => ({
+      message: `Shape mismatch: expected ${m.expected}, got ${m.got}`,
+      path: m.path,
+    }))
   }
-  return { message: err.message || String(err), path: fallbackPath }
+  return [{ message: err.message || String(err), path: fallbackPath }]
 }
 
 function ruleAt(rules, pathArr) {

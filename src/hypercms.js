@@ -8,6 +8,8 @@ import { buildForm } from './form-builder.js'
 import {
   bindEvents,
   commit,
+  commitWithUndo,
+  suppressUndo,
   onAdd as evOnAdd,
   onRemove as evOnRemove,
   extractFormData,
@@ -44,10 +46,15 @@ export function open(opts = {}) {
   const doc = pageRoot.ownerDocument || (typeof document !== 'undefined' ? document : null)
   if (!doc) throw new Error('hypercms: no document available')
 
-  // The rules tag is typically in <head>, but pageRoot defaults to <body>.
-  // Look up the whole document so head-mounted rules tags are found.
-  const found = engine.findRulesIn(pageRoot) || engine.findRulesIn(doc.documentElement) || engine.findRulesIn(doc)
-  if (!found) throw new Error('hypercms: no rules tag found in page')
+  // Resolve rules via the union: an explicit rules object, a token string, or
+  // the default token "cms". findRules is document-scoped, so a head-mounted
+  // rules tag is found even though pageRoot defaults to <body>.
+  const source = opts.rules !== undefined ? opts.rules : 'cms'
+  const found = engine.findRules(doc, source)
+  if (!found) {
+    const what = typeof source === 'string' ? `data-rules-name~="${source}"` : 'the provided rules object'
+    throw new Error(`hypercms: no rules found for ${what}`)
+  }
   const pageRules = found.rules
   const rulesTagNode = found.tagNode
 
@@ -56,13 +63,16 @@ export function open(opts = {}) {
   const formRules = deriveFormRules(pageRules, doc)
   const data = coerceBooleans(engine.extract(pageRoot, pageRules, { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }), pageRules)
 
-  const shell = mountShell({
+  // Suppress undo around mountShell: it toggles chrome-only classes on
+  // document.body (hcms-open, etc.) which would otherwise land as undoable
+  // page edits. The shell subtree itself is already filtered via save-ignore.
+  const shell = suppressUndo(() => mountShell({
     mountTo: opts.mountTo || doc.body,
     side: opts.side || 'right',
     overlay: !!opts.overlay,
     showSaveButton: !!opts.showSaveButton,
     doc,
-  })
+  }))
 
   const ctx = {
     doc,
@@ -70,6 +80,7 @@ export function open(opts = {}) {
     pageRules,
     formRules,
     rulesTagNode,
+    rulesSource: source,
     formRoot: shell.formRoot,
     shellRoot: shell.root,
     errorEl: shell.errorEl,
@@ -134,7 +145,13 @@ function installGlobalSortableCommit(doc) {
     const ctx = globalCommitTarget.ctx
     if (!ctx) return
     restampAllSiblings(ctx.formRoot)
-    commit(extractFormData(ctx), { path: '', structural: true }, ctx)
+    // Route through commitWithUndo so a drag-reorder lands as a labeled
+    // 'Reorder' commit (not a generic idle 'Edit') and a failed apply's
+    // mutate+rollback is never recorded as a no-op commit. No-op pass-through
+    // when undo isn't loaded.
+    return commitWithUndo('Reorder', () =>
+      commit(extractFormData(ctx), { path: '', structural: true }, ctx)
+    )
   }
   if (typeof win.hypercmsCommit !== 'function') win.hypercmsCommit = hypercmsCommitFn
   // Also mirror to globalThis so non-window contexts (Node tests, workers)
@@ -151,7 +168,9 @@ export function close() {
   ctx.dispatch('hcms:close', null)
   ctx.observerHandle?.unsubscribe?.()
   ctx.detachEvents?.()
-  shell.destroy()
+  // destroy() removes the chrome-only body classes; suppress so the inverse
+  // class removal doesn't enter the undo stack either.
+  suppressUndo(() => shell.destroy())
   state.isOpen = false
   state.ctx = null
   state.shell = null
@@ -218,7 +237,9 @@ export const api = {
     if (!state.isOpen) return
     const ctx = state.ctx
     restampAllSiblings(ctx.formRoot)
-    commit(extractFormData(ctx), { path: '', structural: true }, ctx)
+    return commitWithUndo('Update', () =>
+      commit(extractFormData(ctx), { path: '', structural: true }, ctx)
+    )
   },
 }
 

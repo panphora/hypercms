@@ -25,6 +25,7 @@ export function mountShell({ mountTo, side = 'right', overlay = false, showSaveB
   const root = doc.createElement('div')
   root.setAttribute('data-hcms-shell', '')
   root.setAttribute('save-remove', '')
+  root.setAttribute('save-ignore', '')
   root.setAttribute('tabindex', '-1')
   // Dialog semantics: focus is trapped + body scrolling locked, so screen
   // readers should announce this as a modal dialog with the shell title as

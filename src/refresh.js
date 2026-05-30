@@ -8,11 +8,10 @@ import { coerceBooleans, applyErrorState } from './events.js'
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 
 export function refreshForm(ctx) {
-  // Re-read rules tag every refresh so a livesync-replaced rules tag is picked up.
-  const found =
-    engine.findRulesIn(ctx.pageRoot) ||
-    (ctx.doc.documentElement && engine.findRulesIn(ctx.doc.documentElement)) ||
-    engine.findRulesIn(ctx.doc)
+  // Re-resolve rules every refresh, source-aware: an object source returns the
+  // same literal (tagNode null); a token source re-resolves the tag so a
+  // livesync-replaced rules tag is picked up. Document-scoped via ctx.doc.
+  const found = engine.findRules(ctx.doc, ctx.rulesSource || 'cms')
   if (found) {
     ctx.pageRules = found.rules
     ctx.rulesTagNode = found.tagNode
