@@ -9,7 +9,7 @@ import { open, close, isOpen, api, refresh } from '../src/hypercms.js'
 test('refresh updates fingerprint so edits-back commit', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "title": ".title" }
     </script>
     <h1 class="title">First</h1>

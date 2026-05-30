@@ -33,7 +33,7 @@ function installMutationStub(win) {
 }
 
 const FIXTURE = `<!DOCTYPE html><html><head></head><body>
-  <script id="hyper-html-api" data-rules-version="1" type="application/json">
+  <script data-rules-name="cms" data-rules-version="1" type="application/json">
   {
     "title": ".title",
     "author": { "name": ".author-name" },
@@ -122,9 +122,48 @@ test('integration: close removes shell + body classes', () => {
 
 test('integration: open throws if no rules tag', () => {
   const dom = loadPage('<!DOCTYPE html><html><body></body></html>')
-  assert.throws(() => open(), /no rules tag/)
+  assert.throws(() => open(), /no rules found for data-rules-name~="cms"/)
   dom.window.close()
 })
+
+test('integration: open({ rules: object }) uses the literal rules', () => {
+  const dom = loadPage(
+    '<!DOCTYPE html><html><head></head><body><h1 class="title">Hello</h1></body></html>',
+  )
+  open({ rules: { title: '.title' } })
+  try {
+    const titleInput = document.querySelector('[data-hcms-path="title"] input')
+    assert.equal(titleInput.value, 'Hello')
+  } finally {
+    close()
+  }
+  dom.window.close()
+})
+
+test('integration: open({ rules: "token" }) throws when the token resolves nothing', () => {
+  // A literal object always resolves, so only a token (or omitted) source can
+  // fail to resolve. Assert a named token with no matching tag throws clearly.
+  const dom = loadPage('<!DOCTYPE html><html><body><h1 class="title">Hi</h1></body></html>')
+  assert.throws(() => open({ rules: 'nope' }), /no rules found for data-rules-name~="nope"/)
+  dom.window.close()
+})
+
+test('integration: open({ rules: "token" }) resolves a named tag', () => {
+  const dom = loadPage(
+    '<!DOCTYPE html><html><head>' +
+      '<script data-rules-name="custom" data-rules-version="1" type="application/json">{ "title": ".title" }</script>' +
+      '</head><body><h1 class="title">Named</h1></body></html>',
+  )
+  open({ rules: 'custom' })
+  try {
+    const titleInput = document.querySelector('[data-hcms-path="title"] input')
+    assert.equal(titleInput.value, 'Named')
+  } finally {
+    close()
+  }
+  dom.window.close()
+})
+
 
 test('integration: open warns on double-open', () => {
   const dom = loadPage(FIXTURE)

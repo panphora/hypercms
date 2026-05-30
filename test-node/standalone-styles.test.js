@@ -6,7 +6,7 @@ import { open, close, isOpen, installStyles } from '../src/hypercms.js'
 test('installStyles + open injects style tag', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">{ "t": ".t" }</script>
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">{ "t": ".t" }</script>
     <h1 class="t">x</h1>
   </body></html>`)
   try {
@@ -28,7 +28,7 @@ test('installStyles + open injects style tag', () => {
 test('per-document tracking: opening twice in same doc only injects one style tag', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">{ "t": ".t" }</script>
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">{ "t": ".t" }</script>
     <h1 class="t">x</h1>
   </body></html>`)
   try {

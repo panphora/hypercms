@@ -6,7 +6,7 @@ import { open, close, isOpen, api } from '../src/hypercms.js'
 test('setValue: rejects non-leaf object path', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "author": { "name": ".n", "bio": ".b" } }
     </script>
     <div class="author"><span class="n">A</span><span class="b">B</span></div>
@@ -23,7 +23,7 @@ test('setValue: rejects non-leaf object path', () => {
 test('setValue: rejects scalar-array path (not a leaf)', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">{ "tags": "li[]" }</script>
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">{ "tags": "li[]" }</script>
     <ul><li>a</li></ul>
   </body></html>`)
   open()
@@ -38,7 +38,7 @@ test('setValue: rejects scalar-array path (not a leaf)', () => {
 test('setValue: writes through to a checkbox field', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "published": ".p@data-pub" }
     </script>
     <template data-hcms-tpl="published">
@@ -67,7 +67,7 @@ test('setValue: writes through to a checkbox field', () => {
 test('removeItem: rejects scalar leaf path', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "title": ".t", "products": [".p", { "name": ".n" }] }
     </script>
     <h1 class="t">Hi</h1>
@@ -85,7 +85,7 @@ test('removeItem: rejects scalar leaf path', () => {
 test('removeItem: rejects whole-array path', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".p", { "name": ".n" }] }
     </script>
     <div><div class="p"><span class="n">A</span></div></div>
@@ -105,7 +105,7 @@ test('removeItem: rejects whole-array path', () => {
 test('setValue: writes to a scalar-array leaf by index', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">{ "tags": "li[]" }</script>
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">{ "tags": "li[]" }</script>
     <ul><li>alpha</li><li>beta</li></ul>
   </body></html>`)
   open()
@@ -128,7 +128,7 @@ test('setValue: writes to a scalar-array leaf by index', () => {
 test('setValue: writes through to img.src field', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "avatar": ".a@src" }
     </script>
     <template data-hcms-tpl="avatar">

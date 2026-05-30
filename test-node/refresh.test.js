@@ -33,7 +33,7 @@ function installMutationStub(win) {
 }
 
 const FIXTURE = `<!DOCTYPE html><html><body>
-  <script id="hyper-html-api" data-rules-version="1" type="application/json">
+  <script data-rules-name="cms" data-rules-version="1" type="application/json">
   { "title": ".title" }
   </script>
   <h1 class="title">Hello</h1>

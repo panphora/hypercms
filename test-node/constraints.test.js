@@ -14,7 +14,7 @@ test('max-items hides add button at the limit and blocks api.addItem', () => {
       </section>
     </template>
   </head><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div>
@@ -46,7 +46,7 @@ test('min-items hides remove buttons at the floor and blocks api.removeItem', ()
       </section>
     </template>
   </head><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div>
@@ -79,7 +79,7 @@ test('no-add / no-remove hide their respective buttons', () => {
       </section>
     </template>
   </head><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div>

@@ -9,7 +9,7 @@ import { open, close, isOpen, api } from '../src/hypercms.js'
 test('checkbox: round-trip preserves true and false', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "published": ".p@data-pub" }
     </script>
     <template data-hcms-tpl="published">
@@ -46,7 +46,7 @@ test('checkbox: round-trip preserves true and false', () => {
 test('checkbox: page state "false" opens unchecked (pre-coerce on extract)', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "published": ".p@data-pub" }
     </script>
     <template data-hcms-tpl="published">
@@ -71,7 +71,7 @@ test('checkbox: page state "false" opens unchecked (pre-coerce on extract)', () 
 test('checkbox: starts unchecked when data-pub absent', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "active": ".n@data-active" }
     </script>
     <template data-hcms-tpl="active">

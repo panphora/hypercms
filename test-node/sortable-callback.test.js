@@ -9,7 +9,7 @@ import { open, close, isOpen } from '../src/hypercms.js'
 test('sortable container has onsorted attribute pointing at a global callable', async () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div><div class="product"><span class="n">A</span></div></div>

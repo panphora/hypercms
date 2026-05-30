@@ -10,7 +10,7 @@ import { open, close, isOpen, api } from '../src/hypercms.js'
 test('keyboard move-down reorders items + restamps indices', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div>
@@ -42,7 +42,7 @@ test('keyboard move-down reorders items + restamps indices', () => {
 test('keyboard move buttons disabled at array boundaries', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div>
@@ -69,7 +69,7 @@ test('keyboard move buttons disabled at array boundaries', () => {
 test('reorder + _commit restamps indices contiguously', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div>

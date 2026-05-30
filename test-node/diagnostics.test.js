@@ -16,7 +16,7 @@ test('warns when template path does not match any rule', () => {
   const dom = loadPage(`<!DOCTYPE html><html><head>
     <template data-hcms-tpl="ghost.path"><div></div></template>
   </head><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">{ "title": ".title" }</script>
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">{ "title": ".title" }</script>
     <h1 class="title">x</h1>
   </body></html>`)
   const warnings = captureWarnings(() => open())
@@ -41,7 +41,7 @@ test('warns when inline template field is not in rule shape', () => {
       </div>
     </template>
   </head><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">{ "author": { "name": ".n" } }</script>
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">{ "author": { "name": ".n" } }</script>
     <div class="author"><span class="n">A</span></div>
   </body></html>`)
   const warnings = captureWarnings(() => open())

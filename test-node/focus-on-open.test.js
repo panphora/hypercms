@@ -6,7 +6,7 @@ import { open, close, isOpen } from '../src/hypercms.js'
 test('open: moves focus into shell', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">{ "title": ".title" }</script>
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">{ "title": ".title" }</script>
     <h1 class="title">x</h1>
     <button id="outside">outside</button>
   </body></html>`)
@@ -25,7 +25,7 @@ test('open: moves focus into shell', () => {
 test('close: restores focus to previously focused element', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">{ "title": ".title" }</script>
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">{ "title": ".title" }</script>
     <h1 class="title">x</h1>
     <button id="outside">outside</button>
   </body></html>`)

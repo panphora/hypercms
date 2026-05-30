@@ -13,7 +13,7 @@ import { open, close, isOpen, api, refresh } from '../src/hypercms.js'
 test('mountTo nested in wrapper alongside page content: refresh still sees page data', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "tags": "li[]" }
     </script>
     <div id="wrapper">
@@ -39,7 +39,7 @@ test('mountTo nested in wrapper alongside page content: refresh still sees page 
 test('mountTo nested under pageRoot still preserves shell on structural error', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div id="page">

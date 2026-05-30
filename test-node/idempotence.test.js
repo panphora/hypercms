@@ -8,7 +8,7 @@ import { open, close, isOpen, api } from '../src/hypercms.js'
 test('first setValue with unchanged value is a no-op', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">{ "title": ".title" }</script>
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">{ "title": ".title" }</script>
     <h1 class="title">Hello</h1>
   </body></html>`)
   open()

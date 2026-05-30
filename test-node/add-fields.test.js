@@ -10,7 +10,7 @@ import { open, close, isOpen, api } from '../src/hypercms.js'
 test('onAdd: new card has every field from item shape', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n", "price": ".p" }] }
     </script>
     <div><div class="product"><span class="n">a</span><span class="p">1</span></div></div>
@@ -37,7 +37,7 @@ test('onAdd: new card has every field from item shape', () => {
 test('onAdd: scalar-array gets an item with a field input', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">{ "tags": "li[]" }</script>
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">{ "tags": "li[]" }</script>
     <ul><li>a</li></ul>
   </body></html>`)
   open()

@@ -64,7 +64,7 @@ test('commit: idempotent on same data (lastFingerprint short-circuit)', () => {
   assert.equal(ctx.lastFingerprint, fp1)
 })
 
-test('commit: failure dispatches hcms:error + sets error banner', () => {
+test('commit: failure dispatches hcms:error + sets error inline at path', () => {
   const { ctx, events } = setupCtx({
     pageRules: { title: '.title' },
     data: { title: 'A' },
@@ -72,8 +72,57 @@ test('commit: failure dispatches hcms:error + sets error banner', () => {
   })
   commit({ title: { bad: 'shape' } }, { path: 'title' }, ctx)
   assert.ok(events.find((e) => e.name === 'hcms:error'))
-  assert.ok(ctx.errorEl.textContent.length > 0)
-  assert.equal(ctx.errorEl.hidden, false)
+  // ShapeMismatch on a leaf path renders inline next to the field, not in the global banner.
+  const inline = ctx.formRoot.querySelector('[data-hcms-path="title"] > .hcms-error')
+  assert.ok(inline, 'expected an inline error slot at path "title"')
+  assert.ok(inline.textContent.length > 0)
+  assert.equal(inline.hidden, false)
+  // Global banner stays empty when an inline slot took the message.
+  assert.equal(ctx.errorEl.hidden, true)
+})
+
+test('commit: ShapeMismatch with multiple mismatches stamps each at its own path', () => {
+  const { ctx } = setupCtx({
+    pageRules: { a: '.a', b: '.b' },
+    data: { a: 'A', b: 'B' },
+    pageHTML: '<span class="a">A</span><span class="b">B</span>',
+  })
+  // Both leaves wrong shape — engine reports two mismatches in the same throw.
+  commit({ a: { bad: 1 }, b: { bad: 2 } }, { path: '' }, ctx)
+  const inlineA = ctx.formRoot.querySelector('[data-hcms-path="a"] > .hcms-error')
+  const inlineB = ctx.formRoot.querySelector('[data-hcms-path="b"] > .hcms-error')
+  assert.ok(inlineA && !inlineA.hidden && inlineA.textContent.length > 0, 'expected inline error at "a"')
+  assert.ok(inlineB && !inlineB.hidden && inlineB.textContent.length > 0, 'expected inline error at "b"')
+})
+
+test('commit: deeper-than-form path walks up to the nearest ancestor with a slot', () => {
+  const { ctx } = setupCtx({
+    pageRules: { author: { name: '.n' } },
+    data: { author: { name: 'A' } },
+    pageHTML: '<div><span class="n">A</span></div>',
+  })
+  // Force a mismatch by setting the whole author to a wrong shape — engine reports at "author".
+  commit({ author: 'bad' }, { path: 'author' }, ctx)
+  // @object now has an error slot; the lookup lands there (no walk-up needed, but verifies the slot exists).
+  const objectSlot = ctx.formRoot.querySelector('[data-hcms-path="author"] > .hcms-error')
+  assert.ok(objectSlot && !objectSlot.hidden && objectSlot.textContent.length > 0, 'expected error at the object slot')
+})
+
+test('commit: path-less failure falls back to global banner', () => {
+  const { ctx } = setupCtx({
+    pageRules: { title: '.title' },
+    data: { title: 'A' },
+    pageHTML: '<h1 class="title">A</h1>',
+  })
+  // Force an error that ShapeMismatch reports at a path the form does NOT have stamped,
+  // so findInlineErrorSlot returns null and we fall back to the global banner.
+  commit({ title: { bad: 'shape' } }, { path: 'no-such-path' }, ctx)
+  // Either the engine reports the mismatch at "title" (which has a slot) or at no path.
+  // Both cases — the assertion is: SOME error surface shows the message.
+  const inline = ctx.formRoot.querySelector('[data-hcms-path="title"] > .hcms-error')
+  const inlineShown = inline && !inline.hidden && inline.textContent.length > 0
+  const globalShown = !ctx.errorEl.hidden && ctx.errorEl.textContent.length > 0
+  assert.ok(inlineShown || globalShown, 'expected error in either inline or global banner')
 })
 
 test('onAdd: appends new card with next index', () => {

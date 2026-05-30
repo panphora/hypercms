@@ -31,7 +31,7 @@ function installMutationStub(win) {
 test('addItem on empty list shows seed-item error message', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div id="list"></div>
@@ -52,7 +52,7 @@ test('addItem on empty list shows seed-item error message', () => {
 test('addItem on non-array path throws', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "title": ".title" }
     </script>
     <h1 class="title">x</h1>
@@ -69,7 +69,7 @@ test('addItem on non-array path throws', () => {
 test('setValue with unknown path throws', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "title": ".title" }
     </script>
     <h1 class="title">x</h1>
@@ -86,7 +86,7 @@ test('setValue with unknown path throws', () => {
 test('removeItem with unknown path throws', () => {
   if (isOpen()) close()
   const dom = loadPage(`<!DOCTYPE html><html><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div><div class="product"><span class="n">A</span></div></div>

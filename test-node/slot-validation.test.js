@@ -10,7 +10,7 @@ test('slotted object template missing .hcms-object-fields throws', () => {
       <section class="author"><h3 data-hcms-label></h3></section>
     </template>
   </head><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "author": { "name": ".n" } }
     </script>
     <div class="author"><span class="n">A</span></div>
@@ -32,7 +32,7 @@ test('object-array template missing .hcms-array-items throws', () => {
       <section class="bag"></section>
     </template>
   </head><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div><div class="product"><span class="n">a</span></div></div>
@@ -52,7 +52,7 @@ test('slotted card template missing .hcms-card-fields throws', () => {
       <article class="hcms-card"><header><button type="button" data-hcms-action="remove">x</button></header></article>
     </template>
   </head><body>
-    <script id="hyper-html-api" data-rules-version="1" type="application/json">
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">
     { "products": [".product", { "name": ".n" }] }
     </script>
     <div><div class="product"><span class="n">a</span></div></div>
