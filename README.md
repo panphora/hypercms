@@ -7,13 +7,17 @@ Live edit-in-place CMS sidebar for any HTML page that carries a [`hyper-html-api
 You have a page with a rules tag:
 
 ```html
-<script id="hyper-html-api" data-rules-version="1" type="application/json">
+<script data-rules-name="cms" data-rules-version="1" type="application/json">
 {
   "title": ".page-title",
   "products": [".product", { "name": ".name", "price": ".price@data-cents" }]
 }
 </script>
 ```
+
+`cms.open()` looks up a rules tag by the token `cms` (`data-rules-name~="cms"`).
+A single tag can carry several space-separated tokens (e.g.
+`data-rules-name="api cms collection"`) to serve more than one consumer.
 
 Add hypercms and a trigger:
 
@@ -27,6 +31,14 @@ Add hypercms and a trigger:
 ```
 
 That's the whole integration.
+
+`cms.open()` also accepts an explicit rules source:
+
+```js
+cms.open()                       // default token "cms"
+cms.open({ rules: 'collection' })// a tag with data-rules-name~="collection"
+cms.open({ rules: { title: '.title' } })  // a literal rules object, passed by hand
+```
 
 ## Hard requirement: `window.hyperclay.Mutation`
 
@@ -171,7 +183,7 @@ All events dispatch on the shell root and bubble through the document.
 
 ```
 open()
-  → engine.findRulesIn(page)        // locate rules tag
+  → engine.findRules(page, source)  // resolve rules (token "cms" by default, or an object/named token)
   → engine.extract(page, rules)     // read data (skips [data-hcms-shell] and [cms-template])
   → deriveFormRules + buildForm     // build sidebar DOM
   → mountShell                      // append to mountTo
@@ -192,7 +204,7 @@ per-keystroke:
 per-page-change-from-outside:
   Mutation.onAnyChange (debounced 100ms, filtered by save-ignore)
   → refreshForm
-      engine.findRulesIn (re-read; livesync may have swapped it)
+      engine.findRules (re-resolve by source; livesync may have swapped a token tag)
       engine.extract
       buildForm into fragment
       morphForm(formRoot, fragment)  // hyper-morph preserves focus + values
