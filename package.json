@@ -1,5 +1,5 @@
 {
-  "name": "hypercms",
+  "name": "@panphora/hyper-cms",
   "version": "0.4.0",
   "description": "Live edit-in-place CMS sidebar for HTML pages with a hyper-html-api rules tag",
   "keywords": [
