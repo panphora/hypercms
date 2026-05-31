@@ -69,7 +69,30 @@ export function mountShell({ mountTo, side = 'right', overlay = false, showSaveB
       root.remove()
       body.classList.remove('hcms-open', 'hcms-overlay', 'hcms-side-left')
     },
+    // Re-assert the shell's out-of-subtree chrome after a full-document morph
+    // (e.g. a live-sync apply) wipes it: the stylesheet lives in <head> and the
+    // body classes live on <body>, both outside the save-ignore shell element,
+    // so hyper-morph's head-merge / class reconciliation can strip them.
+    restoreChrome() {
+      reensureStyles(doc)
+      body.classList.add('hcms-open')
+      if (overlay) body.classList.add('hcms-overlay')
+      if (side === 'left') body.classList.add('hcms-side-left')
+    },
   }
+}
+
+// Re-inject the shell stylesheet if a morph (or anything else) removed it.
+// Unlike ensureStyles, this does NOT trust the styledDocs WeakSet: a morph can
+// remove the <style> tag while the WeakSet still marks the doc as "styled", so
+// a naive ensureStyles() call would no-op. Re-check the live DOM, clear the
+// stale mark, and let ensureStyles rebuild from cssText.
+export function reensureStyles(doc) {
+  if (!doc) return
+  if (doc.getElementById(SHELL_STYLE_ID) ||
+      doc.querySelector('style[data-hcms-bundled-styles]')) return
+  styledDocs.delete(doc)
+  ensureStyles(doc)
 }
 
 function ensureStyles(doc) {

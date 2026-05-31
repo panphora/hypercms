@@ -36,11 +36,56 @@ const state = {
   opts: null,
 }
 
+// Re-sync the form to the page after a change hypercms did NOT originate.
+// `reason` selects whether the field the user is currently typing in snaps:
+//   'undo' / 'redo' — the user's own deliberate action, so the focused field
+//                     SHOULD snap to the reverted value (ignoreActiveValue:false).
+//   'livesync'      — someone else's / the framework's change, so the user's
+//                     in-progress focused field must NOT be yanked away
+//                     (ignoreActiveValue:true). morphForm re-extracts every
+//                     other field to the new page value, killing the stale-form
+//                     clobber, while leaving the active field alone until blur.
+// Both reasons route through this one handler so there is a single place to
+// maintain the form-resync behavior.
+function resyncForm(ctx, reason) {
+  // open() may have moved on (closed, or reopened with a new ctx) between an
+  // async morph completing and this firing.
+  if (state.ctx !== ctx) return
+  const ignoreActiveValue = reason === 'livesync'
+  if (reason === 'livesync') {
+    // A full-document morph can wipe the shell's <head> stylesheet and the
+    // <body> chrome classes (both live outside the save-ignore shell subtree).
+    // Re-assert them before re-extracting.
+    state.shell?.restoreChrome?.()
+  }
+  refreshForm(ctx, { ignoreActiveValue })
+}
+
+// Strip hypercms's own body chrome from the SAVE clone so it never reaches disk
+// (the shell element itself is [save-remove], but the hcms-open class lives on
+// <body>, outside the stripped subtree). Registered once at first open():
+// onPrepareForSave runs save-only, on a clone, so it never touches the live DOM,
+// and removing absent classes is a no-op when the shell is closed. Guarded so it
+// degrades cleanly when the host save pipeline (hyperclayjs) isn't present.
+let prepareHookInstalled = false
+function installSavePrepareHook() {
+  if (prepareHookInstalled) return
+  const onPrepareForSave =
+    (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.onPrepareForSave) || null
+  if (typeof onPrepareForSave !== 'function') return
+  onPrepareForSave((clonedDocEl) => {
+    const b = clonedDocEl && clonedDocEl.querySelector && clonedDocEl.querySelector('body')
+    if (b) b.classList.remove('hcms-open', 'hcms-overlay', 'hcms-side-left')
+  })
+  prepareHookInstalled = true
+}
+
 export function open(opts = {}) {
   if (state.isOpen) {
     console.warn('cms.open() called while already open; ignoring')
     return
   }
+  installSavePrepareHook()
   const pageRoot = opts.pageRoot || (typeof document !== 'undefined' ? document.body : null)
   if (!pageRoot) throw new Error('hypercms: no pageRoot available')
   const doc = pageRoot.ownerDocument || (typeof document !== 'undefined' ? document : null)
@@ -88,6 +133,7 @@ export function open(opts = {}) {
     lastData: null,
     observerHandle: null,
     undoUnsub: null,
+    livesyncUnsub: null,
     onChange: opts.onChange,
     onError: opts.onError,
     onSave: opts.onSave,
@@ -123,11 +169,22 @@ export function open(opts = {}) {
   // the active field. Guarded so it degrades to today's behavior when undo isn't loaded.
   const u = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.undo) || null
   if (u && typeof u.on === 'function') {
-    const onRevert = () => refreshForm(ctx, { ignoreActiveValue: false })
+    const onRevert = () => resyncForm(ctx, 'undo')
     u.on('undo', onRevert)
     u.on('redo', onRevert)
     ctx.undoUnsub = () => { u.off('undo', onRevert); u.off('redo', onRevert) }
   }
+
+  // Live-sync / version-restore / any framework-applied full-document morph runs
+  // inside window.hyperclay.Mutation.pause(), which the source-blind observer
+  // above is deaf to — so without this the form stays stale after a remote edit
+  // and the next local commit re-applies the stale data, clobbering the remote
+  // change. Subscribe to the morph-applied signal live-sync emits and re-extract
+  // with ignoreActiveValue:true (preserve the user's in-progress field). Same
+  // document live-sync dispatches on; unsubscribed in close().
+  const onLivesync = () => resyncForm(ctx, 'livesync')
+  doc.addEventListener('hyperclay:livesync-applied', onLivesync)
+  ctx.livesyncUnsub = () => doc.removeEventListener('hyperclay:livesync-applied', onLivesync)
 
   // Wire global sortable callback to current ctx (replaced by close()).
   globalCommitTarget.ctx = ctx
@@ -182,6 +239,7 @@ export function close() {
   ctx.dispatch('hcms:close', null)
   ctx.observerHandle?.unsubscribe?.()
   ctx.undoUnsub?.()
+  ctx.livesyncUnsub?.()
   ctx.detachEvents?.()
   // destroy() removes the chrome-only body classes; suppress so the inverse
   // class removal doesn't enter the undo stack either.
