@@ -36,13 +36,19 @@
     "test:node": "node --test 'test-node/**/*.test.js'",
     "test": "npm run test:node",
     "demo": "http-server . -p 5694 -c-1 -o /demo/",
-    "release": "./scripts/release.sh"
+    "release": "./scripts/release.sh",
+    "test:browser": "web-test-runner",
+    "test:all": "npm run test:node && npm run test:browser"
   },
   "dependencies": {
     "hyper-html-api": "^0.2.0",
     "hyper-morph": "^0.3.0"
   },
   "devDependencies": {
+    "@open-wc/testing": "^4.0.0",
+    "@web/dev-server-import-maps": "^0.2.1",
+    "@web/test-runner": "^0.18.3",
+    "@web/test-runner-chrome": "^0.16.0",
     "esbuild": "^0.25.0",
     "http-server": "^14.1.1",
     "jsdom": "^25.0.0"
