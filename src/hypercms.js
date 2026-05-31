@@ -87,6 +87,7 @@ export function open(opts = {}) {
     lastFingerprint: null,
     lastData: null,
     observerHandle: null,
+    undoUnsub: null,
     onChange: opts.onChange,
     onError: opts.onError,
     onSave: opts.onSave,
@@ -114,6 +115,19 @@ export function open(opts = {}) {
   ctx.observerHandle = installObserver({
     onRefresh: () => refreshForm(ctx),
   })
+
+  // Undo/redo is a deliberate local action (unlike livesync or in-flight typing),
+  // so the focused form field SHOULD snap to the reverted value. The observer above
+  // is source-blind, so subscribe to the undo scope and force a non-ignoring refresh.
+  // Fires synchronously before the debounced observer refresh, which then no-ops on
+  // the active field. Guarded so it degrades to today's behavior when undo isn't loaded.
+  const u = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.undo) || null
+  if (u && typeof u.on === 'function') {
+    const onRevert = () => refreshForm(ctx, { ignoreActiveValue: false })
+    u.on('undo', onRevert)
+    u.on('redo', onRevert)
+    ctx.undoUnsub = () => { u.off('undo', onRevert); u.off('redo', onRevert) }
+  }
 
   // Wire global sortable callback to current ctx (replaced by close()).
   globalCommitTarget.ctx = ctx
@@ -167,6 +181,7 @@ export function close() {
   const previouslyFocused = ctx.previouslyFocused
   ctx.dispatch('hcms:close', null)
   ctx.observerHandle?.unsubscribe?.()
+  ctx.undoUnsub?.()
   ctx.detachEvents?.()
   // destroy() removes the chrome-only body classes; suppress so the inverse
   // class removal doesn't enter the undo stack either.

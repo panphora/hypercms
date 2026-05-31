@@ -7,7 +7,7 @@ import { coerceBooleans, applyErrorState } from './events.js'
 
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 
-export function refreshForm(ctx) {
+export function refreshForm(ctx, { ignoreActiveValue } = {}) {
   // Re-resolve rules every refresh, source-aware: an object source returns the
   // same literal (tagNode null); a token source re-resolves the tag so a
   // livesync-replaced rules tag is picked up. Document-scoped via ctx.doc.
@@ -30,7 +30,7 @@ export function refreshForm(ctx) {
     data: newData,
     doc: ctx.doc,
   })
-  morphForm(ctx.formRoot, fragment)
+  morphForm(ctx.formRoot, fragment, { ignoreActiveValue })
   // morphForm rebuilds the form structure; inline error slots get wiped. Re-apply
   // the last error state so error messages survive across observer-driven refreshes
   // (e.g., the rollback after a failed add).
