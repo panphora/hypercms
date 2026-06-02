@@ -1,6 +1,6 @@
 import { engine } from 'hyper-html-api'
 import { applyWithRollback } from './apply-loop.js'
-import { fromString as pathFromString } from './path.js'
+import { fromString as pathFromString, getRuleAtPath } from './path.js'
 import { buildItem } from './form-builder.js'
 import { scaffold } from './scaffold.js'
 
@@ -115,10 +115,52 @@ export function bindEvents(ctx) {
   }
 }
 
+// Element PROPERTIES a form field projects to that fire NO MutationRecord, so
+// hyper-undo's observer can't see them (an input's live `value`, a checkbox's
+// `checked`). Text projections ARE observed (characterData) and need nothing
+// here. Kept narrow on purpose: the broader engine DOM_PROPERTIES_WRITE_SET
+// includes observable writes (innerHTML/outerHTML) we must NOT double-record.
+const UNOBSERVED_FIELD_PROPS = new Set(['value', 'checked'])
+
+// Resolve the page element + property a scalar field projects to, but ONLY for
+// the unobserved-property case above. `pathStr` is the field's FULL path (the
+// scalar field element carries data-hcms-path = full path, e.g. "name" or
+// "products.0.name"). Returns { el, prop, oldValue } captured from the live page
+// BEFORE the apply, or null when the projection is text, targets an array item
+// (the engine's ctx isn't pageRoot then), or can't be resolved.
+function resolveUnobservedProjection(ctx, pathStr) {
+  if (!pathStr) return null
+  const fullPath = pathFromString(pathStr)
+  // Array-item fields project under a per-item engine ctx, not pageRoot. Resolving
+  // pageRoot.querySelector(selector) would grab the wrong item, so skip — the edit
+  // simply keeps today's no-undo behavior rather than recording a wrong revert.
+  if (fullPath.some((seg) => typeof seg === 'number' || seg === '*')) return null
+  const rule = getRuleAtPath(ctx.pageRules, fullPath)
+  if (typeof rule !== 'string') return null
+  const at = rule.lastIndexOf('@')
+  if (at === -1) return null                       // text projection — observed
+  const prop = rule.slice(at + 1)
+  if (!UNOBSERVED_FIELD_PROPS.has(prop)) return null
+  const selector = rule.slice(0, at)
+  const el = selector ? ctx.pageRoot.querySelector(selector) : ctx.pageRoot
+  if (!el) return null
+  return { el, prop, oldValue: el[prop] }
+}
+
 export function onScalarChange(target, ctx) {
   const fieldEl = target.closest('[data-hcms-field]') || target
   const pathStr = fieldEl.closest('[data-hcms-path]')?.getAttribute('data-hcms-path') || ''
+  // Capture the projected page value BEFORE commit() overwrites it. Property
+  // writes (@value/@checked) leave no MutationRecord, so without recording them
+  // explicitly they produce no undo step (text projections are observed).
+  const proj = resolveUnobservedProjection(ctx, pathStr)
   commit(extractFormData(ctx), { path: pathStr, structural: false }, ctx)
+  if (proj) {
+    const u = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.undo) || null
+    if (u && typeof u.recordValue === 'function') {
+      u.recordValue(proj.el, { prop: proj.prop, oldValue: proj.oldValue, newValue: proj.el[proj.prop] })
+    }
+  }
 }
 
 export function onAdd(arrayPath, ctx) {

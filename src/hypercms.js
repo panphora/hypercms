@@ -169,7 +169,26 @@ export function open(opts = {}) {
   // the active field. Guarded so it degrades to today's behavior when undo isn't loaded.
   const u = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.undo) || null
   if (u && typeof u.on === 'function') {
-    const onRevert = () => resyncForm(ctx, 'undo')
+    const onRevert = () => {
+      if (state.ctx !== ctx) return
+      resyncForm(ctx, 'undo')
+      // A reverted change the consumer persists through onChange (e.g. the
+      // collection dashboard PUTs the record, not the page) would otherwise lag
+      // the undo: refreshForm re-syncs the form but never fires onChange, and a
+      // commit() here would be fingerprint-skipped (refreshForm already updated
+      // it). Extract the reverted state from the PAGE (the source of truth after
+      // an undo/redo; the form can lag a morph) and fire onChange directly, but
+      // only when it actually changed — guards spurious PUTs on undo/redo of
+      // unrelated edits elsewhere on the page.
+      const data = coerceBooleans(
+        engine.extract(ctx.pageRoot, ctx.pageRules, { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }),
+        ctx.pageRules
+      )
+      if (stableStringify(data) !== stableStringify(ctx.lastData)) {
+        ctx.lastData = data
+        ctx.onChange?.(data, { path: '', structural: false })
+      }
+    }
     u.on('undo', onRevert)
     u.on('redo', onRevert)
     ctx.undoUnsub = () => { u.off('undo', onRevert); u.off('redo', onRevert) }
