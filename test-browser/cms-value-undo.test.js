@@ -317,6 +317,30 @@ describe('hypercms array-item @value edits skip the recordValue path (documented
     expect(changes.at(-1)).to.deep.equal({ products: [{ name: 'P1-edited' }, { name: 'P2' }] })
   })
 
+  it('single-field item: UNDO of the clone reverts cleanly (page + form restored, no orphan row, history empty)', async () => {
+    const { page, formRoot, changes } = await mountArrayPage(ARRAY_VALUE_PAGE_HTML)()
+    type(field(formRoot, 'products.0.name'), 'P1-edited')
+    await waitFor(() => pname(page, 0).value === 'P1-edited')
+    await waitFor(() => undo.history.length === 1)
+
+    undo.undo()
+    // page value restored on the re-attached original row
+    await waitFor(() => pname(page, 0).value === 'P1')
+    expect(pname(page, 0).value).to.equal('P1')
+    expect(pname(page, 1).value).to.equal('P2')                  // the other row is intact
+    // the cloned replacement is gone: exactly two rows, no orphan/duplicate
+    expect(page.querySelectorAll('#products .product').length).to.equal(2)
+    // the focused form field re-syncs to the reverted value (ignoreActiveValue:false on undo)
+    await waitFor(() => field(formRoot, 'products.0.name').value === 'P1')
+    expect(field(formRoot, 'products.0.name').value).to.equal('P1')
+    // history is back to baseline and the re-fired onChange carries the reverted data
+    expect(undo.history.length).to.equal(0)
+    await waitFor(() => {
+      const last = changes.at(-1)
+      return !!last && JSON.stringify(last) === JSON.stringify({ products: [{ name: 'P1' }, { name: 'P2' }] })
+    })
+  })
+
   it('multi-field item, one-field edit: value APPLIES in place, other row untouched, ZERO undo steps (recordValue skip isolated)', async () => {
     const { page, formRoot, changes } = await mountArrayPage(ARRAY_VALUE_MULTI_PAGE_HTML)()
     expect(pname(page, 0).value).to.equal('P1')
