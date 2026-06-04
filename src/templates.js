@@ -10,11 +10,19 @@ export function humanize(key) {
     .replace(/^./, (c) => c.toUpperCase())
 }
 
+// The default templates emit real mirk-interface markup so the generated form
+// renders in the Pixel Quiet look out of the box. Every data-hcms-* hook
+// (shape, label, field, action, the .hcms-array-items / .hcms-card-fields slots,
+// the .hcms-error inline slots) is preserved exactly, so the engine, events,
+// add/remove/reorder, and inline-error placement bind unchanged. The CSS that
+// dresses these lives in src/theme.generated.css (scoped mirk + pixel-quiet).
+const SORTABLE_GRIP = `<div class="hcms-drag-handle mirk-sortable__grip" aria-hidden="true"><div class="mirk-sortable__dots"><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span></div></div>`
+
 const DEFAULT_TEMPLATES = {
   '@scalar': `
     <label class="hcms-field" data-hcms-shape="scalar">
       <span class="hcms-label" data-hcms-label></span>
-      <input class="hcms-input" data-hcms-field />
+      <input class="mirk-input" data-hcms-field />
       <div class="hcms-error" hidden></div>
     </label>
   `,
@@ -32,38 +40,39 @@ const DEFAULT_TEMPLATES = {
       </header>
       <ul class="hcms-array-items"></ul>
       <div class="hcms-error" hidden></div>
-      <button type="button" class="hcms-add" data-hcms-action="add">+ Add</button>
+      <button type="button" class="hcms-add mirk-button mirk-button--small" data-hcms-action="add"><span class="mirk-button__label">+ Add</span></button>
     </section>
   `,
   '@scalar-array-item': `
     <li class="hcms-array-item" draggable="true">
-      <span class="hcms-drag-handle" aria-hidden="true">::</span>
-      <input class="hcms-input" data-hcms-field />
+      <input class="mirk-input" data-hcms-field />
       <button type="button" class="hcms-move hcms-move-up hcms-sr-only" data-hcms-action="move-up" aria-label="Move up">↑</button>
       <button type="button" class="hcms-move hcms-move-down hcms-sr-only" data-hcms-action="move-down" aria-label="Move down">↓</button>
-      <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove">x</button>
+      <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove">×</button>
       <div class="hcms-error" hidden></div>
     </li>
   `,
   '@object-array': `
-    <section class="hcms-array hcms-object-array" data-hcms-shape="object-array">
+    <section class="hcms-array hcms-object-array hcms-array--cards" data-hcms-shape="object-array">
       <header class="hcms-array-header">
         <h3 class="hcms-array-title" data-hcms-label></h3>
       </header>
       <div class="hcms-array-items"></div>
       <div class="hcms-error" hidden></div>
-      <button type="button" class="hcms-add" data-hcms-action="add">+ Add</button>
+      <button type="button" class="hcms-add mirk-button mirk-button--small" data-hcms-action="add"><span class="mirk-button__label">+ Add</span></button>
     </section>
   `,
   '@object-array-item': `
-    <article class="hcms-card" draggable="true">
-      <header class="hcms-card-header">
-        <span class="hcms-drag-handle" aria-hidden="true">::</span>
-        <button type="button" class="hcms-move hcms-move-up hcms-sr-only" data-hcms-action="move-up" aria-label="Move up">↑</button>
-        <button type="button" class="hcms-move hcms-move-down hcms-sr-only" data-hcms-action="move-down" aria-label="Move down">↓</button>
-        <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove">x</button>
-      </header>
-      <div class="hcms-card-fields"></div>
+    <article class="hcms-card mirk-sortable__item" draggable="true">
+      ${SORTABLE_GRIP}
+      <div class="hcms-card-body mirk-sortable__body">
+        <div class="hcms-card-fields"></div>
+        <div class="hcms-card-controls">
+          <button type="button" class="hcms-move hcms-move-up hcms-sr-only" data-hcms-action="move-up" aria-label="Move up">↑</button>
+          <button type="button" class="hcms-move hcms-move-down hcms-sr-only" data-hcms-action="move-down" aria-label="Move down">↓</button>
+          <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove">×</button>
+        </div>
+      </div>
       <div class="hcms-error" hidden></div>
     </article>
   `,

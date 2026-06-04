@@ -116,6 +116,9 @@ export function open(opts = {}) {
     side: opts.side || 'right',
     overlay: !!opts.overlay,
     showSaveButton: !!opts.showSaveButton,
+    title: opts.title,
+    eyebrow: opts.eyebrow,
+    theme: opts.theme,
     doc,
   }))
 

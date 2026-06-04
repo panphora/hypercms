@@ -20,7 +20,8 @@
   "module": "src/hypercms.js",
   "exports": {
     ".": "./src/hypercms.js",
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/theme.generated.css",
+    "./theme.css": "./src/theme.generated.css"
   },
   "files": [
     "LICENSE",
@@ -30,7 +31,8 @@
     "dist/*.js"
   ],
   "scripts": {
-    "build": "npx esbuild src/hypercms-bundle.js --bundle --minify --format=iife --global-name=hypercms --loader:.css=text --outfile=dist/hypercms.min.js",
+    "build:theme": "node scripts/build-theme.js",
+    "build": "npm run build:theme && npx esbuild src/hypercms-bundle.js --bundle --minify --format=iife --global-name=hypercms --loader:.css=text --outfile=dist/hypercms.min.js",
     "prepublishOnly": "npm run build",
     "copy-to-hyperclayjs": "npm run build && node scripts/copy-to-hyperclayjs.js",
     "test:node": "node --test 'test-node/**/*.test.js'",

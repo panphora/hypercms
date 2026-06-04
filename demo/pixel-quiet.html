@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>hypercms × Pixel Quiet — live demo</title>
+<style>
+  body {
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    max-width: 720px; margin: 2rem auto; padding: 0 1.25rem;
+    color: #2b241b; background: #efe7d8;
+  }
+  h1.page-title { margin: 0 0 .25rem; font-size: 1.6rem; }
+  .tagline { margin: 0 0 1.25rem; color: #6e685d; }
+  .bio { margin: 0 0 1.5rem; max-width: 48ch; line-height: 1.5; }
+  section.card { background: #f7f2ea; border: 1px solid #d8c8af; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; }
+  section.card h2 { margin: 0 0 .5rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: #8c7b62; }
+  ul.tags { list-style: none; padding: 0; display: flex; gap: .5rem; flex-wrap: wrap; margin: 0; }
+  ul.tags li { padding: .15rem .6rem; background: #efdbbd; border-radius: 4px; font-size: .9rem; }
+  .product { border: 1px dashed #cdbfa6; border-radius: 6px; padding: .5rem .75rem; margin: .4rem 0; }
+  .product-name { margin: 0; font-size: 1rem; }
+  .product-price::before { content: "$"; }
+  #log { font-family: ui-monospace, Menlo, monospace; background: #2b241b; color: #efe7d8; padding: .5rem .75rem; border-radius: 6px; font-size: .78rem; max-height: 160px; overflow: auto; }
+  #log .err { color: #f0a89a; }
+  .hint { color: #8c7b62; font-size: .85rem; }
+</style>
+
+<!-- Rules: the canonical Pixel Quiet "Page settings" field set. -->
+<script data-rules-name="cms" data-rules-version="1" type="application/json">
+{
+  "title": "h1.page-title",
+  "tagline": ".tagline",
+  "bio": ".bio",
+  "published": ".meta@data-published",
+  "priority": ".meta@data-priority",
+  "color": ".meta@data-color",
+  "tags": "ul.tags li[]",
+  "products": [
+    ".product",
+    { "name": ".product-name", "price": ".product-price" }
+  ]
+}
+</script>
+
+<!-- Per-field mirk templates (toggle / select / radio / textarea / tag chips).
+     Title, Tagline and Products use the mirk defaults baked into hypercms. -->
+
+<template data-hcms-tpl="bio">
+  <label class="hcms-field" data-hcms-shape="scalar">
+    <span class="hcms-label" data-hcms-label></span>
+    <textarea class="mirk-textarea" rows="3" data-hcms-field="bio"></textarea>
+    <div class="hcms-error" hidden></div>
+  </label>
+</template>
+
+<template data-hcms-tpl="published">
+  <div class="hcms-field hcms-field--row" data-hcms-shape="scalar">
+    <span class="hcms-label" data-hcms-label></span>
+    <label class="mirk-toggle">
+      <input type="checkbox" role="switch" class="mirk-sr-only" data-hcms-field="published">
+      <span class="mirk-toggle__track"><span class="mirk-toggle__thumb"></span></span>
+    </label>
+    <div class="hcms-error" hidden></div>
+  </div>
+</template>
+
+<template data-hcms-tpl="priority">
+  <label class="hcms-field" data-hcms-shape="scalar">
+    <span class="hcms-label" data-hcms-label></span>
+    <div class="mirk-select">
+      <select class="mirk-select__field" data-hcms-field="priority">
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+      </select>
+      <span aria-hidden="true" class="mirk-select__chevron">›</span>
+    </div>
+    <div class="hcms-error" hidden></div>
+  </label>
+</template>
+
+<template data-hcms-tpl="color">
+  <div class="hcms-field" data-hcms-shape="scalar">
+    <span class="hcms-label" data-hcms-label></span>
+    <div class="hcms-radio-row">
+      <label class="mirk-radio">
+        <input type="radio" name="pq-color" value="red" class="mirk-sr-only" data-hcms-field="color">
+        <span class="mirk-radio__ring"><span class="mirk-radio__fill"></span><span class="mirk-radio__dot"></span></span>
+        <span class="mirk-radio__label">Red</span>
+      </label>
+      <label class="mirk-radio">
+        <input type="radio" name="pq-color" value="green" class="mirk-sr-only" data-hcms-field="color">
+        <span class="mirk-radio__ring"><span class="mirk-radio__fill"></span><span class="mirk-radio__dot"></span></span>
+        <span class="mirk-radio__label">Green</span>
+      </label>
+      <label class="mirk-radio">
+        <input type="radio" name="pq-color" value="blue" class="mirk-sr-only" data-hcms-field="color">
+        <span class="mirk-radio__ring"><span class="mirk-radio__fill"></span><span class="mirk-radio__dot"></span></span>
+        <span class="mirk-radio__label">Blue</span>
+      </label>
+    </div>
+    <div class="hcms-error" hidden></div>
+  </div>
+</template>
+
+<!-- Tags as mirk chips, wired through hypercms's scalar-array machinery:
+     .hcms-array-items IS the .mirk-tags box (a direct child of the path node so
+     the engine's "> .hcms-array-items > [item]" selector resolves), each chip is
+     a [data-hcms-array-item] holding an inline-editable field, and "+ tag" /
+     remove × route through the standard data-hcms-action hooks. -->
+<template data-hcms-tpl="tags">
+  <div class="hcms-field" data-hcms-shape="scalar-array">
+    <span class="hcms-label" data-hcms-label></span>
+    <div class="mirk-tags hcms-array-items"></div>
+    <button type="button" class="hcms-add mirk-button mirk-button--small" data-hcms-action="add"><span class="mirk-button__label">+ tag</span></button>
+    <div class="hcms-error" hidden></div>
+  </div>
+</template>
+<template data-hcms-tpl="tags.*">
+  <span class="mirk-tags__chip" data-hcms-array-item>
+    <input class="pq-chip-field" data-hcms-field value="" aria-label="Tag" placeholder="tag">
+    <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove tag">×</button>
+  </span>
+</template>
+
+<style>
+  /* chip-field: a borderless inline input that sizes to its text, so chips read
+     like the mockup's static chips but stay inline-editable + hypercms-bound. */
+  .hcms-shell .mirk-tags__chip { padding-right: 6px; }
+  .hcms-shell .pq-chip-field {
+    border: 0; background: transparent; color: inherit; font: inherit;
+    outline: none; min-width: 2ch; field-sizing: content; padding: 0;
+  }
+  .hcms-shell .mirk-tags .hcms-add { margin-top: 4px; }
+</style>
+
+</head>
+<body>
+
+<header>
+  <h1 class="page-title">Hyperclay</h1>
+  <p class="tagline">Edit the right-side panel; this page updates live.</p>
+  <p class="bio">A short bio about the page goes here. Everything on this page is editable from the Pixel Quiet sidebar, and saves back into the HTML.</p>
+  <p class="meta" data-published="true" data-color="red" data-priority="medium" hidden></p>
+</header>
+
+<section class="card">
+  <h2>Tags</h2>
+  <ul class="tags">
+    <li>foo</li>
+    <li>bar</li>
+    <li>baz</li>
+  </ul>
+</section>
+
+<section class="card">
+  <h2>Products</h2>
+  <div class="products-list">
+    <div class="product">
+      <h3 class="product-name">Widget</h3>
+      <p class="product-price">9.99</p>
+    </div>
+    <div class="product">
+      <h3 class="product-name">Gadget</h3>
+      <p class="product-price">19.99</p>
+    </div>
+    <div class="product" cms-template hidden>
+      <h3 class="product-name"></h3>
+      <p class="product-price"></p>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Event log <span class="hint">(hcms:change / save fire as you edit)</span></h2>
+  <div id="log"></div>
+</section>
+
+<script src="../dist/hypercms.min.js"></script>
+<script type="module">
+  // hypercms's change observer needs window.hyperclay.Mutation. The demo edits
+  // flow form -> page -> save (which don't use the observer), so a no-op stub
+  // satisfying the contract is enough; the real hyperclayjs utility pulls in
+  // sibling modules that don't resolve from this folder.
+  window.hyperclay = window.hyperclay || {}
+  if (!window.hyperclay.Mutation) {
+    const off = () => () => {}
+    window.hyperclay.Mutation = {
+      onAnyChange: off, onAddOrRemove: off, onAddElement: off, onRemoveElement: off, onAttribute: off,
+      pause() {}, resume() {},
+    }
+  }
+
+  const cms = window.hypercms.cms
+  window.cms = cms
+
+  const log = document.getElementById('log')
+  function record(name, detail) {
+    const row = document.createElement('div')
+    if (name.endsWith(':error')) row.className = 'err'
+    row.textContent = `${new Date().toLocaleTimeString()}  ${name}  ${detail ? JSON.stringify(detail).slice(0, 200) : ''}`
+    log.prepend(row)
+  }
+  for (const e of ['hcms:open', 'hcms:change', 'hcms:save', 'hcms:error', 'hcms:close']) {
+    document.addEventListener(e, (ev) => record(e, ev.detail))
+  }
+
+  // ?theme=light|dark pins the panel for showcasing; default follows the OS.
+  const theme = new URLSearchParams(location.search).get('theme')
+  cms.open({ showSaveButton: true, theme: theme === 'light' || theme === 'dark' ? theme : undefined })
+</script>
+
+</body>
+</html>

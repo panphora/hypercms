@@ -19,7 +19,22 @@ export function markStylesBundled(doc) {
 
 let titleIdCounter = 0
 
-export function mountShell({ mountTo, side = 'right', overlay = false, showSaveButton = false, doc }) {
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+  ))
+}
+
+export function mountShell({
+  mountTo,
+  side = 'right',
+  overlay = false,
+  showSaveButton = false,
+  title = 'Page content',
+  eyebrow = 'Edit',
+  theme = null,
+  doc,
+}) {
   ensureStyles(doc)
   const titleId = `hcms-shell-title-${++titleIdCounter}`
   const root = doc.createElement('div')
@@ -33,17 +48,42 @@ export function mountShell({ mountTo, side = 'right', overlay = false, showSaveB
   root.setAttribute('role', 'dialog')
   root.setAttribute('aria-modal', 'true')
   root.setAttribute('aria-labelledby', titleId)
-  root.className = 'hcms-shell hcms-side-' + side + (overlay ? ' hcms-overlay' : '')
+  // pixel-quiet is the baked-in look; an optional theme pins light/dark
+  // (otherwise the panel follows the OS via prefers-color-scheme).
+  const themeClass = theme === 'dark' ? ' dark' : theme === 'light' ? ' light' : ''
+  root.className =
+    'hcms-shell pixel-quiet hcms-side-' + side + (overlay ? ' hcms-overlay' : '') + themeClass
+  const titleHtml = escapeHtml(title)
+  const eyebrowHtml = escapeHtml(eyebrow)
+  // Pixel Quiet shell: a scroll-away header + in-flow Save inside .hcms-shell-body,
+  // with a condensed minibar pinned to the panel top once the header scrolls out.
+  // Close + Save are real mirk buttons. The .hcms-* hooks stay so the engine and
+  // events bind exactly as before; only the chrome shape changed.
   root.innerHTML = `
-    <header class="hcms-shell-header">
-      <h2 class="hcms-shell-title" id="${titleId}">Edit</h2>
-      <button type="button" class="hcms-shell-close" data-hcms-action="close" aria-label="Close">×</button>
-    </header>
-    <div class="hcms-shell-error" role="alert" hidden></div>
-    <div data-hcms-form-root class="hcms-form"></div>
-    <footer class="hcms-shell-footer"${showSaveButton ? '' : ' hidden'}>
-      <button type="button" class="hcms-shell-save" data-hcms-action="save">Save</button>
-    </footer>
+    <div class="hcms-shell-minibar" aria-hidden="true">
+      <span class="hcms-shell-minibar-title">${titleHtml}</span>
+      <button type="button" class="hcms-shell-close mirk-button mirk-button--small" data-hcms-action="close" aria-label="Close">
+        <span class="mirk-button__label">×</span>
+      </button>
+    </div>
+    <div class="hcms-shell-body">
+      <header class="hcms-shell-header">
+        <div class="hcms-shell-heading">
+          <div class="hcms-shell-eyebrow">${eyebrowHtml}</div>
+          <h2 class="hcms-shell-title" id="${titleId}">${titleHtml}</h2>
+        </div>
+        <button type="button" class="hcms-shell-close mirk-button mirk-button--small" data-hcms-action="close" aria-label="Close">
+          <span class="mirk-button__label">×</span>
+        </button>
+      </header>
+      <div class="hcms-shell-error" role="alert" hidden></div>
+      <div data-hcms-form-root class="hcms-form"></div>
+      <footer class="hcms-shell-footer"${showSaveButton ? '' : ' hidden'}>
+        <button type="button" class="hcms-shell-save mirk-button" data-hcms-action="save">
+          <span class="mirk-button__label">Save</span>
+        </button>
+      </footer>
+    </div>
   `
 
   // mountTo may be a nested element inside pageRoot. Use it as-is for the
@@ -58,6 +98,7 @@ export function mountShell({ mountTo, side = 'right', overlay = false, showSaveB
   if (side === 'left') body.classList.add('hcms-side-left')
 
   const focusTrap = installFocusTrap(root, doc)
+  const condense = installCondenseOnScroll(root)
 
   return {
     root,
@@ -66,6 +107,7 @@ export function mountShell({ mountTo, side = 'right', overlay = false, showSaveB
     saveButton: root.querySelector('.hcms-shell-save'),
     destroy() {
       focusTrap.detach()
+      condense.detach()
       root.remove()
       body.classList.remove('hcms-open', 'hcms-overlay', 'hcms-side-left')
     },
@@ -115,12 +157,12 @@ function ensureStyles(doc) {
     styledDocs.add(doc)
     return
   }
-  // No bundled CSS — try resolving the sibling styles.css via import.meta.url.
-  // Browsers ESM-resolved imports place a co-located styles.css next to
-  // hypercms.js. Falls back silently if resolution fails (e.g., bundlers
-  // without an asset emitter).
+  // No bundled CSS — try resolving the sibling generated theme via
+  // import.meta.url. Browsers ESM-resolved imports place a co-located
+  // theme.generated.css next to hypercms.js. Falls back silently if resolution
+  // fails (e.g., bundlers without an asset emitter).
   try {
-    const href = new URL('./styles.css', import.meta.url).href
+    const href = new URL('./theme.generated.css', import.meta.url).href
     const link = doc.createElement('link')
     link.rel = 'stylesheet'
     link.id = SHELL_STYLE_ID
@@ -132,6 +174,25 @@ function ensureStyles(doc) {
     // SSR or environments without import.meta.url — author can call
     // installStyles(text) manually.
   }
+}
+
+// Reveal the condensed minibar once the full header scrolls out of the body
+// (pixel-quiet decision 0003). Passive listener; toggles .is-condensed on the
+// shell root when scrollTop passes the header height. No-op if the body or
+// header is missing (e.g. a custom mount that omits them).
+function installCondenseOnScroll(root) {
+  const bodyEl = root.querySelector('.hcms-shell-body')
+  const header = root.querySelector('.hcms-shell-header')
+  if (!bodyEl || !header || typeof bodyEl.addEventListener !== 'function') {
+    return { detach() {} }
+  }
+  const reveal = () => {
+    const trigger = (header.offsetHeight || 0) - 12
+    root.classList.toggle('is-condensed', bodyEl.scrollTop > trigger)
+  }
+  bodyEl.addEventListener('scroll', reveal, { passive: true })
+  reveal()
+  return { detach() { bodyEl.removeEventListener('scroll', reveal) } }
 }
 
 function installFocusTrap(root, doc) {

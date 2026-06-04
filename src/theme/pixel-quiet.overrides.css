@@ -1,0 +1,405 @@
+/* =====================================================================
+   Pixel Quiet — hypercms theme overrides (hypercms-owned).
+
+   Adapted from cms-sidebar/pixel-quiet/overrides.css. Two jobs:
+     1. Retune --mirk-* tokens, scoped to .hcms-shell.pixel-quiet (never :root).
+     2. Author the panel geometry + the functional chrome the static mockup
+        doesn't have (error banner, add/remove/move controls, the engine's
+        sortable cards, push / overlay / left-dock modes) on top of the
+        .hcms-* structural hooks.
+
+   This file is concatenated AFTER the scoped mirk base+components by
+   scripts/build-theme.js, so plain rules here win over mirk's @layer
+   components with zero !important. Loaded only inside .hcms-shell, so nothing
+   here leaks onto the host page.
+   ===================================================================== */
+
+/* ============================================================
+   TOKEN RETUNE — LIGHT (warm cream, gentle near-equal bevel)
+   ============================================================ */
+.hcms-shell.pixel-quiet {
+  color-scheme: light;
+  --mirk-canvas: #F7F2EA;
+  --mirk-bg: #F7F2EA;
+  --mirk-fg: #2B241B;
+  --mirk-accent: #efefe5;
+  --mirk-destructive: #C24A3A;
+  --mirk-focus-color: #C7AE93;
+
+  --mirk-bevel-bg: #FCF8F1;
+  --mirk-bevel-fg: #2B241B;
+  --mirk-bevel-tl: #F0E7D8;
+  --mirk-bevel-br: #E2D4BF;
+  --mirk-bevel-hover-bg: #F4ECDF;
+  --mirk-pill-inner-top: #FBF6EE;
+  --mirk-input-border: #D8C8AF;
+  --mirk-placeholder-color: #A8987F;
+
+  --mirk-mark-fg: #6B5942;
+  --mirk-toggle-bg: #EFDBBD;
+  --mirk-toggle-hi: #F4EADA;
+  --mirk-toggle-lo: #C2A87E;
+  --mirk-sortable-dot: #DDCBB0;
+  --mirk-sortable-shadow: #C9B493;
+  --mirk-sortable-label: #8C7B62;
+  --mirk-sortable-placeholder: #A8987F;
+
+  --mirk-radius: 5px;
+  --mirk-focus-offset: 2px;
+}
+
+/* dark token deltas, shared by the explicit .dark opt-in and OS preference */
+.hcms-shell.pixel-quiet.dark,
+.hcms-shell.pixel-quiet[data-theme="dark"] {
+  color-scheme: dark;
+  --mirk-canvas: #0B0C13;
+  --mirk-bg: #11131E;
+  --mirk-fg: #ECEAF2;
+  --mirk-accent: #1D1F2F;
+  --mirk-focus-color: #4A506B;
+
+  --mirk-bevel-bg: #1A1D2C;
+  --mirk-bevel-fg: #ECEAF2;
+  --mirk-bevel-tl: #2A2E42;
+  --mirk-bevel-br: #14182A;
+  --mirk-bevel-hover-bg: #202436;
+  --mirk-pill-inner-top: #202436;
+  --mirk-input-border: #353B52;
+  --mirk-placeholder-color: #6A7090;
+
+  --mirk-mark-fg: #C9CDE0;
+  --mirk-toggle-bg: #3E4660;
+  --mirk-toggle-hi: #4E567A;
+  --mirk-toggle-lo: #262B42;
+  --mirk-sortable-dot: #353B52;
+  --mirk-sortable-shadow: #0E1120;
+  --mirk-sortable-label: #8A90AB;
+  --mirk-sortable-placeholder: #6A7090;
+}
+
+/* Auto-dark on OS preference, unless the shell pins light with .light */
+@media (prefers-color-scheme: dark) {
+  .hcms-shell.pixel-quiet:not(.light):not([data-theme="light"]) {
+    color-scheme: dark;
+    --mirk-canvas: #0B0C13;
+    --mirk-bg: #11131E;
+    --mirk-fg: #ECEAF2;
+    --mirk-accent: #1D1F2F;
+    --mirk-focus-color: #4A506B;
+
+    --mirk-bevel-bg: #1A1D2C;
+    --mirk-bevel-fg: #ECEAF2;
+    --mirk-bevel-tl: #2A2E42;
+    --mirk-bevel-br: #14182A;
+    --mirk-bevel-hover-bg: #202436;
+    --mirk-pill-inner-top: #202436;
+    --mirk-input-border: #353B52;
+    --mirk-placeholder-color: #6A7090;
+
+    --mirk-mark-fg: #C9CDE0;
+    --mirk-toggle-bg: #3E4660;
+    --mirk-toggle-hi: #4E567A;
+    --mirk-toggle-lo: #262B42;
+    --mirk-sortable-dot: #353B52;
+    --mirk-sortable-shadow: #0E1120;
+    --mirk-sortable-label: #8A90AB;
+    --mirk-sortable-placeholder: #6A7090;
+  }
+}
+
+/* ============================================================
+   SHELL GEOMETRY — fixed, docked panel, single column.
+   position: fixed makes the shell a containing block so the absolute
+   minibar anchors to it; flex column so the body owns the scroll.
+   ============================================================ */
+.hcms-shell.pixel-quiet {
+  box-sizing: border-box;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 100vw;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  color: var(--mirk-fg);
+  background: var(--mirk-bg);
+  border-left: 1px solid var(--mirk-input-border);
+  box-shadow: -16px 0 48px -28px rgba(43, 36, 27, 0.45);
+}
+.hcms-shell.pixel-quiet.dark {
+  box-shadow: -16px 0 48px -28px rgba(0, 0, 0, 0.6);
+}
+
+.hcms-shell.pixel-quiet.hcms-side-left {
+  right: auto;
+  left: 0;
+  border-left: 0;
+  border-right: 1px solid var(--mirk-input-border);
+  box-shadow: 16px 0 48px -28px rgba(43, 36, 27, 0.45);
+}
+
+/* Push the page over so docked content is never hidden underneath. */
+body.hcms-open:not(.hcms-overlay) { padding-right: 380px; }
+body.hcms-open.hcms-side-left:not(.hcms-overlay) { padding-right: 0; padding-left: 380px; }
+body.hcms-open.hcms-overlay { overflow: hidden; }
+
+@media (max-width: 799px) {
+  .hcms-shell.pixel-quiet { width: 100vw; }
+  body.hcms-open:not(.hcms-overlay),
+  body.hcms-open.hcms-side-left:not(.hcms-overlay) { padding-right: 0; padding-left: 0; }
+  body.hcms-open { overflow: hidden; }
+}
+
+/* ---------- SCROLL REGION — holds the (scrollable) header + form + save ---------- */
+.hcms-shell-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ---------- CONDENSED MINIBAR — appears once the full header scrolls away ---------- */
+.hcms-shell-minibar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 24px 10px;
+  background: var(--mirk-bg);
+  border-bottom: 1px solid var(--mirk-input-border);
+  opacity: 0;
+  transform: translateY(-100%);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 160ms ease;
+}
+.hcms-shell.is-condensed .hcms-shell-minibar {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.hcms-shell-minibar-title {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--mirk-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- HEADER (no underline rule — whitespace separates the bands) ---------- */
+.hcms-shell-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 24px 24px 4px;
+}
+.hcms-shell-heading { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.hcms-shell-eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--mirk-placeholder-color);
+}
+.hcms-shell-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--mirk-fg);
+}
+.hcms-shell-close.mirk-button {
+  flex-shrink: 0;
+  padding: 2px 9px 3px;
+  line-height: 1;
+}
+.hcms-shell-close .mirk-button__label { font-size: 16px; }
+
+/* ---------- FORM — generous, even vertical rhythm ---------- */
+.hcms-form {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 24px 24px 28px;
+}
+
+/* one labeled scalar field */
+.hcms-field { display: flex; flex-direction: column; gap: 9px; }
+.hcms-field--row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* themed field label */
+.hcms-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--mirk-sortable-label);
+}
+
+/* comfortable control padding + readable size, in mirk's own mono */
+.hcms-shell.pixel-quiet .mirk-input,
+.hcms-shell.pixel-quiet .mirk-textarea {
+  font-size: 15px;
+  padding: 9px 14px 10px;
+}
+.hcms-shell.pixel-quiet textarea.mirk-input { min-height: 76px; resize: vertical; }
+.hcms-shell.pixel-quiet .mirk-select__field {
+  font-size: 15px;
+  padding: 8px 40px 9px 14px;
+}
+.hcms-shell.pixel-quiet .mirk-radio__label,
+.hcms-shell.pixel-quiet .mirk-toggle__label,
+.hcms-shell.pixel-quiet .mirk-tags__input { font-size: 15px; }
+
+/* inline radio row */
+.hcms-radio-row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+
+/* ---------- OBJECT GROUP — a quiet framed band, not a heavy card ---------- */
+.hcms-object {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.hcms-object-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--mirk-sortable-label);
+}
+.hcms-object-fields { display: flex; flex-direction: column; gap: 16px; }
+
+/* ---------- SCALAR ARRAY — a calm list of mirk-input rows ---------- */
+.hcms-array { display: flex; flex-direction: column; gap: 14px; }
+.hcms-array-header { display: flex; align-items: baseline; justify-content: space-between; }
+.hcms-array-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--mirk-sortable-label);
+}
+.hcms-array-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hcms-array-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hcms-array-item .mirk-input { flex: 1; min-width: 0; }
+
+/* ---------- OBJECT ARRAY — mirk-sortable cards from the engine markup ---------- */
+.hcms-array--cards .hcms-array-items { gap: 14px; }
+.hcms-card.mirk-sortable__item { background: var(--mirk-bevel-bg); }
+.hcms-card .hcms-card-fields { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.hcms-card .hcms-field {
+  gap: 2px;
+  padding: 8px 14px 9px;
+}
+.hcms-card .hcms-field:not(:last-child) { border-bottom: 1px solid var(--mirk-input-border); }
+.hcms-card .hcms-label { letter-spacing: 0.16em; }
+/* fields inside a card read as quiet rows, not chunky boxed inputs */
+.hcms-card .mirk-input,
+.hcms-card .mirk-textarea {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 15px;
+}
+.hcms-card .mirk-input:focus-visible,
+.hcms-card .mirk-textarea:focus-visible { outline: none; }
+.hcms-card-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 12px 8px;
+}
+
+/* quiet × remove control, shared by scalar-array rows and object-array cards */
+.hcms-remove {
+  flex-shrink: 0;
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--mirk-placeholder-color);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+.hcms-remove:hover { color: var(--mirk-destructive); }
+.hcms-remove[hidden] { display: none; }
+
+/* "+ Add" — quiet, pinned left */
+.hcms-add.mirk-button { align-self: flex-start; }
+
+/* ---------- ERROR BANNER + inline errors ---------- */
+.hcms-shell-error,
+.hcms-error {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--mirk-destructive);
+  background: var(--mirk-bevel-bg);
+  border: 1px solid var(--mirk-destructive);
+  padding: 8px 12px;
+}
+.hcms-shell-error { margin: 0 24px; }
+.hcms-error { margin-top: 6px; }
+.hcms-shell-error[hidden],
+.hcms-error[hidden] { display: none; }
+
+/* ---------- SAVE (sits at the end of the scrolling form, not pinned) ---------- */
+.hcms-shell-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 24px 28px;
+}
+.hcms-shell-footer[hidden] { display: none; }
+
+/* ---------- sr-only move buttons: hidden, visible on keyboard focus ---------- */
+.hcms-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.hcms-sr-only:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: 2px 6px;
+  margin: 0 2px;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+  background: var(--mirk-bevel-bg);
+  border: 1px solid var(--mirk-input-border);
+  color: var(--mirk-fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+.hcms-sr-only[hidden] { display: none; }

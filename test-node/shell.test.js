@@ -60,7 +60,45 @@ test('mountShell: dialog ARIA semantics on shell root', () => {
   assert.ok(labelId, 'aria-labelledby is set')
   const titleEl = root.querySelector('#' + labelId)
   assert.ok(titleEl, 'aria-labelledby resolves inside the shell')
-  assert.equal(titleEl.textContent, 'Edit')
+  assert.equal(titleEl.textContent.trim(), 'Page content')
+  destroy()
+})
+
+test('mountShell: pixel-quiet geometry — minibar, scroll body, mirk close/save', () => {
+  const doc = setupDom()
+  const { root, destroy } = mountShell({ mountTo: doc.body, doc, showSaveButton: true })
+  assert.ok(root.classList.contains('pixel-quiet'), 'shell carries the pixel-quiet look')
+  // condensed minibar pinned to the panel top
+  assert.ok(root.querySelector('.hcms-shell-minibar'), 'minibar present')
+  // scroll region wraps header + form + footer
+  const bodyRegion = root.querySelector('.hcms-shell-body')
+  assert.ok(bodyRegion, 'scroll body present')
+  assert.ok(bodyRegion.querySelector('[data-hcms-form-root]'), 'form root lives inside the scroll body')
+  assert.ok(bodyRegion.querySelector('.hcms-shell-footer'), 'footer is in-flow inside the scroll body')
+  // close + save are real mirk buttons, still carrying their action hooks
+  const close = root.querySelector('.hcms-shell-close')
+  assert.ok(close.classList.contains('mirk-button'), 'close is a mirk-button')
+  assert.equal(close.getAttribute('data-hcms-action'), 'close')
+  const save = root.querySelector('.hcms-shell-save')
+  assert.ok(save.classList.contains('mirk-button'), 'save is a mirk-button')
+  assert.equal(save.getAttribute('data-hcms-action'), 'save')
+  // header carries the eyebrow + title
+  assert.ok(root.querySelector('.hcms-shell-eyebrow'), 'eyebrow present')
+  destroy()
+})
+
+test('mountShell: theme option pins dark', () => {
+  const doc = setupDom()
+  const { root, destroy } = mountShell({ mountTo: doc.body, doc, theme: 'dark' })
+  assert.ok(root.classList.contains('dark'))
+  destroy()
+})
+
+test('mountShell: custom title + eyebrow', () => {
+  const doc = setupDom()
+  const { root, destroy } = mountShell({ mountTo: doc.body, doc, title: 'Settings', eyebrow: 'EDITING' })
+  assert.equal(root.querySelector('.hcms-shell-title').textContent.trim(), 'Settings')
+  assert.equal(root.querySelector('.hcms-shell-eyebrow').textContent.trim(), 'EDITING')
   destroy()
 })
 
