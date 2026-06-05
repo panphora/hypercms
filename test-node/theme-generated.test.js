@@ -67,6 +67,16 @@ test('pixel-quiet token retune + geometry are present and scoped', () => {
   assert.match(css, /\.hcms-shell-body\b/)
 })
 
+test('a mirk tags box used as the array slot keeps mirk row layout, not the stacked list', () => {
+  const css = stripComments(readTheme())
+  // The generic stacked-list layout is unlayered, so it would beat mirk's
+  // @layer-components row-wrap on a slot that is also a .mirk-tags box and stack
+  // the chips vertically. The rule must exempt mirk-tags so mirk governs it.
+  assert.match(css, /\.hcms-array-items:not\(\.mirk-tags\)\s*\{[^}]*flex-direction:\s*column/)
+  // No unguarded array-items rule may force a column onto a tags box.
+  assert.doesNotMatch(css, /(^|[\s,}])\.hcms-array-items\s*\{[^}]*flex-direction:\s*column/)
+})
+
 test('vendored mirk runtime is guarded for non-browser realms', () => {
   const js = fs.readFileSync(vendorPath, 'utf8')
   assert.match(js, /typeof window !== "undefined"/)

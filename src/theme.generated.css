@@ -897,7 +897,10 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
   letter-spacing: 0.14em;
   color: var(--mirk-sortable-label);
 }
-.hcms-array-items {
+/* The generic stacked-list layout is unlayered, so it would beat mirk's
+   @layer-components rules on any slot that is also a mirk component. Exempt a
+   mirk tags box so it keeps mirk's own row-wrap layout and inner padding. */
+.hcms-array-items:not(.mirk-tags) {
   list-style: none;
   margin: 0;
   padding: 0;
