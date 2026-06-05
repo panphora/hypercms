@@ -23,6 +23,10 @@
   #log { font-family: ui-monospace, Menlo, monospace; background: #2b241b; color: #efe7d8; padding: .5rem .75rem; border-radius: 6px; font-size: .78rem; max-height: 160px; overflow: auto; }
   #log .err { color: #f0a89a; }
   .hint { color: #8c7b62; font-size: .85rem; }
+  .undo-bar { display: flex; align-items: center; gap: .5rem; margin: 0 0 1.5rem; }
+  .ub-btn { font: inherit; font-size: .85rem; padding: .3rem .75rem; border: 1px solid #cdbfa6; border-radius: 6px; background: #f7f2ea; color: #2b241b; cursor: pointer; }
+  .ub-btn:hover:not(:disabled) { background: #efe7d8; }
+  .ub-btn:disabled { opacity: .4; cursor: default; }
 </style>
 
 <!-- Rules: the canonical Pixel Quiet "Page settings" field set. -->
@@ -137,6 +141,14 @@
 </head>
 <body>
 
+<!-- Demo chrome: mutations-ignore keeps the toolbar's own DOM (button disabled
+     toggles) out of the undo stack while undo observes document.body. -->
+<div class="undo-bar" mutations-ignore>
+  <button type="button" id="undo-btn" class="ub-btn">↶ Undo</button>
+  <button type="button" id="redo-btn" class="ub-btn">↷ Redo</button>
+  <span class="hint">or ⌘Z / ⌘⇧Z — every panel edit is undoable</span>
+</div>
+
 <header>
   <h1 class="page-title">Hyperclay</h1>
   <p class="tagline">Edit the right-side panel; this page updates live.</p>
@@ -171,18 +183,26 @@
   </div>
 </section>
 
-<section class="card">
+<!-- mutations-ignore: log rows churn on every event; keep them out of undo. -->
+<section class="card" mutations-ignore>
   <h2>Event log <span class="hint">(hcms:change / save fire as you edit)</span></h2>
   <div id="log"></div>
 </section>
 
 <script src="../dist/hypercms.min.js"></script>
+<!-- Real DOM undo/redo engine (local hyper-undo build). The IIFE exposes
+     window.hyperundo; we bridge its singleton to window.hyperclay.undo, which
+     hypercms subscribes to on open(). A classic script so it loads over file://
+     (ES-module imports are CORS-blocked from file:// origins). -->
+<script src="../../hyper-undo/dist/hyper-undo.min.js"></script>
 <script type="module">
-  // hypercms's change observer needs window.hyperclay.Mutation. The demo edits
-  // flow form -> page -> save (which don't use the observer), so a no-op stub
-  // satisfying the contract is enough; the real hyperclayjs utility pulls in
-  // sibling modules that don't resolve from this folder.
   window.hyperclay = window.hyperclay || {}
+
+  // hypercms's change observer needs window.hyperclay.Mutation. Edits flow
+  // form -> page -> save, and undo/redo re-syncs the form through hypercms's undo
+  // subscription (not this observer), so a no-op stub still satisfies the
+  // contract; the real hyperclayjs Mutation pulls in siblings that don't resolve
+  // from this folder.
   if (!window.hyperclay.Mutation) {
     const off = () => () => {}
     window.hyperclay.Mutation = {
@@ -191,8 +211,25 @@
     }
   }
 
+  // Attach + start undo BEFORE cms.open() (which subscribes to it on open).
+  // Scope is document.body, matching the platform's smooth-sailing preset:
+  // hypercms suppresses its own shell/body-class mutations and the demo chrome
+  // is marked mutations-ignore, so neither lands in the undo stack.
+  const undo = window.hyperundo.undo
+  window.hyperclay.undo = undo
+  undo.start({ scope: document.body, bindKeys: true })
+
   const cms = window.hypercms.cms
   window.cms = cms
+
+  // Undo / Redo toolbar; Cmd+Z / Cmd+Shift+Z also work via bindKeys.
+  const undoBtn = document.getElementById('undo-btn')
+  const redoBtn = document.getElementById('redo-btn')
+  const syncButtons = () => { undoBtn.disabled = !undo.canUndo; redoBtn.disabled = !undo.canRedo }
+  undoBtn.addEventListener('click', () => undo.undo())
+  redoBtn.addEventListener('click', () => undo.redo())
+  for (const ev of ['commit', 'undo', 'redo', 'clear']) undo.on(ev, syncButtons)
+  syncButtons()
 
   const log = document.getElementById('log')
   function record(name, detail) {
