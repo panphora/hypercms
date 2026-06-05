@@ -1,12 +1,14 @@
 # Pixel Quiet × hypercms — integration (as-built record)
 
-**Status: SHIPPED in the working tree, not committed, not published.** All five phases are done,
+**Status: SHIPPED + committed on `main` (local), not published.** All five phases are done,
 tested, and browser-verified. hypercms renders its edit-in-place sidebar in the **Pixel Quiet**
 look using **real mirk-interface components**, with **mirk.js** wired so the components behave, all
 scoped so nothing leaks onto the host page.
 
-- Tests: **158 node + 31 browser, 0 failures.** Build clean.
+- Tests: **159 node + 31 browser, 0 failures.** Build clean.
 - Verified live in agent-browser (see Verification) in both light and OS-dark.
+- Commits: core integration `93cc9d4` (pushed); follow-ups (tags-row fix, demo undo, corner delete)
+  are local and unpushed — see **Post-ship refinements**.
 - Publishes for hyperclayjs / `@panphora/hyper-cms` remain parked on the `/_/` deploy (project memory).
 
 Goal restated: the Pixel Quiet mockup (`cms-sidebar/pixel-quiet/index.html`) is static, hand-authored
@@ -38,9 +40,10 @@ drives all of it through real hypercms.
 | `src/templates.js` | modified | `DEFAULT_TEMPLATES` rewritten as mirk markup |
 | `src/hypercms.js` | modified | `open()` threads `title`/`eyebrow`/`theme` to `mountShell` |
 | `package.json` | modified | `build:theme` script; `build` runs it first; `./styles.css` + new `./theme.css` exports point at the generated theme |
-| `demo/pixel-quiet.html` | new | canonical Page-settings form driven by real hypercms |
-| `test-node/theme-generated.test.js` | new (8) | locks the scoping invariants |
-| `test-node/mirk-markup.test.js` | new (4) | locks the default templates' mirk output |
+| `demo/pixel-quiet.html` | new | canonical Page-settings form driven by real hypercms; later wired to real undo (see Post-ship refinements) |
+| `demo/8bit-close-button.html` | new | four explored close-button options; the corner delete came from here |
+| `test-node/theme-generated.test.js` | new (9) | locks the scoping invariants + the tags-row guard |
+| `test-node/mirk-markup.test.js` | new (4) | locks the default templates' mirk output + the corner-button markup |
 | `test-node/shell.test.js` | modified (+3 new, 1 changed) | pixel-quiet geometry, dark pin, custom title/eyebrow; title assertion now "Page content" |
 | `test-browser/pixel-quiet.test.js` | new (12) | render + full functional contract |
 | `src/styles.css` | untouched | **now orphaned** (no imports anywhere); kept in place, removal is a follow-up |
@@ -133,9 +136,11 @@ slots, the `.hcms-error` inline slots), so extract / apply / add / remove / reor
   error + add button.
 - `@object-array-item`: `article.hcms-card.mirk-sortable__item[draggable]` > `SORTABLE_GRIP` +
   `.hcms-card-body.mirk-sortable__body` (wrapping the `.hcms-card-fields` slot + a `.hcms-card-controls`
-  row of move/remove buttons) + `.hcms-error`. The error sits **outside** the card body, at article
-  level. `SORTABLE_GRIP` renders exactly **8** `.mirk-sortable__dot` spans inside
-  `.hcms-drag-handle.mirk-sortable__grip`.
+  row holding the sr-only move buttons + the `.hcms-remove.hcms-remove--card` delete button) +
+  `.hcms-error`. The remove button carries an SVG × and is CSS-positioned to the card's top-right
+  corner (see Post-ship refinements); the controls row collapses once its only in-flow child is gone.
+  The error sits **outside** the card body, at article level. `SORTABLE_GRIP` renders exactly **8**
+  `.mirk-sortable__dot` spans inside `.hcms-drag-handle.mirk-sortable__grip`.
 
 `templates.test.js` and `form-builder.test.js` were **not** modified: they query the preserved hooks
 and stayed green untouched. New template coverage lives in `mirk-markup.test.js`.
@@ -187,16 +192,22 @@ form rebuild mutates the shell, which the observer then re-triggers. The demo ed
 save, which do not need the observer, so the stub is sufficient. It must stay until those two issues
 are addressed.
 
+**Undo/redo (added post-ship):** the demo loads the local hyper-undo engine and bridges it to
+`window.hyperclay.undo`, started on `document.body` before `cms.open()`, with an Undo/Redo toolbar plus
+Cmd+Z / Cmd+Shift+Z. See **Post-ship refinements**. The Mutation stub above still stands: undo re-syncs
+the form through hypercms's undo subscription, not the Mutation observer.
+
 ## Tests
 
-- `test-node/theme-generated.test.js` (**8**): generated theme exists and is non-trivial; mirk
+- `test-node/theme-generated.test.js` (**9**): generated theme exists and is non-trivial; mirk
   components scoped under `.hcms-shell`; `:root`/`body`/universal bound to the shell, not the page; no
   unscoped `body{`/`:root`; theme flags concatenate; `@font-face` URL is the absolute CDN; pixel-quiet
-  tokens + geometry present and scoped; vendored runtime guarded; generator is deterministic.
+  tokens + geometry present and scoped; vendored runtime guarded; generator is deterministic; a tags box
+  used as the array slot keeps mirk's row layout (the `:not(.mirk-tags)` guard).
 - `test-node/mirk-markup.test.js` (**4**): default scalar renders a bound `.mirk-input`; scalar-array
   add button is a `mirk-button` and items use `.mirk-input`; object-array item is a
-  `.mirk-sortable__item` card with an 8-dot grip + body slot; add button still toggles via constraint
-  visibility (action hook preserved).
+  `.mirk-sortable__item` card with an 8-dot grip + body slot + a `.hcms-remove--card` corner delete
+  carrying the SVG ×; add button still toggles via constraint visibility (action hook preserved).
 - `test-node/shell.test.js` (**11**, +3 new, 1 changed): new pixel-quiet geometry (minibar, scroll
   body, `mirk-button` close/save), dark theme pin, custom title/eyebrow; the dialog-ARIA assertion now
   resolves `aria-labelledby` to title text "Page content".
@@ -206,7 +217,7 @@ are addressed.
   page; toggle flips an attr; select writes an attr; remove a tag drops the page `li`; add a product
   appends a card + a page product; reorder reorders the page; Save fires `hcms:save` with the full data).
 
-Totals: `npm run test:node` → **158 pass, 0 fail**; `npm run test:browser` → **6 files, 31 pass, 0 fail**.
+Totals: `npm run test:node` → **159 pass, 0 fail**; `npm run test:browser` → **6 files, 31 pass, 0 fail**.
 The full existing suite stayed green (no regressions).
 
 ## Verification (agent-browser, invisible local browser)
@@ -231,6 +242,46 @@ loaded from the CDN.
 4. **Generate, do not hand-copy, the scoped mirk CSS**, so mirk stays the single source of truth.
 5. **No publish.** Built + tested locally. hyperclayjs / `@panphora/hyper-cms` publishes remain parked
    on the `/_/` deploy per project memory.
+
+## Post-ship refinements
+
+Three changes landed after the initial ship, each committed on `main` (local, unpushed) and
+browser-verified in light and dark.
+
+### Tags row stays a row (`0c909a0`)
+
+A tags box used as the array slot carries **both** `.mirk-tags` and `.hcms-array-items`. mirk's
+row-wrap layout lives in `@layer components`, but the generic `.hcms-array-items` stacked-list rule is
+**unlayered**, so it won the cascade and stacked the chips vertically (and zeroed mirk's inner padding).
+Fix: scope the generic list rule `.hcms-array-items:not(.mirk-tags)`, so a tags box is governed entirely
+by mirk. The default scalar-array list and the object-array cards are untouched. Guard added to
+`theme-generated.test.js` (now **9**).
+
+### Demo wires real undo/redo (`c190369`)
+
+`demo/pixel-quiet.html` loads the local hyper-undo engine as a classic IIFE (so it resolves over
+`file://`, where ES-module imports are CORS-blocked), bridges its singleton to `window.hyperclay.undo`,
+and starts it on `document.body` before `cms.open()` (which subscribes to it). Adds an Undo/Redo toolbar
+(Cmd+Z / Cmd+Shift+Z bound) and marks the demo chrome (toolbar, event log) `mutations-ignore` so their
+DOM churn never enters the undo stack; hypercms already suppresses its own shell/body-class mutations.
+Verified: scalar edits, attribute toggles, and add/remove/reorder all undo+redo with the form
+re-syncing on revert. **Caveats:** file:// only (the `../../hyper-undo/` path escapes an http-server
+root, and the demo already loads the gitignored `../dist/`, so it was always a local-dev artifact);
+the engine is the prebuilt dist, which is fine here because every demo field is undoable via DOM
+observation, so the unpublished `recordValue` path isn't reached.
+
+### Object-array cards get a corner delete button (`428c45c`)
+
+The card's remove control is now a square button pinned to the card's **top-right** corner, carrying
+the card's own 1px border (`var(--mirk-input-border)`) and a crisp-line, pixel-sharp × (inline SVG,
+`shape-rendering: crispEdges`, centered, red on hover). The card is `position: relative`; the button is
+`position: absolute` at `top/right: -1px` so its border merges with the card corner; the controls row,
+now holding only the sr-only move buttons, collapses. Scoped with a `.hcms-remove--card` modifier so the
+shared inline × on scalar-array rows, tag chips, and nested arrays is untouched. `mirk-markup.test.js`
+guards the markup; `demo/8bit-close-button.html` holds the four explored options (fine/bold pixel, crisp
+line, dotted) at several sizes in light and dark. **Blast radius:** this is the shipped
+`@object-array-item` template, so every hypercms object-array card gets the corner delete, not just the
+demo.
 
 ## Open follow-ups
 
