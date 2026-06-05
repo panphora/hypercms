@@ -917,7 +917,7 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
 
 /* ---------- OBJECT ARRAY — mirk-sortable cards from the engine markup ---------- */
 .hcms-array--cards .hcms-array-items { gap: 14px; }
-.hcms-card.mirk-sortable__item { background: var(--mirk-bevel-bg); }
+.hcms-card.mirk-sortable__item { background: var(--mirk-bevel-bg); position: relative; }
 .hcms-card .hcms-card-fields { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .hcms-card .hcms-field {
   gap: 2px;
@@ -935,12 +935,14 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
 }
 .hcms-card .mirk-input:focus-visible,
 .hcms-card .mirk-textarea:focus-visible { outline: none; }
+/* the remove × is pulled out to the card corner (below), so the controls row
+   now only holds the sr-only move buttons — collapse it until one is focused. */
 .hcms-card-controls {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  padding: 6px 12px 8px;
+  padding: 0;
 }
 
 /* quiet × remove control, shared by scalar-array rows and object-array cards */
@@ -957,6 +959,25 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
 }
 .hcms-remove:hover { color: var(--mirk-destructive); }
 .hcms-remove[hidden] { display: none; }
+
+/* object-array card: the delete control is a square corner button pinned
+   top-right, carrying the card's own 1px border + a crisp-line × icon. */
+.hcms-remove--card {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--mirk-input-border);
+  background: var(--mirk-bevel-bg);
+  color: var(--mirk-placeholder-color);
+}
+.hcms-remove--card:hover { border-color: var(--mirk-destructive); }
+.hcms-remove--card .hcms-x { width: 64%; height: 64%; display: block; }
 
 /* "+ Add" — quiet, pinned left */
 .hcms-add.mirk-button { align-self: flex-start; }

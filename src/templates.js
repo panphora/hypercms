@@ -18,6 +18,10 @@ export function humanize(key) {
 // dresses these lives in src/theme.generated.css (scoped mirk + pixel-quiet).
 const SORTABLE_GRIP = `<div class="hcms-drag-handle mirk-sortable__grip" aria-hidden="true"><div class="mirk-sortable__dots"><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span></div></div>`
 
+// Crisp-line × (square caps + crispEdges): a plain pixel-sharp close glyph that
+// stays hard-edged inside the small square corner button on object-array cards.
+const CLOSE_ICON = `<svg class="hcms-x" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><path d="M4 4 L12 12 M12 4 L4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"></path></svg>`
+
 const DEFAULT_TEMPLATES = {
   '@scalar': `
     <label class="hcms-field" data-hcms-shape="scalar">
@@ -70,7 +74,7 @@ const DEFAULT_TEMPLATES = {
         <div class="hcms-card-controls">
           <button type="button" class="hcms-move hcms-move-up hcms-sr-only" data-hcms-action="move-up" aria-label="Move up">↑</button>
           <button type="button" class="hcms-move hcms-move-down hcms-sr-only" data-hcms-action="move-down" aria-label="Move down">↓</button>
-          <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove">×</button>
+          <button type="button" class="hcms-remove hcms-remove--card" data-hcms-action="remove" aria-label="Remove">${CLOSE_ICON}</button>
         </div>
       </div>
       <div class="hcms-error" hidden></div>

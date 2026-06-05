@@ -51,8 +51,12 @@ test('default object-array item is a mirk-sortable card with a grip + body slot'
   assert.ok(body.querySelector('.hcms-card-fields'), 'card-fields slot inside the sortable body')
   assert.ok(card.querySelector('[data-hcms-path="products.0.name"] input.mirk-input'), 'child field is a mirk-input')
   // remove + reorder controls still present
-  assert.ok(card.querySelector('[data-hcms-action="remove"]'))
   assert.ok(card.querySelector('[data-hcms-action="move-up"]'))
+  // remove is the corner button: a square-able .hcms-remove--card holding the SVG ×
+  const remove = card.querySelector('[data-hcms-action="remove"]')
+  assert.ok(remove, 'remove control present')
+  assert.ok(remove.classList.contains('hcms-remove--card'), 'remove carries the corner-button modifier')
+  assert.ok(remove.querySelector('svg.hcms-x'), 'remove holds the crisp-line × icon')
 })
 
 test('default add button still toggles via constraint visibility (data-hcms-action preserved)', () => {

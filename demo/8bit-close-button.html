@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>8-bit close button — 4 options</title>
+
+<style>
+@font-face {
+  font-family: "Departure Mono";
+  src: url("https://cdn.jsdelivr.net/npm/mirk-interface@2.0.1/fonts/DepartureMono-1.500/DepartureMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --canvas: #EFE7D8;
+  --panel: #F7F2EA;
+  --card-bg: #FCF8F1;
+  --border: #D8C8AF;
+  --fg: #2B241B;
+  --muted: #8C7B62;
+  --icon: #6B5942;
+  --destructive: #C24A3A;
+}
+body.dark {
+  --canvas: #07080E;
+  --panel: #11131E;
+  --card-bg: #1A1D2C;
+  --border: #353B52;
+  --fg: #ECEAF2;
+  --muted: #8A90AB;
+  --icon: #C9CDE0;
+  --destructive: #E0796A;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Departure Mono", ui-monospace, Menlo, monospace;
+  background: var(--canvas);
+  color: var(--fg);
+  padding: 40px 32px 80px;
+  line-height: 1.4;
+}
+.wrap { max-width: 880px; margin: 0 auto; }
+
+header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; margin-bottom: 8px; flex-wrap: wrap;
+}
+h1 { font-size: 18px; margin: 0; letter-spacing: 0.02em; }
+.sub { color: var(--muted); font-size: 12px; margin: 0 0 32px; }
+
+.toggle {
+  font: inherit; font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  background: var(--card-bg); color: var(--fg);
+  cursor: pointer;
+}
+.toggle:hover { background: var(--panel); }
+
+.variant {
+  border-top: 1px solid var(--border);
+  padding: 26px 0;
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 28px;
+}
+.variant__meta h2 { font-size: 14px; margin: 0 0 6px; }
+.variant__meta p { font-size: 11px; color: var(--muted); margin: 0; }
+.variant__demo { display: flex; flex-direction: column; gap: 22px; }
+
+.eyebrow {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--muted); margin-bottom: 10px;
+}
+
+/* size ladder */
+.sizes { display: flex; align-items: flex-end; gap: 18px; }
+.size-cell { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.size-cell .px { font-size: 9px; color: var(--muted); }
+
+/* the close button itself */
+.x-btn {
+  --sz: 18px;
+  width: var(--sz); height: var(--sz);
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--icon);
+  cursor: pointer;
+  border-radius: 0;
+  transition: color 90ms, border-color 90ms;
+}
+.x-btn:hover { color: var(--destructive); border-color: var(--destructive); }
+.x-btn:active { background: var(--panel); }
+.x-btn svg { width: 64%; height: 64%; display: block; }
+
+/* in-context: a mock pixel-quiet product card with the X pinned top-left */
+.cards { display: flex; gap: 18px; flex-wrap: wrap; }
+.product-card {
+  position: relative;
+  width: 250px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  padding: 14px 14px 14px 16px;
+  display: grid; gap: 10px;
+}
+.product-card .x-btn { position: absolute; top: -1px; left: -1px; --sz: 16px; }
+.field { display: grid; gap: 5px; }
+.field label {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--muted);
+}
+.field .val { font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>8-bit close button</h1>
+    </div>
+    <button type="button" class="toggle" id="theme">◑ dark</button>
+  </header>
+  <p class="sub">Plain X, pure SVG, <code>shape-rendering: crispEdges</code> so it stays hard-edged at tiny sizes. Each button is an exact square with the icon centered, carrying the same 1px border as the product card. Hover turns it red. Pick one.</p>
+
+  <!-- variants injected here -->
+  <div id="variants"></div>
+
+</div>
+
+<script>
+// ---- pixel-grid X builders ------------------------------------------------
+// A cell (x,y) is "on" when it sits within `thickness` of either diagonal of an
+// NxN grid. thickness 1 -> single-pixel X; 2 -> a 2px band. crispEdges renders
+// each cell as a hard square, which is the whole 8-bit look.
+function solidXCells(grid, thickness) {
+  const cells = [];
+  for (let y = 0; y < grid; y++) {
+    for (let x = 0; x < grid; x++) {
+      const onMain = Math.abs(x - y) < thickness;
+      const onAnti = Math.abs(x + y - (grid - 1)) < thickness;
+      if (onMain || onAnti) cells.push([x, y]);
+    }
+  }
+  return cells;
+}
+// Square dots every other step along both diagonals -> a retro dotted X.
+function dottedXCells(grid) {
+  const seen = new Set(), cells = [];
+  const add = (x, y) => { const k = x + ',' + y; if (!seen.has(k)) { seen.add(k); cells.push([x, y]); } };
+  for (let i = 0; i < grid; i += 2) { add(i, i); add(i, grid - 1 - i); }
+  return cells;
+}
+function pixelSvg(grid, cells) {
+  const rects = cells.map(([x, y]) => `<rect x="${x}" y="${y}" width="1" height="1"/>`).join('');
+  return `<svg viewBox="0 0 ${grid} ${grid}" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true">${rects}</svg>`;
+}
+// Stroked vector X: two diagonals, square caps, crispEdges -> sharp blocky line
+// that scales cleanly to any size.
+function lineSvg(width) {
+  return `<svg viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true">`
+    + `<path d="M4 4 L12 12 M12 4 L4 12" stroke="currentColor" stroke-width="${width}" stroke-linecap="square"/>`
+    + `</svg>`;
+}
+
+const VARIANTS = [
+  {
+    name: 'Fine pixel',
+    desc: 'Single-pixel diagonal on a 7×7 grid. The most authentic NES-era X; quiet at small sizes.',
+    svg: () => pixelSvg(7, solidXCells(7, 1)),
+  },
+  {
+    name: 'Bold pixel',
+    desc: 'Two-pixel diagonal on a 7×7 grid. More weight so it reads clearly even at 14px.',
+    svg: () => pixelSvg(7, solidXCells(7, 2)),
+  },
+  {
+    name: 'Crisp line',
+    desc: 'Vector diagonals with square caps + crispEdges. Sharpest and cleanest; resolution-independent.',
+    svg: () => lineSvg(2),
+  },
+  {
+    name: 'Dotted pixel',
+    desc: 'Square dots every other step along both diagonals. A distinctly retro, stitched X.',
+    svg: () => pixelSvg(7, dottedXCells(7)),
+  },
+];
+
+const SIZES = [14, 16, 18, 24, 32];
+
+function xButton(svg, size) {
+  const style = size ? ` style="--sz:${size}px"` : '';
+  return `<button type="button" class="x-btn" aria-label="Delete"${style}>${svg}</button>`;
+}
+
+function render() {
+  const root = document.getElementById('variants');
+  root.innerHTML = VARIANTS.map((v) => {
+    const svg = v.svg();
+    const ladder = SIZES.map((s) =>
+      `<div class="size-cell">${xButton(svg, s)}<span class="px">${s}px</span></div>`
+    ).join('');
+    const card = `
+      <div class="product-card">
+        ${xButton(svg, null)}
+        <div class="field"><label>Name</label><span class="val">Widget</span></div>
+        <div class="field"><label>Price</label><span class="val">9.99</span></div>
+      </div>`;
+    return `
+      <section class="variant">
+        <div class="variant__meta">
+          <h2>${v.name}</h2>
+          <p>${v.desc}</p>
+        </div>
+        <div class="variant__demo">
+          <div>
+            <div class="eyebrow">Sizes</div>
+            <div class="sizes">${ladder}</div>
+          </div>
+          <div>
+            <div class="eyebrow">In context — pinned top-left on a product card</div>
+            <div class="cards">${card}</div>
+          </div>
+        </div>
+      </section>`;
+  }).join('');
+}
+
+render();
+
+const themeBtn = document.getElementById('theme');
+themeBtn.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  themeBtn.textContent = dark ? '◐ light' : '◑ dark';
+});
+</script>
+</body>
+</html>
