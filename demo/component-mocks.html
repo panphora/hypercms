@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>hypercms — file + image component mocks (round 4)</title>
+
+<!-- The real, built pixel-quiet theme: tokens + mirk styling + card chrome.
+     Everything below lives inside .hcms-shell.pixel-quiet so these scoped rules apply. -->
+<link rel="stylesheet" href="../src/theme.generated.css"/>
+
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; padding: 28px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    background: #6b6b73; color: #1c1c20;
+  }
+  .page-head { max-width: 1160px; margin: 0 auto 22px; color: #f4f1ea; }
+  .page-head h1 { margin: 0 0 4px; font-size: 1.15rem; font-weight: 600; }
+  .page-head p { margin: 0; font-size: .85rem; opacity: .8; }
+  .gallery { max-width: 1160px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: start; }
+  .col-label { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: #f4f1ea; opacity: .7; margin: 0 0 8px 4px; }
+
+  /* Neutralize the docked-sidebar geometry so each panel renders as a static card. */
+  .panel.hcms-shell.pixel-quiet {
+    position: static; inset: auto; width: auto; max-width: none; height: auto;
+    z-index: auto; box-shadow: none;
+    border: 1px solid var(--mirk-input-border); border-radius: 12px; overflow: hidden;
+  }
+  .panel .hcms-shell-body { overflow: visible; }
+  .panel-inner { padding: 18px 20px 24px; display: flex; flex-direction: column; gap: 26px; }
+  .panel-title {
+    font-size: .72rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--mirk-placeholder-color); padding: 12px 20px;
+    border-bottom: 1px solid var(--mirk-input-border);
+  }
+  .group-label {
+    font-size: .62rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--mirk-placeholder-color); opacity: .65; margin: 0 0 12px;
+    padding-bottom: 8px; border-bottom: 1px dashed var(--mirk-input-border);
+  }
+
+  /* ---------- The image field: empty = small Upload button; filled = thumbnail + circular × ----------
+     Structure: an un-clipped outer .cms-img__preview holds the × badge AND an inner
+     .cms-img__frame that is overflow:hidden (clips the image to its rounded corners),
+     so the badge can sit just outside the corner without being cut off. */
+  .cms-img { position: relative; }
+  .cms-img__upload { margin: 0; }                  /* a real mirk-button--small */
+  .cms-img__upload[hidden], .cms-img__preview[hidden] { display: none !important; }
+  .cms-img__preview { position: relative; display: inline-block; margin: 0; }   /* NOT clipped */
+  .cms-img__frame { display: block; overflow: hidden; }                          /* clips the image */
+  .cms-img__img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+  .cms-img__remove {
+    position: absolute; top: -7px; right: -7px;
+    width: 18px; height: 18px; border-radius: 50%; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+    color: var(--mirk-bevel-fg); background: var(--mirk-bevel-bg);
+    border: 1px solid var(--mirk-input-border);
+  }
+  .cms-img__remove:hover { border-color: var(--mirk-destructive); color: var(--mirk-destructive); }
+  .cms-img__remove .hcms-x { width: 66%; height: 66%; display: block; }
+
+  /* compact thumbnail (the only image treatment: a focused add-on, never a big hero) */
+  .cms-img--compact .cms-img__frame { width: 56px; height: 56px; border: 1px solid var(--mirk-input-border); border-radius: var(--mirk-radius); }
+
+  /* cards */
+  .mock-card .hcms-card-fields > * + * { margin-top: 14px; }
+  /* Inside a card the empty "Upload image" button is much shorter than a filled
+     56px thumbnail, so the row felt cramped and jumped on remove. Reserve the
+     thumbnail's height and centre the content: empty and filled rows now match,
+     and the button gets even breathing room above and below. */
+  .hcms-card .cms-img { display: flex; align-items: center; min-height: 56px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>hypercms · file + image component mocks — round 4</h1>
+  <p>Real pixel-quiet theme. Left = light, right = dark. Image is a focused compact thumbnail: empty shows one small Upload button; filled shows the thumbnail with a circular × (always visible) to remove. Cropping happens on upload (hyperclayjs modal).</p>
+</div>
+
+<div class="gallery">
+  <div>
+    <p class="col-label">Light</p>
+    <div class="panel hcms-shell pixel-quiet light">
+      <div class="panel-title">Page settings</div>
+      <div class="hcms-shell-body"><div class="panel-inner" data-mount></div></div>
+    </div>
+  </div>
+  <div>
+    <p class="col-label">Dark</p>
+    <div class="panel hcms-shell pixel-quiet dark">
+      <div class="panel-title">Page settings</div>
+      <div class="hcms-shell-body"><div class="panel-inner" data-mount></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Components authored once, cloned into both theme panels below. -->
+<template id="kit">
+
+  <!-- ============ FILE · Round — Compact ============ -->
+  <section>
+    <p class="group-label">File · Round — Compact</p>
+    <label class="hcms-field" data-hcms-shape="scalar">
+      <span class="hcms-label">Resume (PDF)</span>
+      <div class="mirk-file mirk-file--compact mirk-file--round">
+        <label class="mirk-file__button">
+          <input type="file" class="mirk-file__input" accept="application/pdf">
+          <span class="mirk-file__button-label">Choose</span>
+        </label>
+        <span class="mirk-file__name">No file chosen</span>
+      </div>
+    </label>
+  </section>
+
+  <!-- ============ IMAGE · compact thumbnail — empty + filled ============ -->
+  <section>
+    <p class="group-label">Image · compact thumbnail</p>
+    <div class="hcms-field" data-hcms-shape="scalar">
+      <span class="hcms-label">Avatar — empty</span>
+      <div class="cms-img cms-img--compact" data-aspect="1:1">
+        <label class="mirk-button mirk-button--small cms-img__upload"><input type="file" accept="image/*" class="cms-img__input" hidden><span class="mirk-button__label">Upload image</span></label>
+        <figure class="cms-img__preview" hidden><span class="cms-img__frame"><img class="cms-img__img" alt=""></span><button type="button" class="cms-img__remove" aria-label="Remove image"><svg class="hcms-x" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><path d="M4 4 L12 12 M12 4 L4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"></path></svg></button></figure>
+      </div>
+    </div>
+    <div class="hcms-field" data-hcms-shape="scalar" style="margin-top:16px">
+      <span class="hcms-label">Avatar — filled</span>
+      <div class="cms-img cms-img--compact" data-aspect="1:1">
+        <label class="mirk-button mirk-button--small cms-img__upload" hidden><input type="file" accept="image/*" class="cms-img__input" hidden><span class="mirk-button__label">Upload image</span></label>
+        <figure class="cms-img__preview"><span class="cms-img__frame"><img class="cms-img__img" data-seed alt=""></span><button type="button" class="cms-img__remove" aria-label="Remove image"><svg class="hcms-x" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><path d="M4 4 L12 12 M12 4 L4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"></path></svg></button></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CARD · image as a compact add-on field ============ -->
+  <section>
+    <p class="group-label">Card · image as a compact add-on field</p>
+    <article class="hcms-card mirk-sortable__item mock-card">
+      <div class="hcms-drag-handle mirk-sortable__grip" aria-hidden="true"><div class="mirk-sortable__dots"><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span><span class="mirk-sortable__dot"></span></div></div>
+      <div class="hcms-card-body mirk-sortable__body">
+        <div class="hcms-card-fields">
+          <label class="hcms-field" data-hcms-shape="scalar"><span class="hcms-label">Name</span><input class="mirk-input" value="Wildflower print"></label>
+          <label class="hcms-field" data-hcms-shape="scalar"><span class="hcms-label">Price</span><input class="mirk-input" value="24.00"></label>
+          <div class="hcms-field" data-hcms-shape="scalar">
+            <span class="hcms-label">Thumbnail</span>
+            <div class="cms-img cms-img--compact" data-aspect="1:1">
+              <label class="mirk-button mirk-button--small cms-img__upload" hidden><input type="file" accept="image/*" class="cms-img__input" hidden><span class="mirk-button__label">Upload image</span></label>
+              <figure class="cms-img__preview"><span class="cms-img__frame"><img class="cms-img__img" data-seed alt=""></span><button type="button" class="cms-img__remove" aria-label="Remove image"><svg class="hcms-x" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><path d="M4 4 L12 12 M12 4 L4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"></path></svg></button></figure>
+            </div>
+          </div>
+        </div>
+        <div class="hcms-card-controls">
+          <button type="button" class="hcms-remove hcms-remove--card" data-hcms-action="remove" aria-label="Remove"><svg class="hcms-x" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><path d="M4 4 L12 12 M12 4 L4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"></path></svg></button>
+        </div>
+      </div>
+    </article>
+  </section>
+
+</template>
+
+<script>
+  // A seed image so the "filled" examples render without interaction.
+  const SEED = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180'%3E%3Crect width='320' height='180' fill='%237aa2c9'/%3E%3Ccircle cx='245' cy='52' r='30' fill='%23ffe08a'/%3E%3Crect y='120' width='320' height='60' fill='%234f7d52'/%3E%3C/svg%3E";
+
+  const tpl = document.getElementById('kit');
+  document.querySelectorAll('[data-mount]').forEach((m) => m.appendChild(tpl.content.cloneNode(true)));
+  document.querySelectorAll('.cms-img__img[data-seed]').forEach((img) => { img.src = SEED; });
+
+  // File: show chosen filename (mirrors mirk's runtime).
+  document.addEventListener('change', (e) => {
+    const input = e.target.closest('.mirk-file__input'); if (!input) return;
+    const name = input.closest('.mirk-file').querySelector('.mirk-file__name'); if (!name) return;
+    if (input.files.length) { name.textContent = input.files[0].name; name.dataset.filled = ''; }
+    else { name.textContent = 'No file chosen'; delete name.dataset.filled; }
+  });
+
+  // Image upload: select -> (crop happens in hyperclayjs) -> show thumbnail, hide the Upload button.
+  document.addEventListener('change', (e) => {
+    const input = e.target.closest('.cms-img__input'); if (!input || !input.files.length) return;
+    const field = input.closest('.cms-img');
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      field.querySelector('.cms-img__img').src = ev.target.result;
+      field.querySelector('.cms-img__upload').setAttribute('hidden', '');
+      field.querySelector('.cms-img__preview').removeAttribute('hidden');
+    };
+    reader.readAsDataURL(input.files[0]);
+  });
+
+  // Remove (the circular ×): clear the image, return to the Upload button.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.cms-img__remove'); if (!btn) return;
+    const field = btn.closest('.cms-img');
+    field.querySelector('.cms-img__input').value = '';
+    field.querySelector('.cms-img__img').removeAttribute('src');
+    field.querySelector('.cms-img__preview').setAttribute('hidden', '');
+    field.querySelector('.cms-img__upload').removeAttribute('hidden');
+  });
+</script>
+
+</body>
+</html>

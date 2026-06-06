@@ -41,7 +41,7 @@
   "tags": "ul.tags li[]",
   "products": [
     ".product",
-    { "name": ".product-name", "price": ".product-price" }
+    { "name": ".product-name", "price": ".product-price", "sku": ".product-sku" }
   ]
 }
 </script>
@@ -116,7 +116,7 @@
   <div class="hcms-field" data-hcms-shape="scalar-array">
     <span class="hcms-label" data-hcms-label></span>
     <div class="mirk-tags hcms-array-items"></div>
-    <button type="button" class="hcms-add mirk-button mirk-button--small" data-hcms-action="add"><span class="mirk-button__label">+ tag</span></button>
+    <button type="button" class="hcms-add mirk-button mirk-button--small" data-hcms-action="add"><span class="mirk-button__label">+ Add</span></button>
     <div class="hcms-error" hidden></div>
   </div>
 </template>
@@ -171,14 +171,17 @@
     <div class="product">
       <h3 class="product-name">Widget</h3>
       <p class="product-price">9.99</p>
+      <p class="product-sku">WGT-001</p>
     </div>
     <div class="product">
       <h3 class="product-name">Gadget</h3>
       <p class="product-price">19.99</p>
+      <p class="product-sku">GDG-002</p>
     </div>
     <div class="product" cms-template hidden>
       <h3 class="product-name"></h3>
       <p class="product-price"></p>
+      <p class="product-sku"></p>
     </div>
   </div>
 </section>
@@ -243,6 +246,9 @@
   }
 
   // ?theme=light|dark pins the panel for showcasing; default follows the OS.
+  // Removing a product card confirms first by default (the built-in card-only
+  // policy). With no hyperclay around this bare file, that confirm is the native
+  // dialog; inside hyperclay it becomes the styled consent() modal automatically.
   const theme = new URLSearchParams(location.search).get('theme')
   cms.open({ showSaveButton: true, theme: theme === 'light' || theme === 'dark' ? theme : undefined })
 </script>
