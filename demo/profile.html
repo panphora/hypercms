@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hypercms — profile upload test (throwaway)</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #0e0f12; color: #e8e8ea; }
+  .profile {
+    max-width: 360px;
+    margin: 48px auto;
+    padding: 28px;
+    background: #16181d;
+    border: 1px solid #2a2d34;
+    border-radius: 14px;
+    text-align: center;
+  }
+  .avatar {
+    width: 96px; height: 96px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #2a2d34;
+    display: inline-block;
+  }
+  .name { font-size: 22px; margin: 16px 0 4px; }
+  .bio { color: #9aa0aa; margin: 0 0 20px; font-size: 14px; }
+  .links { display: flex; flex-direction: column; gap: 10px; }
+  .links a {
+    display: block;
+    padding: 10px 14px;
+    border: 1px solid #2a2d34;
+    border-radius: 10px;
+    color: #e8e8ea;
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .links a:hover { border-color: #4b5563; }
+  .hint { max-width: 360px; margin: 0 auto 24px; color: #6b7280; font-size: 12px; line-height: 1.5; }
+</style>
+
+<script data-rules-name="cms" data-rules-version="1" type="application/json">
+{
+  "avatar": "img.avatar@src",
+  "name": "h1.name",
+  "bio": "p.bio",
+  "homepage": "a.homepage@href",
+  "resume": "a.resume@href"
+}
+</script>
+</head>
+<body>
+
+<p class="hint">
+  Throwaway local test for the hypercms upload widgets.<br>
+  <b>avatar</b> (img@src) → auto @image upload ·
+  <b>homepage</b> (a@href) → plain URL field ·
+  <b>resume</b> (a@href + data-hcms-component="file") → opt-in file upload
+</p>
+
+<div class="profile">
+  <img class="avatar" src="" alt="avatar">
+  <h1 class="name">Ada Lovelace</h1>
+  <p class="bio">Mathematician and first programmer.</p>
+  <div class="links">
+    <a class="homepage" href="https://example.com">My website</a>
+    <a class="resume" data-hcms-component="file" href="">Résumé</a>
+  </div>
+</div>
+
+<script src="../dist/hypercms.min.js"></script>
+<script type="module">
+  // Mutation utility (auto-installs window.hyperclay.Mutation) — same symlink the demo uses.
+  await import('./hyperclayjs-mutation.js')
+
+  const cms = window.hypercms.cms
+  window.hyperclay = window.hyperclay || {}
+  window.hyperclay.hypercms = cms
+
+  // Stub the platform uploader: return a stable server-style URL so we can verify
+  // a byte-clean URL write (no blob:/data: noise), the filename render, and clear.
+  window.hyperclay.uploadFileBasic = async (file) => {
+    await new Promise((r) => setTimeout(r, 150))
+    return { uploads: [{ name: file.name, nodeId: 'test', url: `/uploads/${encodeURIComponent(file.name)}` }] }
+  }
+
+  cms.open({ showSaveButton: true })
+</script>
+
+</body>
+</html>
