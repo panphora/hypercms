@@ -90,7 +90,7 @@ export function bindEvents(ctx) {
     } else if (action === 'remove') {
       const itemEl = actionEl.closest('[data-hcms-card], [data-hcms-array-item]')
       if (!itemEl) return
-      onRemove(itemEl, ctx)
+      requestRemove(itemEl, ctx)
     } else if (action === 'move-up' || action === 'move-down') {
       const itemEl = actionEl.closest('[data-hcms-card], [data-hcms-array-item]')
       if (!itemEl) return
@@ -226,6 +226,51 @@ export function onMove(itemEl, direction, ctx) {
   return commitWithUndo(`Reorder ${arrayEl.getAttribute('data-hcms-path') || ''}`, () =>
     commit(extractFormData(ctx), { path: arrayEl.getAttribute('data-hcms-path') || '', structural: true }, ctx)
   )
+}
+
+const DEFAULT_CONFIRM_REMOVE = 'Delete this item?'
+
+// Resolve whether removing an item from `arrayEl` should confirm first, and with
+// what prompt. Most specific wins: a per-array `data-hcms-confirm-remove`
+// attribute (a string overrides the prompt; "off"/"false"/"no"/"0" disables that
+// one array), then the global `confirmRemove` open() option (a string overrides
+// the prompt, true forces every list, false disables everything), then the
+// built-in default. The default confirms card removals (object-array items hold
+// several fields) and leaves scalar-array chips instant. Returns the prompt to
+// confirm with, or null to remove without asking.
+function resolveRemoveConfirm(arrayEl, ctx) {
+  const attr = arrayEl && arrayEl.getAttribute('data-hcms-confirm-remove')
+  if (attr != null) {
+    if (/^(off|false|no|0)$/i.test(attr.trim())) return null
+    return attr || DEFAULT_CONFIRM_REMOVE
+  }
+  const global = ctx && ctx.confirmRemove
+  if (global === false) return null
+  if (typeof global === 'string') return global || DEFAULT_CONFIRM_REMOVE
+  if (global === true) return DEFAULT_CONFIRM_REMOVE
+  return arrayEl && arrayEl.getAttribute('data-hcms-shape') === 'object-array'
+    ? DEFAULT_CONFIRM_REMOVE
+    : null
+}
+
+// Built-in delete confirmation: every list-item removal routes through here so
+// the policy applies uniformly. Confirmation uses hyperclay's consent() (the
+// styled modal) when the host page provides it, falls back to native confirm(),
+// and proceeds when neither exists (non-browser). Programmatic api.removeItem()
+// bypasses this by calling onRemove directly, the way undo treats deliberate
+// actions.
+export function requestRemove(itemEl, ctx) {
+  const arrayEl = itemEl.closest('[data-hcms-shape="object-array"], [data-hcms-shape="scalar-array"]')
+  const message = resolveRemoveConfirm(arrayEl, ctx)
+  if (message == null) return onRemove(itemEl, ctx)
+  const consent = typeof window !== 'undefined' && (window.hyperclay?.consent || window.consent)
+  if (typeof consent === 'function') {
+    Promise.resolve(consent(message)).then(() => onRemove(itemEl, ctx), () => {})
+  } else if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+    if (window.confirm(message)) onRemove(itemEl, ctx)
+  } else {
+    onRemove(itemEl, ctx)
+  }
 }
 
 export function onRemove(itemEl, ctx) {

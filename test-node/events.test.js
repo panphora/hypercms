@@ -4,7 +4,41 @@ import { JSDOM } from 'jsdom'
 import { injectDefaults } from '../src/templates.js'
 import { deriveFormRules } from '../src/form-rules.js'
 import { buildForm } from '../src/form-builder.js'
-import { commit, onAdd, onRemove, extractFormData } from '../src/events.js'
+import { commit, onAdd, onRemove, requestRemove, extractFormData } from '../src/events.js'
+
+// requestRemove reads the global `window` (for consent/confirm); jsdom's window
+// isn't global, so install a controlled one for the duration of fn.
+function withWindow(win, fn) {
+  const had = 'window' in globalThis
+  const prev = globalThis.window
+  globalThis.window = win
+  const done = () => { if (had) globalThis.window = prev; else delete globalThis.window }
+  let out
+  try { out = fn() } catch (e) { done(); throw e }
+  return Promise.resolve(out).finally(done)
+}
+
+const tick = () => new Promise((r) => setTimeout(r, 0))
+
+function productsCtx() {
+  const ctx = setupCtx({
+    pageRules: { products: ['.product', { name: '.n' }] },
+    data: { products: [{ name: 'A' }, { name: 'B' }] },
+    pageHTML: '<div><div class="product"><span class="n">A</span></div>' +
+      '<div class="product"><span class="n">B</span></div></div>',
+  }).ctx
+  return ctx
+}
+const cardCount = (ctx) => ctx.formRoot.querySelectorAll('[data-hcms-card]').length
+
+function chipsCtx() {
+  return setupCtx({
+    pageRules: { tags: 'li.tag[]' },
+    data: { tags: ['a', 'b'] },
+    pageHTML: '<ul><li class="tag">a</li><li class="tag">b</li></ul>',
+  }).ctx
+}
+const itemCount = (ctx) => ctx.formRoot.querySelectorAll('[data-hcms-array-item]').length
 
 function setupCtx({ pageRules, data, pageHTML }) {
   const dom = new JSDOM(`<!DOCTYPE html><html><head></head><body>${pageHTML}</body></html>`)
@@ -164,6 +198,108 @@ test('onRemove: removes the item and re-stamps sibling paths', () => {
   assert.equal(after.length, 2)
   assert.equal(after[0].getAttribute('data-hcms-path'), 'products.0')
   assert.equal(after[1].getAttribute('data-hcms-path'), 'products.1')
+})
+
+test('requestRemove: a card (object-array) confirms by default via consent()', async () => {
+  const ctx = productsCtx()
+  let asked = null
+  const win = { hyperclay: { consent: (msg) => { asked = msg; return Promise.resolve() } } }
+  await withWindow(win, async () => {
+    requestRemove(ctx.formRoot.querySelector('[data-hcms-card]'), ctx)
+    await tick()
+  })
+  assert.equal(asked, 'Delete this item?')
+  assert.equal(cardCount(ctx), 1)
+})
+
+test('requestRemove: a chip (scalar-array) removes instantly by default — never asks', () => {
+  const ctx = chipsCtx()
+  let asked = false
+  withWindow({ confirm: () => { asked = true; return false } }, () => {
+    requestRemove(ctx.formRoot.querySelector('[data-hcms-array-item]'), ctx)
+  })
+  assert.equal(asked, false, 'chips must not prompt under the card-only default')
+  assert.equal(itemCount(ctx), 1)
+})
+
+test('requestRemove: a cancelled consent() leaves the card in place', async () => {
+  const ctx = productsCtx()
+  const win = { consent: () => Promise.reject(new Error('cancelled')) }
+  await withWindow(win, async () => {
+    requestRemove(ctx.formRoot.querySelector('[data-hcms-card]'), ctx)
+    await tick()
+  })
+  assert.equal(cardCount(ctx), 2)
+})
+
+test('requestRemove: a card falls back to native confirm() when consent() is absent', async () => {
+  const yes = productsCtx()
+  await withWindow({ confirm: () => true }, () => requestRemove(yes.formRoot.querySelector('[data-hcms-card]'), yes))
+  assert.equal(cardCount(yes), 1)
+
+  const no = productsCtx()
+  await withWindow({ confirm: () => false }, () => requestRemove(no.formRoot.querySelector('[data-hcms-card]'), no))
+  assert.equal(cardCount(no), 2)
+})
+
+test('requestRemove: confirmRemove:false disables the card confirm (removes instantly)', () => {
+  const ctx = productsCtx()
+  ctx.confirmRemove = false
+  let asked = false
+  withWindow({ confirm: () => { asked = true; return false } }, () => {
+    requestRemove(ctx.formRoot.querySelector('[data-hcms-card]'), ctx)
+  })
+  assert.equal(asked, false)
+  assert.equal(cardCount(ctx), 1)
+})
+
+test('requestRemove: confirmRemove:true forces a chip to confirm too', async () => {
+  const ctx = chipsCtx()
+  ctx.confirmRemove = true
+  let asked = null
+  const win = { consent: (msg) => { asked = msg; return Promise.resolve() } }
+  await withWindow(win, async () => {
+    requestRemove(ctx.formRoot.querySelector('[data-hcms-array-item]'), ctx)
+    await tick()
+  })
+  assert.equal(asked, 'Delete this item?')
+  assert.equal(itemCount(ctx), 1)
+})
+
+test('requestRemove: confirmRemove string overrides the prompt text', async () => {
+  const ctx = productsCtx()
+  ctx.confirmRemove = 'Remove this product?'
+  let asked = null
+  await withWindow({ consent: (msg) => { asked = msg; return Promise.resolve() } }, async () => {
+    requestRemove(ctx.formRoot.querySelector('[data-hcms-card]'), ctx)
+    await tick()
+  })
+  assert.equal(asked, 'Remove this product?')
+  assert.equal(cardCount(ctx), 1)
+})
+
+test('requestRemove: per-array data-hcms-confirm-remove="off" disables that array', () => {
+  const ctx = productsCtx()
+  ctx.formRoot.querySelector('[data-hcms-shape="object-array"]').setAttribute('data-hcms-confirm-remove', 'off')
+  let asked = false
+  withWindow({ confirm: () => { asked = true; return false } }, () => {
+    requestRemove(ctx.formRoot.querySelector('[data-hcms-card]'), ctx)
+  })
+  assert.equal(asked, false)
+  assert.equal(cardCount(ctx), 1)
+})
+
+test('requestRemove: per-array attribute overrides the prompt text', async () => {
+  const ctx = productsCtx()
+  ctx.formRoot.querySelector('[data-hcms-shape="object-array"]')
+    .setAttribute('data-hcms-confirm-remove', 'Drop this widget?')
+  let asked = null
+  await withWindow({ consent: (msg) => { asked = msg; return Promise.resolve() } }, async () => {
+    requestRemove(ctx.formRoot.querySelector('[data-hcms-card]'), ctx)
+    await tick()
+  })
+  assert.equal(asked, 'Drop this widget?')
+  assert.equal(cardCount(ctx), 1)
 })
 
 test('extractFormData: round-trips data through the form rules', () => {

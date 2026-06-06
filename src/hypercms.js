@@ -140,6 +140,7 @@ export function open(opts = {}) {
     onChange: opts.onChange,
     onError: opts.onError,
     onSave: opts.onSave,
+    confirmRemove: opts.confirmRemove,
     previouslyFocused: doc.activeElement,
     dispatch(name, detail) {
       const Ctor = (doc.defaultView && doc.defaultView.CustomEvent) || (typeof CustomEvent !== 'undefined' ? CustomEvent : null)
