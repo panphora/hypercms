@@ -195,11 +195,14 @@ describe('hypercms × Pixel Quiet — binding + actions', () => {
       .to.deep.equal(['Gadget', 'Widget'])
   })
 
-  it('Save fires hcms:save with the full data', async () => {
-    let detail = null
-    document.addEventListener('hcms:save', (e) => { detail = e.detail }, { once: true })
-    document.querySelector('[data-hcms-shell] .hcms-shell-save').click()
-    expect(detail).to.not.equal(null)
-    expect(Object.keys(detail.data)).to.include.members(['title', 'published', 'priority', 'color', 'tags', 'products'])
+  it('Save button carries [trigger-save] for the host save system, no hypercms wiring', async () => {
+    const saveButton = document.querySelector('[data-hcms-shell] .hcms-shell-save')
+    expect(saveButton.hasAttribute('trigger-save')).to.equal(true)
+    expect(saveButton.hasAttribute('data-hcms-action')).to.equal(false)
+    // A standalone host delegates [trigger-save] itself — verify the click reaches it.
+    let clicked = false
+    document.addEventListener('click', (e) => { if (e.target.closest('[trigger-save]')) clicked = true }, { once: true })
+    saveButton.click()
+    expect(clicked).to.equal(true)
   })
 })

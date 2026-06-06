@@ -59,6 +59,9 @@ export function mountShell({
   // with a condensed minibar pinned to the panel top once the header scrolls out.
   // Close + Save are real mirk buttons. The .hcms-* hooks stay so the engine and
   // events bind exactly as before; only the chrome shape changed.
+  // The Save button has no wiring here: [trigger-save] is the hyperclayjs save
+  // attribute — its save system (or its view-mode notice) handles the click.
+  // Standalone hosts delegate their own [trigger-save] click listener.
   root.innerHTML = `
     <div class="hcms-shell-minibar" aria-hidden="true">
       <span class="hcms-shell-minibar-title">${titleHtml}</span>
@@ -79,7 +82,7 @@ export function mountShell({
       <div class="hcms-shell-error" role="alert" hidden></div>
       <div data-hcms-form-root class="hcms-form"></div>
       <footer class="hcms-shell-footer"${showSaveButton ? '' : ' hidden'}>
-        <button type="button" class="hcms-shell-save mirk-button" data-hcms-action="save">
+        <button type="button" class="hcms-shell-save mirk-button" trigger-save>
           <span class="mirk-button__label">Save</span>
         </button>
       </footer>

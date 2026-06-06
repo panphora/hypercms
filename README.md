@@ -156,10 +156,19 @@ cms.api.removeItem(itemPath)          // drop an item by index
 | `mountTo` | `document.body` | Where the shell DOM mounts. Can be a descendant of pageRoot. |
 | `side` | `'right'` | `'right'` or `'left'`. |
 | `overlay` | `false` | If true, sidebar covers the page; if false, page content gets a padding offset. |
-| `showSaveButton` | `false` | Renders a Save button in the shell footer; clicking dispatches `hcms:save`. |
+| `showSaveButton` | `false` | Renders a Save button in the shell footer. The button carries the `trigger-save` attribute: in hyperclayjs apps the host save system handles the click (with a "changes are local only" notice for non-owners). Standalone hosts delegate it themselves — see below. |
 | `onChange(data, info)` | none | Per-commit callback. |
 | `onError(err)` | none | Per-commit error callback. |
-| `onSave(data)` | none | Save-button callback. |
+
+Standalone `[trigger-save]` handling (no hyperclayjs on the page):
+
+```js
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[trigger-save]')) {
+    persistSomehow(document.documentElement.outerHTML) // or cms.api.getData()
+  }
+})
+```
 
 ### Path syntax
 
@@ -174,10 +183,9 @@ All events dispatch on the shell root and bubble through the document.
 | `hcms:open` | `{ pageRoot }` | After mount, before first interaction. |
 | `hcms:change` | `{ data, path, structural }` | Per successful commit. `structural` is true for add/remove/reorder. |
 | `hcms:error` | `{ error, attemptedData }` | When apply throws (shape mismatch, missing template, etc.). |
-| `hcms:save` | `{ data }` | Save button clicked. |
 | `hcms:close` | `null` | Before teardown. |
 
-`hcms:change` and `hcms:save` are cancelable.
+`hcms:change` is cancelable.
 
 ## Lifecycle
 

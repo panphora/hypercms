@@ -75,13 +75,15 @@ test('mountShell: pixel-quiet geometry — minibar, scroll body, mirk close/save
   assert.ok(bodyRegion, 'scroll body present')
   assert.ok(bodyRegion.querySelector('[data-hcms-form-root]'), 'form root lives inside the scroll body')
   assert.ok(bodyRegion.querySelector('.hcms-shell-footer'), 'footer is in-flow inside the scroll body')
-  // close + save are real mirk buttons, still carrying their action hooks
+  // close + save are real mirk buttons; close keeps its action hook, save
+  // carries [trigger-save] for the host save system (no hypercms wiring)
   const close = root.querySelector('.hcms-shell-close')
   assert.ok(close.classList.contains('mirk-button'), 'close is a mirk-button')
   assert.equal(close.getAttribute('data-hcms-action'), 'close')
   const save = root.querySelector('.hcms-shell-save')
   assert.ok(save.classList.contains('mirk-button'), 'save is a mirk-button')
-  assert.equal(save.getAttribute('data-hcms-action'), 'save')
+  assert.ok(save.hasAttribute('trigger-save'), 'save carries [trigger-save]')
+  assert.equal(save.getAttribute('data-hcms-action'), null, 'save has no hypercms action hook')
   // header carries the eyebrow + title
   assert.ok(root.querySelector('.hcms-shell-eyebrow'), 'eyebrow present')
   destroy()

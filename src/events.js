@@ -75,11 +75,11 @@ export function bindEvents(ctx) {
     const actionEl = target.closest('[data-hcms-action]')
     if (!actionEl) return
     const action = actionEl.getAttribute('data-hcms-action')
-    // add/remove/move must live inside the form root; close/save inside the shell.
+    // add/remove/move must live inside the form root; close inside the shell.
     // Ignore stray data-hcms-action attributes elsewhere on the page.
     if (action === 'add' || action === 'remove' || action === 'move-up' || action === 'move-down') {
       if (!actionEl.closest('[data-hcms-form-root]')) return
-    } else if (action === 'close' || action === 'save') {
+    } else if (action === 'close') {
       if (!actionEl.closest('[data-hcms-shell]')) return
     }
     if (action === 'add') {
@@ -97,8 +97,6 @@ export function bindEvents(ctx) {
       onMove(itemEl, action === 'move-up' ? -1 : 1, ctx)
     } else if (action === 'close') {
       ctx.onCloseRequested?.()
-    } else if (action === 'save') {
-      onSave(ctx)
     }
   }
 
@@ -248,12 +246,6 @@ export function onRemove(itemEl, ctx) {
   return commitWithUndo(`Remove ${path}`, () =>
     commit(extractFormData(ctx), { path, structural: true }, ctx)
   )
-}
-
-export function onSave(ctx) {
-  const data = extractFormData(ctx)
-  ctx.dispatch?.('hcms:save', { data })
-  ctx.onSave?.(data)
 }
 
 export function commit(newData, info, ctx) {

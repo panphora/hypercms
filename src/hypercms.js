@@ -139,12 +139,11 @@ export function open(opts = {}) {
     livesyncUnsub: null,
     onChange: opts.onChange,
     onError: opts.onError,
-    onSave: opts.onSave,
     previouslyFocused: doc.activeElement,
     dispatch(name, detail) {
       const Ctor = (doc.defaultView && doc.defaultView.CustomEvent) || (typeof CustomEvent !== 'undefined' ? CustomEvent : null)
       if (!Ctor) return
-      const ev = new Ctor(name, { bubbles: true, cancelable: name === 'hcms:change' || name === 'hcms:save', detail })
+      const ev = new Ctor(name, { bubbles: true, cancelable: name === 'hcms:change', detail })
       shell.root.dispatchEvent(ev)
     },
     onCloseRequested() {
