@@ -1,7 +1,7 @@
 import { engine } from 'hyper-html-api'
 import { applyWithRollback } from './apply-loop.js'
 import { fromString as pathFromString, getRuleAtPath } from './path.js'
-import { buildItem } from './form-builder.js'
+import { buildItem, fileNameFromUrl } from './form-builder.js'
 import { scaffold } from './scaffold.js'
 
 const BOUND = new WeakSet()
@@ -56,6 +56,11 @@ export function bindEvents(ctx) {
     if (!target || !target.closest) return
     if (!target.closest('[data-hcms-form-root]')) return
     if (!target.matches('input, textarea, select')) return
+    // The upload picker fires `input` too, but its .value is the OS fake path
+    // (C:\fakepath\…); it's handled on `change` via onUploadChange. The wrapper
+    // carries data-hcms-field, so without this guard the closest() below would
+    // route the fake path into onScalarChange.
+    if (target.matches('input[type="file"]')) return
     if (!target.closest('[data-hcms-field]') && !target.hasAttribute?.('data-hcms-field')) return
     onScalarChange(target, ctx)
   }
@@ -64,6 +69,10 @@ export function bindEvents(ctx) {
     const target = e.target
     if (!target || !target.closest) return
     if (!target.closest('[data-hcms-form-root]')) return
+    if (target.matches('input[type="file"][data-hcms-upload]')) {
+      onUploadChange(target, ctx)
+      return
+    }
     if (target.matches('input[type="checkbox"], input[type="radio"], select')) {
       onScalarChange(target, ctx)
     }
@@ -77,7 +86,7 @@ export function bindEvents(ctx) {
     const action = actionEl.getAttribute('data-hcms-action')
     // add/remove/move must live inside the form root; close/save inside the shell.
     // Ignore stray data-hcms-action attributes elsewhere on the page.
-    if (action === 'add' || action === 'remove' || action === 'move-up' || action === 'move-down') {
+    if (action === 'add' || action === 'remove' || action === 'move-up' || action === 'move-down' || action === 'clear-upload') {
       if (!actionEl.closest('[data-hcms-form-root]')) return
     } else if (action === 'close' || action === 'save') {
       if (!actionEl.closest('[data-hcms-shell]')) return
@@ -95,6 +104,8 @@ export function bindEvents(ctx) {
       const itemEl = actionEl.closest('[data-hcms-card], [data-hcms-array-item]')
       if (!itemEl) return
       onMove(itemEl, action === 'move-up' ? -1 : 1, ctx)
+    } else if (action === 'clear-upload') {
+      onClearUpload(actionEl, ctx)
     } else if (action === 'close') {
       ctx.onCloseRequested?.()
     } else if (action === 'save') {
@@ -160,6 +171,123 @@ export function onScalarChange(target, ctx) {
     if (u && typeof u.recordValue === 'function') {
       u.recordValue(proj.el, { prop: proj.prop, oldValue: proj.oldValue, newValue: proj.el[proj.prop] })
     }
+  }
+}
+
+// Crop adapter seam. A pass-through today; Slice 6 fills the body to route the
+// file through window.hyperclay.quickcrop before upload when the field opts in
+// via data-hcms-crop. Returns { file, dataURL? }, or null to abort (crop
+// cancelled). Keeping ALL crop coupling here means no other upload code changes
+// when crop lands.
+async function maybeCrop(file /*, fieldEl */) {
+  return { file }
+}
+
+// A file was picked in an @file/@image widget. Optionally crop, upload via the
+// host's uploadFileBasic (or fall back to a local object-URL preview), write the
+// resulting URL into the bound img.src / a.href leaf, then commit once. The leaf
+// attribute change is an observed page mutation, so undo gets a clean step with
+// no commitWithUndo. Async; failures surface inline and reset the picker.
+export async function onUploadChange(inputEl, ctx) {
+  const file = inputEl.files && inputEl.files[0]
+  if (!file) return
+  const fieldEl = inputEl.closest('[data-hcms-path]')
+  if (!fieldEl) return
+  const pathStr = fieldEl.getAttribute('data-hcms-path') || ''
+
+  const cropped = await maybeCrop(file, fieldEl)
+  if (!cropped || ctx.closed) { resetPicker(inputEl); return }
+  const fileLike = cropped.file
+  const previewDataUrl = cropped.dataURL || null
+
+  const upload = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.uploadFileBasic) || null
+  let url = null
+  if (typeof upload === 'function') {
+    try {
+      const res = await upload(fileLike)
+      // uploadFileBasic resolves the full envelope { uploads:[{name,nodeId,url}], … };
+      // the served URL is uploads[0].url, NOT res.url.
+      url = res && res.uploads && res.uploads[0] && res.uploads[0].url
+    } catch (err) {
+      if (ctx.closed) { resetPicker(inputEl); return }
+      showFieldUploadError(fieldEl, (err && err.message) || 'Upload failed')
+      ctx.dispatch?.('hcms:error', { error: err, path: pathStr })
+      resetPicker(inputEl)
+      return
+    }
+  }
+  // The editor may have been closed while the upload was in flight; bail before
+  // writing the (now detached) form leaf or committing to the live page.
+  if (ctx.closed) { resetPicker(inputEl); return }
+  if (!url) {
+    // No host uploader (or it returned nothing): local preview only, which the
+    // commit persists into the page as a blob:/data: URL — non-persistent, by
+    // design (documented), so the widget still works in a bare page / demo.
+    url = previewDataUrl || makeLocalPreviewUrl(fileLike)
+  }
+  if (!url) { resetPicker(inputEl); return }
+
+  showFieldUploadError(fieldEl, null)
+  writeUploadLeaf(fieldEl, url, fileLike.name)
+  commit(extractFormData(ctx), { path: pathStr, structural: false }, ctx)
+  resetPicker(inputEl)
+}
+
+// The × on an upload widget. Clears the bound leaf to empty and commits, so the
+// :has()-driven chrome falls back to the empty state. Removes immediately (no
+// consent gate) per the approved design; distinct from the "remove" action,
+// which deletes a whole array item.
+export function onClearUpload(actionEl, ctx) {
+  const fieldEl = actionEl.closest('[data-hcms-path]')
+  if (!fieldEl) return
+  const pathStr = fieldEl.getAttribute('data-hcms-path') || ''
+  writeUploadLeaf(fieldEl, '', '')
+  const input = fieldEl.querySelector('input[type="file"][data-hcms-upload]')
+  if (input) resetPicker(input)
+  showFieldUploadError(fieldEl, null)
+  commit(extractFormData(ctx), { path: pathStr, structural: false }, ctx)
+}
+
+function findUploadLeaf(fieldEl) {
+  return fieldEl.querySelector
+    ? fieldEl.querySelector('img[data-hcms-field], a[data-hcms-field]')
+    : null
+}
+
+// Write a URL into the widget's bound leaf: an <img>'s src, or an <a>'s href
+// plus its visible filename text. Empty url clears to the empty state.
+function writeUploadLeaf(fieldEl, url, fileName) {
+  const leaf = findUploadLeaf(fieldEl)
+  if (!leaf) return
+  const tag = (leaf.tagName || '').toUpperCase()
+  if (tag === 'IMG') {
+    leaf.src = url || ''
+  } else if (tag === 'A') {
+    leaf.href = url || ''
+    leaf.textContent = url ? (fileName || fileNameFromUrl(url)) : ''
+  }
+}
+
+function resetPicker(inputEl) {
+  // Clear the selection so re-picking the same file fires `change` again.
+  try { inputEl.value = '' } catch { /* some inputs reject programmatic clear */ }
+}
+
+function makeLocalPreviewUrl(file) {
+  const U = (typeof URL !== 'undefined' && URL.createObjectURL) ? URL : null
+  if (!U) return ''
+  try { return U.createObjectURL(file) } catch { return '' }
+}
+
+function showFieldUploadError(fieldEl, message) {
+  const slot = fieldEl.querySelector ? fieldEl.querySelector(':scope > .hcms-error') : null
+  if (!slot) return
+  if (message) {
+    slot.textContent = message
+    slot.hidden = false
+  } else {
+    slot.textContent = ''
+    slot.hidden = true
   }
 }
 

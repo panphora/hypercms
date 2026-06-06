@@ -1,7 +1,7 @@
 import { engine } from 'hyper-html-api'
 import { buildForm } from './form-builder.js'
 import { morphForm } from './morph.js'
-import { injectDefaults } from './templates.js'
+import { injectDefaults, injectUploadComponents } from './templates.js'
 import { deriveFormRules } from './form-rules.js'
 import { coerceBooleans, applyErrorState } from './events.js'
 
@@ -18,6 +18,7 @@ export function refreshForm(ctx, { ignoreActiveValue } = {}) {
   }
   // Re-derive formRules so schema changes (rule shape, template overrides) flow through.
   injectDefaults(ctx.doc)
+  injectUploadComponents(ctx.doc, ctx.pageRules)
   ctx.formRules = deriveFormRules(ctx.pageRules, ctx.doc)
 
   const newData = coerceBooleans(

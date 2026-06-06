@@ -80,21 +80,147 @@ const DEFAULT_TEMPLATES = {
       <div class="hcms-error" hidden></div>
     </article>
   `,
+  // Opt-in upload components. Built on the kit's consolidated mirk chrome (all
+  // themed in theme.generated.css), with interactive hooks kept on data-hcms-*
+  // so the vendored mirk runtime (which keys off .mirk-*__input / .mirk-*__remove)
+  // never double-handles a CMS field. The bound value is the leaf's URL: the
+  // <a href> for @file, the <img src> for @image. Empty/filled chrome is driven
+  // by that attribute in CSS (.hcms-upload* in pixel-quiet.overrides.css), no JS.
+  '@file': `
+    <div class="hcms-field hcms-upload hcms-upload--file" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <div class="mirk-file mirk-file--compact mirk-file--round">
+        <label class="mirk-button mirk-button--round mirk-button--small">
+          <input type="file" data-hcms-upload />
+          <span class="mirk-button__label">Choose</span>
+        </label>
+        <a class="mirk-file__name" data-hcms-field></a>
+        <button type="button" class="hcms-upload-clear" data-hcms-action="clear-upload" aria-label="Remove file">${CLOSE_ICON}</button>
+      </div>
+      <div class="hcms-error" hidden></div>
+    </div>
+  `,
+  '@image': `
+    <div class="hcms-field hcms-upload hcms-upload--image" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <div class="mirk-image mirk-image--compact mirk-image--rounded">
+        <label class="mirk-button mirk-button--small mirk-image__upload">
+          <input type="file" accept="image/*" data-hcms-upload />
+          <span class="mirk-button__label">Upload image</span>
+        </label>
+        <figure class="mirk-image__thumb">
+          <span class="mirk-image__frame"><img class="mirk-image__preview" data-hcms-field alt="" /></span>
+          <button type="button" class="hcms-upload-clear hcms-upload-clear--badge" data-hcms-action="clear-upload" aria-label="Remove image">${CLOSE_ICON}</button>
+        </figure>
+      </div>
+      <div class="hcms-error" hidden></div>
+    </div>
+  `,
 }
 
-const DEFAULT_KEYS = Object.keys(DEFAULT_TEMPLATES)
+// Shape templates fill-the-gaps on every managed page. The opt-in upload
+// components (@file/@image) are injected on demand the first time a field
+// selects them (the Slice-2 component seam), so pages using neither stay clean.
+const ALWAYS_INJECT_KEYS = [
+  '@scalar',
+  '@object',
+  '@scalar-array',
+  '@scalar-array-item',
+  '@object-array',
+  '@object-array-item',
+]
 
 export function injectDefaults(doc) {
   const head = doc.head || doc.documentElement
   if (!head) return
-  for (const key of DEFAULT_KEYS) {
-    if (findTemplate(doc, key)) continue
-    const tpl = doc.createElement('template')
-    tpl.setAttribute('data-hcms-tpl', key)
-    tpl.setAttribute('save-remove', '')
-    tpl.innerHTML = DEFAULT_TEMPLATES[key].trim()
-    head.appendChild(tpl)
+  for (const key of ALWAYS_INJECT_KEYS) injectTemplate(doc, head, key)
+}
+
+// Inject one opt-in component template (@file/@image) if the page hasn't
+// already defined its own. Called by the component-selection seam the first
+// time a field resolves to an upload component.
+export function injectComponentTemplate(doc, key) {
+  if (!DEFAULT_TEMPLATES[key]) return null
+  const head = doc && (doc.head || doc.documentElement)
+  if (!head) return null
+  return injectTemplate(doc, head, key)
+}
+
+// Opt-in upload-component selection. A scalar field upgrades from a plain text
+// input to an image-upload widget when its rule ends in @src (uploading is the
+// dominant image-CMS workflow). @href is NOT inferred: editing a link/URL is far
+// more common than uploading a file, so an a@href rule stays a plain URL field.
+// A file upload (and an image override) is opt-in via data-hcms-component on the
+// page element the rule points at — the only branch that reads the page DOM.
+// Suffix is split like the engine (lastIndexOf('@'), see engine/extract.js).
+// Returns a DEFAULT_TEMPLATES key.
+const PROP_TO_COMPONENT = { src: '@image' }
+const UPLOAD_COMPONENT_KEYS = new Set(['@image', '@file'])
+
+export function componentForScalarRule(rule, doc) {
+  if (typeof rule !== 'string') return '@scalar'
+  const at = rule.lastIndexOf('@')
+  if (at >= 0) {
+    const prop = rule.slice(at + 1)
+    if (PROP_TO_COMPONENT[prop]) return PROP_TO_COMPONENT[prop]
   }
+  const override = readComponentOverride(rule, at, doc)
+  if (override === 'image') return '@image'
+  if (override === 'file') return '@file'
+  return '@scalar'
+}
+
+function readComponentOverride(rule, at, doc) {
+  if (!doc || !doc.querySelector) return null
+  const selector = at >= 0 ? rule.slice(0, at) : rule
+  if (!selector || selector === '.') return null
+  let el = null
+  try {
+    el = doc.querySelector(selector)
+  } catch {
+    return null
+  }
+  return el && el.getAttribute ? el.getAttribute('data-hcms-component') : null
+}
+
+// Pre-inject the @file/@image templates this page's rules actually select, so
+// both deriveFormRules (selectors) and buildForm (DOM) resolve them. Walks the
+// same rule shapes as buildTemplateMap; idempotent and author-template-safe.
+export function injectUploadComponents(doc, pageRules) {
+  if (!doc || pageRules == null) return
+  walk(pageRules)
+
+  function walk(rule) {
+    const kind = shapeKindOf(rule)
+    if (kind === 'scalar') {
+      const key = componentForScalarRule(rule, doc)
+      if (UPLOAD_COMPONENT_KEYS.has(key)) injectComponentTemplate(doc, key)
+      return
+    }
+    if (kind === 'object') {
+      for (const child of Object.values(rule)) walk(child)
+      return
+    }
+    if (kind === 'object-array') {
+      const itemShape = rule[1]
+      if (itemShape && typeof itemShape === 'object' && !Array.isArray(itemShape)) {
+        for (const child of Object.values(itemShape)) walk(child)
+      } else {
+        walk(itemShape)
+      }
+    }
+  }
+}
+
+function injectTemplate(doc, head, key) {
+  const existing = findTemplate(doc, key)
+  if (existing) return existing
+  const tpl = doc.createElement('template')
+  tpl.setAttribute('data-hcms-tpl', key)
+  tpl.setAttribute('save-remove', '')
+  tpl.innerHTML = DEFAULT_TEMPLATES[key].trim()
+  head.appendChild(tpl)
+  return tpl
 }
 
 export function findTemplate(doc, key) {
@@ -149,11 +275,13 @@ export function buildTemplateMap(pageRules, doc) {
     const pathStr = pathArr.join('.')
     const wildcardKey = pathArr.map((s) => (typeof s === 'number' ? '*' : s)).join('.')
     const shape = shapeKindOf(rule)
+    const defaultKey =
+      shape === 'scalar' ? componentForScalarRule(rule, doc) : SHAPE_TO_DEFAULT_KEY[shape] || '@scalar'
 
     let tpl =
       (pathStr && findTemplate(doc, pathStr)) ||
       (wildcardKey && wildcardKey !== pathStr && findTemplate(doc, wildcardKey)) ||
-      findTemplate(doc, SHAPE_TO_DEFAULT_KEY[shape] || '@scalar')
+      findTemplate(doc, defaultKey)
 
     map.set(pathStr, tpl)
 

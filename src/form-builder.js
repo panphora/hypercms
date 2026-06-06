@@ -3,8 +3,22 @@ import {
   isInlineTemplate,
   humanize,
   shapeKindOf,
+  componentForScalarRule,
 } from './templates.js'
 import { fieldPropertyFor } from './form-rules.js'
+
+// The visible label for a file field is the basename of its URL value; the
+// bound leaf still carries the full URL in href so it round-trips byte-stable.
+export function fileNameFromUrl(url) {
+  if (!url) return ''
+  const clean = String(url).split(/[?#]/)[0]
+  const base = clean.split('/').pop() || clean
+  try {
+    return decodeURIComponent(base)
+  } catch {
+    return base
+  }
+}
 
 export function buildForm({ pageRules, formRules: _formRules, data, doc }) {
   const fragment = doc.createDocumentFragment()
@@ -25,15 +39,19 @@ export function buildItem({ shape, itemShape, pathArr, data, doc }) {
 
 function buildNode(rule, pathArr, data, doc) {
   const kind = shapeKindOf(rule)
-  if (kind === 'scalar') return buildScalar(pathArr, data, doc)
+  if (kind === 'scalar') return buildScalar(rule, pathArr, data, doc)
   if (kind === 'object') return buildObject(rule, pathArr, data, doc)
   if (kind === 'object-array') return buildObjectArray(rule, pathArr, data, doc)
   if (kind === 'scalar-array') return buildScalarArray(rule, pathArr, data, doc)
   return null
 }
 
-function buildScalar(pathArr, data, doc) {
-  const tpl = resolveTemplate(pathArr, '@scalar', doc)
+function buildScalar(rule, pathArr, data, doc) {
+  // Opt-in upload components select a richer template (@image/@file) off the
+  // bound rule's @prop suffix; plain scalars stay @scalar. A path-bound
+  // template override still wins inside resolveTemplate.
+  const componentKey = componentForScalarRule(rule, doc)
+  const tpl = resolveTemplate(pathArr, componentKey, doc)
   if (!tpl) throw new Error(`hypercms: missing template for scalar at "${pathArr.join('.')}"`)
   const node = cloneTemplate(tpl, doc)
   stampPath(node, pathArr)
@@ -45,7 +63,18 @@ function buildScalar(pathArr, data, doc) {
   stampContainerField(node, lastKey(pathArr))
   setLabel(node, lastKey(pathArr))
   populateScalarValue(node, data)
+  if (componentKey === '@file') syncFileLeafText(node)
   return node
+}
+
+// The @file leaf is an <a> whose value is the href; populateScalarValue sets
+// href but not the visible text, so derive the filename here. Empty href leaves
+// the anchor empty, which the theme's :empty placeholder dresses as "No file
+// chosen". Scoped to the default chrome's .mirk-file__name so author overrides
+// keep their own text.
+function syncFileLeafText(node) {
+  const a = node.querySelector ? node.querySelector('a.mirk-file__name[data-hcms-field]') : null
+  if (a) a.textContent = fileNameFromUrl(a.getAttribute('href'))
 }
 
 function buildObject(rule, pathArr, data, doc) {

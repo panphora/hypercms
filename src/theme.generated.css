@@ -123,7 +123,9 @@
     border-color: var(--mirk-bevel-br) var(--mirk-bevel-tl) var(--mirk-bevel-tl) var(--mirk-bevel-br);
   }
   .hcms-shell .mirk-button:not(.mirk-button--round):active .mirk-button__label { translate: 1.5px 1.5px; }
-  .hcms-shell .mirk-button:focus-visible {
+  /* Direct focus (a real <button>) or a focus-visible descendant (a <label>
+     wrapping a hidden input, as the file/image upload triggers do). */
+  .hcms-shell .mirk-button:focus-visible, .hcms-shell .mirk-button:has(:focus-visible) {
     outline: 1px solid var(--mirk-focus-color); outline-offset: var(--mirk-focus-offset);
   }
   .hcms-shell .mirk-button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -416,27 +418,6 @@
   }
   .hcms-shell .mirk-file__name[data-filled] { color: var(--mirk-bevel-fg); }
 
-  /* Button+text (base): a large rect bevel button, no shared container. */
-  .hcms-shell .mirk-file__button {
-    display: flex; align-items: center; flex-shrink: 0; cursor: pointer;
-    color: var(--mirk-bevel-fg); background: var(--mirk-bevel-bg);
-    border: 3px solid;
-    border-color: var(--mirk-bevel-tl) var(--mirk-bevel-br) var(--mirk-bevel-br) var(--mirk-bevel-tl);
-    padding: 4px 17px 7px; font-size: 18px; line-height: 1.5;
-  }
-  .hcms-shell .mirk-file__button-label { white-space: nowrap; user-select: none; }
-  .hcms-shell .mirk-file__button:hover { background: var(--mirk-bevel-hover-bg); }
-  .hcms-shell .mirk-file__button:active {
-    border-color: var(--mirk-bevel-br) var(--mirk-bevel-tl) var(--mirk-bevel-tl) var(--mirk-bevel-br);
-  }
-  .hcms-shell .mirk-file:not(.mirk-file--round):not(.mirk-file--compact) .mirk-file__button:active .mirk-file__button-label {
-    translate: 1.5px 1.5px;
-  }
-  /* Button+text shows its focus ring on the button itself (no container). */
-  .hcms-shell .mirk-file:not(.mirk-file--compact) .mirk-file__button:has(:focus-visible) {
-    outline: 1px solid var(--mirk-focus-color); outline-offset: var(--mirk-focus-offset);
-  }
-
   /* Compact: a shared bordered container holds a smaller button + the name. */
   .hcms-shell .mirk-file--compact {
     padding: 4px 8px; background: var(--mirk-bevel-bg);
@@ -445,37 +426,23 @@
   .hcms-shell .mirk-file--compact:has(:focus-visible) {
     outline: 1px solid var(--mirk-focus-color); outline-offset: var(--mirk-focus-offset);
   }
-  .hcms-shell .mirk-file--compact .mirk-file__button {
-    display: inline-flex; border-width: 2px; padding: 3px 12px; margin-left: -1px; font-size: 14px;
-  }
+  /* The upload trigger is a .mirk-button; nudge it onto the container's left
+     border so the bevel sits flush (covers compact and round-compact). */
+  .hcms-shell .mirk-file--compact .mirk-button { margin-left: -1px; }
   .hcms-shell .mirk-file--compact .mirk-file__name { font-size: 16px; }
   .hcms-shell .mirk-file--compact.mirk-file--round { border-radius: 15px; }
 
-  /* Round button+text: large gradient pill (opacity fade like the round button). */
-  .hcms-shell .mirk-file--round:not(.mirk-file--compact) .mirk-file__button {
-    position: relative; border: none; padding: 2px; border-radius: 16px;
-    background-color: var(--mirk-canvas);
-    background-image: linear-gradient(to top in oklab, var(--mirk-bevel-br), var(--mirk-bevel-tl));
-    opacity: 0.9; transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1); font-size: 18px;
+  /* Filled: the name slot becomes a link to the chosen file, beside a bare × to
+     clear it (the tags-remove pattern). Empty keeps the placeholder span. */
+  .hcms-shell a.mirk-file__name { text-decoration: underline; text-underline-offset: 2px; }
+  .hcms-shell .mirk-file__remove {
+    appearance: none; -webkit-appearance: none; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin: 0; padding: 0; border: 0; background: none; color: inherit;
+    cursor: pointer; line-height: 0;
   }
-  .hcms-shell .mirk-file--round:not(.mirk-file--compact) .mirk-file__button:hover { opacity: 1; }
-  .hcms-shell .mirk-file--round:not(.mirk-file--compact) .mirk-file__button-label {
-    display: flex; align-items: center; padding: 7px 24px 9px; border-radius: 14px;
-    color: var(--mirk-bevel-fg); background-color: var(--mirk-bevel-bg);
-    background-image: linear-gradient(to top in oklab, var(--mirk-bevel-bg), var(--mirk-pill-inner-top));
-  }
-  /* Round compact: a small gradient pill chip, focus ring on the container. */
-  .hcms-shell .mirk-file--round.mirk-file--compact .mirk-file__button {
-    display: inline-flex; border: none; padding: 2px; margin-left: -1px; border-radius: 12px;
-    background-color: transparent;
-    background-image: linear-gradient(to top in oklab, var(--mirk-bevel-br), var(--mirk-bevel-tl));
-    font-size: 14px;
-  }
-  .hcms-shell .mirk-file--round.mirk-file--compact .mirk-file__button-label {
-    display: inline-flex; align-items: center; padding: 2px 14px; border-radius: 10px;
-    color: var(--mirk-bevel-fg); background-color: var(--mirk-bevel-bg);
-    background-image: linear-gradient(to top in oklab, var(--mirk-bevel-bg), var(--mirk-pill-inner-top));
-  }
+  .hcms-shell .mirk-file__remove svg { display: block; width: 14px; height: 14px; }
+  .hcms-shell .mirk-file__remove:hover { color: var(--mirk-destructive); }
 
   /* ============================ IMAGE ============================ */
   .hcms-shell .mirk-image { display: flex; flex-direction: column; gap: 0.5rem; }
@@ -487,36 +454,34 @@
   }
   .hcms-shell .mirk-image__preview { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .hcms-shell .mirk-image--rounded .mirk-image__frame { border-radius: var(--mirk-radius); }
+  /* The upload trigger is a .mirk-button; keep it hugging its label instead of
+     stretching to fill this column-flex container. */
+  .hcms-shell .mirk-image .mirk-button { width: fit-content; }
 
-  /* Upload button: rect = large bevel button; rounded = large gradient pill. */
-  .hcms-shell .mirk-image__button {
-    display: inline-flex; align-items: center; justify-content: center; width: fit-content; cursor: pointer;
+  /* Compact: a focused 56px thumbnail upload. Empty shows a small upload button;
+     once an image is chosen the button hides and a thumbnail + corner × takes its
+     place. The frame clips the image (overflow hidden) while the thumb wrapper
+     stays visible, so the × can sit just outside the corner without being cut. */
+  .hcms-shell .mirk-image--compact { flex-direction: row; align-items: center; gap: 0; }
+  .hcms-shell .mirk-image__thumb { position: relative; display: inline-block; width: fit-content; margin: 0; line-height: 0; }
+  .hcms-shell .mirk-image--compact .mirk-image__frame {
+    width: 56px; height: 56px; overflow: hidden; border-radius: 0;
+    border: 1px solid var(--mirk-input-border);
+  }
+  .hcms-shell .mirk-image--compact.mirk-image--rounded .mirk-image__frame { border-radius: var(--mirk-radius); }
+  .hcms-shell .mirk-image--compact .mirk-image__preview {
+    position: static; inset: auto; width: 100%; height: 100%; display: block; object-fit: cover;
+  }
+  .hcms-shell .mirk-image__remove {
+    position: absolute; top: -7px; right: -7px;
+    width: 18px; height: 18px; border-radius: 50%; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    appearance: none; -webkit-appearance: none; cursor: pointer; line-height: 0;
     color: var(--mirk-bevel-fg); background: var(--mirk-bevel-bg);
-    border: 3px solid;
-    border-color: var(--mirk-bevel-tl) var(--mirk-bevel-br) var(--mirk-bevel-br) var(--mirk-bevel-tl);
-    padding: 4px 17px 7px; font-size: 18px; line-height: 1.5;
+    border: 1px solid var(--mirk-input-border);
   }
-  .hcms-shell .mirk-image__button-label { white-space: nowrap; user-select: none; }
-  .hcms-shell .mirk-image__button:hover { background: var(--mirk-bevel-hover-bg); }
-  .hcms-shell .mirk-image__button:active {
-    border-color: var(--mirk-bevel-br) var(--mirk-bevel-tl) var(--mirk-bevel-tl) var(--mirk-bevel-br);
-  }
-  .hcms-shell .mirk-image:not(.mirk-image--rounded) .mirk-image__button:active .mirk-image__button-label { translate: 1.5px 1.5px; }
-  .hcms-shell .mirk-image__button:has(:focus-visible) {
-    outline: 1px solid var(--mirk-focus-color); outline-offset: var(--mirk-focus-offset);
-  }
-  .hcms-shell .mirk-image--rounded .mirk-image__button {
-    position: relative; border: none; padding: 2px; border-radius: 16px;
-    background-color: var(--mirk-canvas);
-    background-image: linear-gradient(to top in oklab, var(--mirk-bevel-br), var(--mirk-bevel-tl));
-    opacity: 0.9; transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .hcms-shell .mirk-image--rounded .mirk-image__button:hover { opacity: 1; }
-  .hcms-shell .mirk-image--rounded .mirk-image__button-label {
-    display: flex; align-items: center; padding: 7px 24px 9px; border-radius: 14px;
-    color: var(--mirk-bevel-fg); background-color: var(--mirk-bevel-bg);
-    background-image: linear-gradient(to top in oklab, var(--mirk-bevel-bg), var(--mirk-pill-inner-top));
-  }
+  .hcms-shell .mirk-image__remove svg { display: block; width: 10px; height: 10px; }
+  .hcms-shell .mirk-image__remove:hover { color: var(--mirk-destructive); border-color: var(--mirk-destructive); }
 
   /* ============================ TAGS ============================ */
   .hcms-shell .mirk-tags {
@@ -596,8 +561,8 @@
 
 /* Respect the machine — outside @layer components so it always wins. */
 @media (prefers-reduced-motion: reduce) {
-  .hcms-shell .mirk-button--round, .hcms-shell .mirk-toggle__thumb, .hcms-shell .mirk-file__button, .hcms-shell .mirk-image__button { transition: none; }
-  .hcms-shell .mirk-button:active .mirk-button__label, .hcms-shell .mirk-file__button:active .mirk-file__button-label, .hcms-shell .mirk-image__button:active .mirk-image__button-label { translate: none; }
+  .hcms-shell .mirk-button--round, .hcms-shell .mirk-toggle__thumb { transition: none; }
+  .hcms-shell .mirk-button:active .mirk-button__label { translate: none; }
 }
 @media (forced-colors: active) {
   .hcms-shell .mirk-button, .hcms-shell .mirk-select__field, .hcms-shell .mirk-checkbox__box, .hcms-shell .mirk-toggle__track { border: 1px solid ButtonText; }
@@ -981,6 +946,80 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
 
 /* "+ Add" — quiet, pinned left */
 .hcms-add.mirk-button { align-self: flex-start; }
+
+/* ---------- UPLOAD COMPONENTS (@file / @image) ----------
+   Built on the kit's mirk-file / mirk-image--compact chrome. The native picker
+   is visually hidden but focusable (the mirk-button label is the visible
+   trigger and rings via :has(:focus-visible)); it is NOT .mirk-*__input, so the
+   vendored mirk runtime never handles it. The empty/filled chrome is driven by
+   the bound leaf's value attribute (src/href) in CSS — no JS state to desync. */
+.hcms-upload input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* @image: show the upload button until the bound <img> carries a real src. */
+.hcms-upload--image .mirk-image__thumb { display: none; }
+.hcms-upload--image:has(.mirk-image__preview[src]:not([src=""])) .mirk-image__upload { display: none; }
+.hcms-upload--image:has(.mirk-image__preview[src]:not([src=""])) .mirk-image__thumb { display: inline-block; }
+
+/* @file: reveal the clear × and the filename only once the bound <a> has href. */
+.hcms-upload--file .hcms-upload-clear { display: none; }
+.hcms-upload--file:has(a.mirk-file__name[href]:not([href=""])) .hcms-upload-clear { display: inline-flex; }
+/* A filled filename uses the bright foreground (the kit's [data-filled] look),
+   driven by the bound href so there's no JS attribute to keep in sync — the
+   vendored runtime that would otherwise stamp data-filled is inert here. */
+.hcms-upload--file:has(a.mirk-file__name[href]:not([href=""])) a.mirk-file__name {
+  color: var(--mirk-bevel-fg);
+}
+.hcms-upload--file a.mirk-file__name:empty {
+  text-decoration: none;
+  cursor: default;
+}
+.hcms-upload--file a.mirk-file__name:empty::after {
+  content: "No file chosen";
+  color: var(--mirk-placeholder-color);
+}
+
+/* clear-× (vendored-inert; data-hcms-action, never .mirk-*__remove). Bare × for
+   @file, a pinned corner badge for @image — mirroring .hcms-remove / --card. */
+.hcms-upload-clear {
+  flex-shrink: 0;
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--mirk-placeholder-color);
+  cursor: pointer;
+  line-height: 0;
+  padding: 2px 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.hcms-upload-clear:hover { color: var(--mirk-destructive); }
+.hcms-upload-clear .hcms-x { display: block; width: 14px; height: 14px; }
+
+.hcms-upload-clear--badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--mirk-input-border);
+  background: var(--mirk-bevel-bg);
+  color: var(--mirk-bevel-fg);
+}
+.hcms-upload-clear--badge:hover { color: var(--mirk-destructive); border-color: var(--mirk-destructive); }
+.hcms-upload-clear--badge .hcms-x { width: 10px; height: 10px; }
 
 /* ---------- ERROR BANNER + inline errors ---------- */
 .hcms-shell-error,

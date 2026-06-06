@@ -72,6 +72,19 @@
      thumbnail's height and centre the content: empty and filled rows now match,
      and the button gets even breathing room above and below. */
   .hcms-card .cms-img { display: flex; align-items: center; min-height: 56px; }
+
+  /* file: filled state — the filename becomes a link to the uploaded file, with
+     an inline × to clear it (same idea as the image's remove, inline not corner). */
+  .cms-file--filled { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .cms-file__link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  .cms-file__link:hover { color: var(--mirk-bevel-fg); }
+  .cms-file__remove {
+    flex: none; width: 18px; height: 18px; border-radius: 50%; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+    color: var(--mirk-bevel-fg); background: var(--mirk-bevel-bg); border: 1px solid var(--mirk-input-border);
+  }
+  .cms-file__remove:hover { border-color: var(--mirk-destructive); color: var(--mirk-destructive); }
+  .cms-file__remove .hcms-x { width: 66%; height: 66%; display: block; }
 </style>
 </head>
 <body>
@@ -101,19 +114,30 @@
 <!-- Components authored once, cloned into both theme panels below. -->
 <template id="kit">
 
-  <!-- ============ FILE · Round — Compact ============ -->
+  <!-- ============ FILE · Round — Compact (empty + filled) ============ -->
   <section>
     <p class="group-label">File · Round — Compact</p>
-    <label class="hcms-field" data-hcms-shape="scalar">
-      <span class="hcms-label">Resume (PDF)</span>
+    <div class="hcms-field" data-hcms-shape="scalar">
+      <span class="hcms-label">Resume — empty</span>
       <div class="mirk-file mirk-file--compact mirk-file--round">
-        <label class="mirk-file__button">
+        <label class="mirk-button mirk-button--round mirk-button--small">
           <input type="file" class="mirk-file__input" accept="application/pdf">
-          <span class="mirk-file__button-label">Choose</span>
+          <span class="mirk-button__label">Choose</span>
         </label>
         <span class="mirk-file__name">No file chosen</span>
       </div>
-    </label>
+    </div>
+    <div class="hcms-field" data-hcms-shape="scalar" style="margin-top:16px">
+      <span class="hcms-label">Resume — filled</span>
+      <div class="mirk-file mirk-file--compact mirk-file--round cms-file cms-file--filled">
+        <label class="mirk-button mirk-button--round mirk-button--small">
+          <input type="file" class="mirk-file__input" accept="application/pdf">
+          <span class="mirk-button__label">Choose</span>
+        </label>
+        <a class="mirk-file__name cms-file__link" href="#resume.pdf">resume.pdf</a>
+        <button type="button" class="cms-file__remove" aria-label="Remove file"><svg class="hcms-x" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><path d="M4 4 L12 12 M12 4 L4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"></path></svg></button>
+      </div>
+    </div>
   </section>
 
   <!-- ============ IMAGE · compact thumbnail — empty + filled ============ -->

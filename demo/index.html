@@ -36,6 +36,8 @@
   "priority": ".meta@data-priority",
   "avatar": "img.avatar@src",
   "homepage": "a.homepage@href",
+  "attachment": "a.attachment@href",
+  "badge": ".badge@data-icon",
   "bio": "textarea.bio@value",
   "author": {
     "name": ".author .author-name",
@@ -47,6 +49,7 @@
     {
       "name": ".product-name",
       "price": ".product-price",
+      "photo": ".product-photo@src",
       "variants": [
         ".variant",
         {
@@ -151,7 +154,13 @@
     <p>Email: <span class="author-email">pat@example.com</span></p>
   </div>
   <img class="avatar" src="https://placehold.co/64x64/333/eee?text=PD" alt="avatar" width="64" height="64"/>
+  <!-- a@href is a plain URL field by default (linking is the common case). -->
   <p><a class="homepage" href="https://example.com">homepage</a></p>
+  <!-- A file upload is opt-in via data-hcms-component="file" on the anchor. -->
+  <p><a class="attachment" data-hcms-component="file" href="/files/spec.pdf">spec.pdf</a></p>
+  <!-- Option B: a URL stored in a data-* attribute, forced to the image widget
+       via data-hcms-component (the rule suffix @data-icon can't be inferred). -->
+  <span class="badge" data-hcms-component="image" data-icon="https://placehold.co/40x40/4a5/fff?text=B" aria-label="badge"></span>
   <textarea class="bio" readonly>Short bio about Pat goes here.</textarea>
 </section>
 
@@ -170,6 +179,7 @@
     <div class="product">
       <h3 class="product-name">Widget</h3>
       <p>$<span class="product-price">9.99</span></p>
+      <img class="product-photo" src="https://placehold.co/48x48/258/fff?text=W" alt="" width="48" height="48"/>
       <div class="variants">
         <div class="variant"><strong class="variant-label">Small</strong> — <em class="variant-stock">12</em> (qty <em class="variant-qty">100</em>)</div>
         <div class="variant"><strong class="variant-label">Large</strong> — <em class="variant-stock">3</em> (qty <em class="variant-qty">25</em>)</div>
@@ -179,6 +189,7 @@
     <div class="product">
       <h3 class="product-name">Gadget</h3>
       <p>$<span class="product-price">19.99</span></p>
+      <img class="product-photo" src="https://placehold.co/48x48/852/fff?text=G" alt="" width="48" height="48"/>
       <div class="variants">
         <div class="variant"><strong class="variant-label">Default</strong> — <em class="variant-stock">8</em> (qty <em class="variant-qty">50</em>)</div>
         <div class="variant" cms-template hidden><strong class="variant-label"></strong> — <em class="variant-stock"></em> (qty <em class="variant-qty"></em>)</div>
@@ -187,6 +198,7 @@
     <div class="product" cms-template hidden>
       <h3 class="product-name"></h3>
       <p>$<span class="product-price"></span></p>
+      <img class="product-photo" src="" alt="" width="48" height="48"/>
       <div class="variants">
         <div class="variant" cms-template hidden><strong class="variant-label"></strong> — <em class="variant-stock"></em> (qty <em class="variant-qty"></em>)</div>
       </div>

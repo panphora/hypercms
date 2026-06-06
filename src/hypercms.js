@@ -2,7 +2,7 @@ import { engine } from 'hyper-html-api'
 import * as pathUtil from './path.js'
 import { scaffold } from './scaffold.js'
 import { morphForm } from './morph.js'
-import { injectDefaults } from './templates.js'
+import { injectDefaults, injectUploadComponents } from './templates.js'
 import { deriveFormRules } from './form-rules.js'
 import { buildForm } from './form-builder.js'
 import {
@@ -104,6 +104,7 @@ export function open(opts = {}) {
   const rulesTagNode = found.tagNode
 
   injectDefaults(doc)
+  injectUploadComponents(doc, pageRules)
   warnUnmatchedTemplates(doc, pageRules)
   const formRules = deriveFormRules(pageRules, doc)
   const data = coerceBooleans(engine.extract(pageRoot, pageRules, { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }), pageRules)
@@ -258,6 +259,10 @@ function installGlobalSortableCommit(doc) {
 export function close() {
   if (!state.isOpen) return
   const { ctx, shell } = state
+  // Mark this ctx dead so any in-flight async work (e.g. an upload awaiting the
+  // host uploader) bails instead of mutating the page / firing onChange after
+  // teardown. Mirrors the state.ctx !== ctx guards on the undo/livesync paths.
+  ctx.closed = true
   const previouslyFocused = ctx.previouslyFocused
   ctx.dispatch('hcms:close', null)
   ctx.observerHandle?.unsubscribe?.()

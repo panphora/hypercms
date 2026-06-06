@@ -1,4 +1,4 @@
-import { shapeKindOf, findTemplate, isInlineTemplate } from './templates.js'
+import { shapeKindOf, findTemplate, isInlineTemplate, componentForScalarRule } from './templates.js'
 
 const TAG_PROP_MAP = {
   IMG: 'src',
@@ -99,10 +99,12 @@ export function deriveFormRules(pageRules, doc) {
     const fieldKey = typeof key === 'string' ? key : '__value'
     const inlineEl = findInlineFieldEl(pathArr, fieldKey)
     if (inlineEl) return fieldSelectorFor(inlineEl, fieldKey)
-    // No path-bound override: look up the actual @scalar template (which
-    // sites may override globally with e.g. <textarea>) and derive the
-    // selector from its leaf tag instead of assuming <input>.
-    const shapeEl = findShapeFieldEl('@scalar', fieldKey)
+    // No path-bound override: resolve the component this rule opts into
+    // (@scalar / @image / @file) and derive the selector from THAT template's
+    // leaf tag, so an @image field reads img@src and an @file field reads
+    // a@href, while a plain scalar still respects a global @scalar override
+    // (e.g. a <textarea>) instead of assuming <input>.
+    const shapeEl = findShapeFieldEl(componentForScalarRule(rule, doc), fieldKey)
     if (shapeEl) return fieldSelectorFor(shapeEl, fieldKey)
     return `input[data-hcms-field="${cssEscape(fieldKey)}"]@value`
   }
