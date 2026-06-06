@@ -40,6 +40,20 @@ cms.open({ rules: 'collection' })// a tag with data-rules-name~="collection"
 cms.open({ rules: { title: '.title' } })  // a literal rules object, passed by hand
 ```
 
+## Auto-open with `?cms=true`
+
+Load any hypercms page with `?cms=true` in the URL and the CMS opens by itself once the DOM is ready — no trigger, no `cms.open()` call. The auto-open uses the host defaults (`document.body` as both `pageRoot` and `mountTo`), and it never double-mounts: if your page also calls `cms.open()`, the second open is a no-op.
+
+When the user closes the CMS, hypercms rewrites the param to `cms=false` via `history.replaceState` (the param is kept, no reload), so refreshing or sharing the post-close URL does not auto-reopen:
+
+```
+example.com/page?cms=true   →  CMS opens on load
+                            →  user closes
+example.com/page?cms=false  →  refresh / share: stays closed
+```
+
+The rewrite only touches the URL when `cms=true` is actually present; other params and the hash are preserved, and a page opened without a `cms` param never has one injected. Auto-open is ungated — it fires for every visitor, not just the page owner. (A non-owner's edits stay local to their DOM; in a hyperclayjs app the save path shows its "changes are local only" notice.)
+
 ## Hard requirement: `window.hyperclay.Mutation`
 
 hypercms uses [`hyperclayjs`'s Mutation utility](https://github.com/panphora/hyperclayjs/blob/main/src/utilities/mutation.js) as its page-change backend. It's a singleton that already understands `save-ignore`, `save-freeze`, `save-remove`, and `mutations-ignore`, which lets hypercms ignore its own DOM activity without per-event bookkeeping.

@@ -16,6 +16,10 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
   if (window.__mirk) return;
   window.__mirk = true;
 
+  // Crisp × for remove affordances — a font glyph renders at a different weight
+  // and baseline in every typeface, so draw it as a tiny square-capped vector.
+  const X_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4 12 12M12 4 4 12" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"/></svg>';
+
   // Number stepper — bevel buttons drive the native input.
   document.addEventListener("click", (e) => {
     const step = e.target.closest(".mirk-number__step");
@@ -35,18 +39,31 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
     input.closest(".mirk-slider").style.setProperty("--mirk-value", `${input.value}%`);
   });
 
-  // File picker — show the chosen filename (state lives in the input's files).
+  // File picker — show the chosen file as a link to it, with a × to clear. The kit
+  // has no upload, so the link is a local object URL; an app swaps in the uploaded
+  // URL. State lives in the input's files.
   document.addEventListener("change", (e) => {
     const input = e.target.closest(".mirk-file__input");
-    if (!input) return;
-    const name = input.closest(".mirk-file").querySelector(".mirk-file__name");
-    if (!name) return;
-    if (input.files.length) {
-      name.textContent = input.files[0].name;
-      name.dataset.filled = "";
-    } else {
-      name.textContent = "No file chosen";
-      delete name.dataset.filled;
+    if (!input || !input.files.length) return;
+    const root = input.closest(".mirk-file");
+    const slot = root.querySelector(".mirk-file__name");
+    if (!slot) return;
+    const file = input.files[0];
+    const link = document.createElement("a");
+    link.className = "mirk-file__name";
+    link.dataset.filled = "";
+    link.href = URL.createObjectURL(file);
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = file.name;
+    slot.replaceWith(link);
+    if (!root.querySelector(".mirk-file__remove")) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "mirk-file__remove";
+      remove.setAttribute("aria-label", "Remove file");
+      remove.innerHTML = X_SVG;
+      link.after(remove);
     }
   });
 
@@ -63,8 +80,40 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
       preview.src = ev.target.result;
       preview.removeAttribute("hidden");
       if (placeholder) placeholder.setAttribute("hidden", "");
+      // compact variant: swap the upload button for the thumbnail
+      root.querySelector(".mirk-image__thumb")?.removeAttribute("hidden");
+      root.querySelector(".mirk-image__upload")?.setAttribute("hidden", "");
     };
     reader.readAsDataURL(input.files[0]);
+  });
+
+  // File / image remove — clear the field and return to the empty state.
+  document.addEventListener("click", (e) => {
+    const fileRemove = e.target.closest(".mirk-file__remove");
+    if (fileRemove) {
+      const root = fileRemove.closest(".mirk-file");
+      const input = root?.querySelector(".mirk-file__input");
+      const link = root?.querySelector(".mirk-file__name");
+      if (input) input.value = "";
+      if (link) {
+        const span = document.createElement("span");
+        span.className = "mirk-file__name";
+        span.textContent = "No file chosen";
+        link.replaceWith(span);
+      }
+      fileRemove.remove();
+      return;
+    }
+    const imageRemove = e.target.closest(".mirk-image__remove");
+    if (imageRemove) {
+      const root = imageRemove.closest(".mirk-image");
+      const input = root?.querySelector(".mirk-image__input");
+      const preview = root?.querySelector(".mirk-image__preview");
+      if (input) input.value = "";
+      if (preview) { preview.removeAttribute("src"); preview.setAttribute("hidden", ""); }
+      root?.querySelector(".mirk-image__thumb")?.setAttribute("hidden", "");
+      root?.querySelector(".mirk-image__upload")?.removeAttribute("hidden");
+    }
   });
 
   // Tags — Enter / comma adds a real chip, × or Backspace-on-empty removes one.

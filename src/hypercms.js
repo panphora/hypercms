@@ -154,6 +154,13 @@ export function open(opts = {}) {
     ctx.lastFingerprint = stableStringify(extractFormData(ctx))
   }
 
+  // Everything past the shell mount touches the live DOM, the module-level state,
+  // and external subscriptions (observer, undo, livesync). A throw in here — most
+  // notably installObserver when window.hyperclay.Mutation isn't loaded — would
+  // otherwise strand the mounted shell in the DOM with no way to close it (close()
+  // early-returns while state.isOpen is false). Tear down whatever was wired,
+  // exactly as close() does, then rethrow so host misuse still fails loudly.
+  try {
   const fragment = buildForm({ pageRules, formRules, data, doc })
   shell.formRoot.appendChild(fragment)
 
@@ -220,6 +227,19 @@ export function open(opts = {}) {
   state.opts = opts
 
   ctx.dispatch('hcms:open', { pageRoot })
+  } catch (err) {
+    ctx.observerHandle?.unsubscribe?.()
+    ctx.undoUnsub?.()
+    ctx.livesyncUnsub?.()
+    ctx.detachEvents?.()
+    if (globalCommitTarget.ctx === ctx) globalCommitTarget.ctx = null
+    suppressUndo(() => shell.destroy())
+    state.isOpen = false
+    state.ctx = null
+    state.shell = null
+    state.opts = null
+    throw err
+  }
 }
 
 function focusFirstIn(root) {
@@ -253,11 +273,53 @@ function installGlobalSortableCommit(doc) {
   }
 }
 
+// The query param that drives ?cms=true auto-open. Closing the CMS rewrites it
+// to cms=false (param kept) so a refresh/share of the post-close URL does not
+// auto-reopen.
+const AUTO_OPEN_PARAM = 'cms'
+
+// Pure: given a location.search string, return the search string after a close.
+// Only rewrites when cms=true is present; every other param + ordering is
+// preserved, and a search without cms (or already cms=false) is returned
+// unchanged so we never inject the param into a page that never carried it.
+export function nextSearchAfterClose(search) {
+  const str = typeof search === 'string' ? search : ''
+  const qIndex = str.indexOf('?')
+  const query = qIndex === -1 ? str : str.slice(qIndex + 1)
+  if (!query) return str
+  const params = new URLSearchParams(query)
+  if (params.get(AUTO_OPEN_PARAM) !== 'true') return str
+  params.set(AUTO_OPEN_PARAM, 'false')
+  return '?' + params.toString()
+}
+
+// Pure: should the CMS auto-open for this location.search? Exactly 'true'.
+export function shouldAutoOpenFromSearch(search) {
+  const str = typeof search === 'string' ? search : ''
+  const qIndex = str.indexOf('?')
+  const query = qIndex === -1 ? str : str.slice(qIndex + 1)
+  if (!query) return false
+  return new URLSearchParams(query).get(AUTO_OPEN_PARAM) === 'true'
+}
+
+// Rewrite ?cms=true → ?cms=false via history.replaceState (no reload, hash and
+// every other param preserved). No-op when the param isn't present or the
+// History API is unavailable.
+function toggleCloseParam() {
+  if (typeof window === 'undefined' || !window.location || !window.history) return
+  if (typeof window.history.replaceState !== 'function') return
+  const current = window.location.search
+  const next = nextSearchAfterClose(current)
+  if (next === current) return
+  window.history.replaceState(window.history.state, '', next + window.location.hash)
+}
+
 export function close() {
   if (!state.isOpen) return
   const { ctx, shell } = state
   const previouslyFocused = ctx.previouslyFocused
   ctx.dispatch('hcms:close', null)
+  toggleCloseParam()
   ctx.observerHandle?.unsubscribe?.()
   ctx.undoUnsub?.()
   ctx.livesyncUnsub?.()
@@ -393,6 +455,104 @@ function writeFieldValue(el, value, formRoot, path) {
   }
   el.textContent = value == null ? '' : String(value)
 }
+
+// ?cms=true auto-open. When the page URL carries cms=true at load, open the CMS
+// for everyone (no gating — this is a feature showcase; a non-admin's edits stay
+// DOM-local and the host save path shows its view-mode notice). open() is
+// idempotent-safe (it warns + returns if already open), so a host that also calls
+// open() never double-mounts. No special opts — host defaults apply.
+//
+// Patience matters here: this runs at module load from the dist IIFE, which a
+// host typically loads BEFORE installing window.hyperclay.Mutation (the Mutation
+// install often sits behind an `await import(...)` that resumes after this script,
+// even after DOMContentLoaded). open() needs <body> AND Mutation, so we poll for
+// both rather than firing eagerly. Firing without Mutation would throw out of
+// installObserver, escape module evaluation, and abort esbuild's
+// window.hypercms assignment — taking the host's own wiring down with it.
+const SAFETY_POLL_MS = 250
+const AUTO_OPEN_DEADLINE_MS = 10000
+export function maybeAutoOpen() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  if (!shouldAutoOpenFromSearch(window.location ? window.location.search : '')) return
+  if (state.isOpen) return
+  whenReady(() => {
+    if (state.isOpen) return
+    try {
+      open()
+    } catch (err) {
+      console.warn('hypercms: auto-open failed', err)
+    }
+  })
+}
+
+// Auto-open is ready only once <body> is parsed AND window.hyperclay.Mutation is
+// installed (open() needs both). NEVER throw out of module scope.
+function autoOpenReady() {
+  return !!document.body && !!(window.hyperclay && window.hyperclay.Mutation)
+}
+
+// Three layers, in order of preference:
+//   1. Sync fast-path: if <body> and Mutation are already here, fire now.
+//   2. Event: hyperclayjs's mutation.js dispatches 'hyperclay:mutation-ready' the
+//      instant it installs window.hyperclay.Mutation. On loader pages this is
+//      moot — the loader's first wave evaluates mutation before hypercms, so the
+//      fast-path wins — but the event catches any late install (the deferred
+//      `await import()` ordering). The body gate is re-checked in the handler
+//      because the event can land before <body> is parsed.
+//   3. Backstop: a slow self-cancelling 250ms poll for exotic hosts that hand-roll
+//      window.hyperclay.Mutation by direct assignment WITHOUT dispatching the
+//      event. It cancels the moment the event fires, open succeeds, or the
+//      deadline is hit (warn, never throw).
+function whenReady(fn) {
+  if (autoOpenReady()) {
+    fn()
+    return
+  }
+  const deadline = Date.now() + AUTO_OPEN_DEADLINE_MS
+  let done = false
+  let timer = null
+  const finish = () => {
+    if (done) return
+    done = true
+    if (timer !== null) clearInterval(timer)
+    document.removeEventListener('hyperclay:mutation-ready', onMutationReady)
+  }
+  function onMutationReady() {
+    if (state.isOpen) {
+      finish()
+      return
+    }
+    if (autoOpenReady()) {
+      finish()
+      fn()
+    }
+    // Body may still be pending — the one-shot listener is already consumed,
+    // so only the backstop remains to catch it once body arrives.
+  }
+  document.addEventListener('hyperclay:mutation-ready', onMutationReady, { once: true })
+  timer = setInterval(() => {
+    if (state.isOpen) {
+      finish()
+      return
+    }
+    if (autoOpenReady()) {
+      finish()
+      fn()
+      return
+    }
+    if (Date.now() >= deadline) {
+      finish()
+      console.warn(
+        'hypercms: ?cms=true auto-open gave up — window.hyperclay.Mutation never appeared. ' +
+        'Load hyperclayjs (or the mutation utility) so the CMS can initialize.'
+      )
+    }
+  }, SAFETY_POLL_MS)
+}
+
+// Auto-open at module load (browser only — node tests import this without a real
+// window, and the guards above no-op there).
+maybeAutoOpen()
 
 const cms = {
   open,
