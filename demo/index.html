@@ -246,9 +246,15 @@
     row.textContent = `[${time}] ${name} — ${detail ? JSON.stringify(detail).slice(0, 240) : ''}`
     log.prepend(row)
   }
-  for (const e of ['hcms:open','hcms:change','hcms:save','hcms:error','hcms:close']) {
+  for (const e of ['hcms:open','hcms:change','hcms:error','hcms:close']) {
     document.addEventListener(e, (ev) => record(e, ev.detail))
   }
+
+  // The shell Save button carries [trigger-save] (hyperclayjs's save attribute).
+  // hyperclayjs isn't loaded here, so delegate it ourselves — the standalone-host pattern.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[trigger-save]')) record('[trigger-save]', cms.api.getData())
+  })
 
   document.getElementById('t-get').addEventListener('click', () => record('api.getData', cms.api.getData()))
   document.getElementById('t-set').addEventListener('click', () => cms.api.setValue('title', 'Hello!'))

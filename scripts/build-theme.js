@@ -23,7 +23,18 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(__dirname, '..')
-const mirkRepo = path.join(root, '..', 'mirk-ui-kit')
+
+// mirk-ui-kit normally sits next to the hypercms checkout, but in a git
+// worktree (.claude/worktrees/<name>) the repo root is nested deeper, so walk
+// up until a directory contains mirk-ui-kit/mirk.css.
+function findMirkRepo(from) {
+  for (let dir = from; ; dir = path.dirname(dir)) {
+    const candidate = path.join(dir, 'mirk-ui-kit')
+    if (fs.existsSync(path.join(candidate, 'mirk.css'))) return candidate
+    if (path.dirname(dir) === dir) throw new Error('mirk-ui-kit/mirk.css not found above ' + from)
+  }
+}
+const mirkRepo = findMirkRepo(root)
 
 const MIRK_VERSION = '2.0.1'
 const FONT_CDN =
