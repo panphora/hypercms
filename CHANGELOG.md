@@ -1,5 +1,30 @@
 # hypercms changelog
 
+## [0.5.0] - 2026-06-07
+
+### Added
+- profile upload test page for hypercms
+- auto-open the CMS on ?cms=true, toggling to cms=false on close
+- opt-in @file/@image upload components
+- component mocks demo and a sku field for pixel-quiet
+- confirmRemove option for list item deletion
+- corner delete button on pixel-quiet object-array cards
+- real undo/redo in the Pixel Quiet demo
+- @value/@checked CMS field edits are now recorded as undo steps
+
+### Changed
+- hypercms sidebar now renders in the Pixel Quiet look with real mirk components
+
+### Fixed
+- extension-noise.js symlink added next to the mutation symlink
+- build-theme now walks up parent directories to find mirk-ui-kit
+- mirk tag chips stay in a row when the tags box is the array slot
+
+### Breaking Changes
+- shell Save button now carries [trigger-save], dropping onSave/hcms:save wiring
+
+
+
 ## 0.2.0 — hardening pass (unreleased)
 
 Response to the first round of code review. All criticals fixed, all should-fix items addressed, nice-to-haves shipped, demo and tests expanded.
