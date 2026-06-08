@@ -2,7 +2,7 @@ import { engine } from 'hyper-html-api'
 import * as pathUtil from './path.js'
 import { scaffold } from './scaffold.js'
 import { morphForm } from './morph.js'
-import { injectDefaults, injectUploadComponents } from './templates.js'
+import { injectDefaults, injectComponents } from './templates.js'
 import { deriveFormRules } from './form-rules.js'
 import { buildForm } from './form-builder.js'
 import {
@@ -104,7 +104,7 @@ export function open(opts = {}) {
   const rulesTagNode = found.tagNode
 
   injectDefaults(doc)
-  injectUploadComponents(doc, pageRules)
+  injectComponents(doc, pageRules)
   warnUnmatchedTemplates(doc, pageRules)
   const formRules = deriveFormRules(pageRules, doc)
   const data = coerceBooleans(engine.extract(pageRoot, pageRules, { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }), pageRules)

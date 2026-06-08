@@ -1,4 +1,10 @@
-import { shapeKindOf, findTemplate, isInlineTemplate, componentForScalarRule } from './templates.js'
+import {
+  shapeKindOf,
+  findTemplate,
+  isInlineTemplate,
+  componentForScalarRule,
+  winningScalarArrayComponent,
+} from './templates.js'
 
 const TAG_PROP_MAP = {
   IMG: 'src',
@@ -79,7 +85,7 @@ export function deriveFormRules(pageRules, doc) {
   function derive(rule, pathArr) {
     const kind = shapeKindOf(rule)
     if (kind === 'scalar') return scalarRule(rule, pathArr)
-    if (kind === 'scalar-array') return scalarArrayRule(pathArr)
+    if (kind === 'scalar-array') return scalarArrayRule(rule, pathArr)
     if (kind === 'object-array') return objectArrayRule(rule, pathArr)
     if (kind === 'object') {
       const out = Object.create(null)
@@ -104,18 +110,24 @@ export function deriveFormRules(pageRules, doc) {
     // leaf tag, so an @image field reads img@src and an @file field reads
     // a@href, while a plain scalar still respects a global @scalar override
     // (e.g. a <textarea>) instead of assuming <input>.
-    const shapeEl = findShapeFieldEl(componentForScalarRule(rule, doc), fieldKey)
+    const shapeEl = findShapeFieldEl(componentForScalarRule(rule, doc, pathArr), fieldKey)
     if (shapeEl) return fieldSelectorFor(shapeEl, fieldKey)
     return `input[data-hcms-field="${cssEscape(fieldKey)}"]@value`
   }
 
-  function scalarArrayRule(pathArr) {
+  function scalarArrayRule(rule, pathArr) {
     // The engine's "selector[]" form is text-only; for an editable form we need
     // per-item @value reads, so emit the [selector, shape] form with a scalar
     // shape that targets the inner field's value property. If the site
     // overrides @scalar-array-item with a non-<input> leaf (textarea, etc.),
-    // derive the inner-leaf selector from the override.
-    const shapeEl = findShapeFieldEl('@scalar-array-item', null)
+    // derive the inner-leaf selector from the override. A component array
+    // (chips) derives from its own item template first — but only when the
+    // chips template actually wins at this path (winningScalarArrayComponent
+    // is the same verdict buildScalarArray uses, so the derived item selector
+    // always matches the rendered item leaf).
+    const comp = winningScalarArrayComponent(rule, pathArr, doc)
+    const shapeEl =
+      (comp && findShapeFieldEl(comp.item, null)) || findShapeFieldEl('@scalar-array-item', null)
     const itemSel = shapeEl ? keylessFieldSelectorFor(shapeEl) : 'input[data-hcms-field]@value'
     return [itemSelectorFor(pathArr, '[data-hcms-array-item]'), itemSel]
   }

@@ -29,15 +29,18 @@
   .ub-btn:disabled { opacity: .4; cursor: default; }
 </style>
 
-<!-- Rules: the canonical Pixel Quiet "Page settings" field set. -->
+<!-- Rules: the canonical Pixel Quiet "Page settings" field set. The published /
+     priority / color / tags fields opt into named built-in controls via
+     data-hcms-component on the page elements they point at (see <body>), so no
+     per-field template is needed for them anymore. -->
 <script data-rules-name="cms" data-rules-version="1" type="application/json">
 {
   "title": "h1.page-title",
   "tagline": ".tagline",
   "bio": ".bio",
-  "published": ".meta@data-published",
-  "priority": ".meta@data-priority",
-  "color": ".meta@data-color",
+  "published": ".meta-published@data-published",
+  "priority": ".meta-priority@data-priority",
+  "color": ".meta-color@data-color",
   "tags": "ul.tags li[]",
   "products": [
     ".product",
@@ -46,9 +49,11 @@
 }
 </script>
 
-<!-- Per-field mirk templates (toggle / select / radio / textarea / tag chips).
-     Title, Tagline and Products use the mirk defaults baked into hypercms. -->
-
+<!-- Custom-template example: only Bio overrides the built-in chrome. Title,
+     Tagline and Products ride the mirk defaults; Published (toggle), Priority
+     (select), Color (radio) and Tags (chips) use the named built-in controls,
+     opted into with data-hcms-component (+ data-hcms-options) on the page
+     elements in <body> — no template authoring required for those. -->
 <template data-hcms-tpl="bio">
   <label class="hcms-field" data-hcms-shape="scalar">
     <span class="hcms-label" data-hcms-label></span>
@@ -56,87 +61,6 @@
     <div class="hcms-error" hidden></div>
   </label>
 </template>
-
-<template data-hcms-tpl="published">
-  <div class="hcms-field hcms-field--row" data-hcms-shape="scalar">
-    <span class="hcms-label" data-hcms-label></span>
-    <label class="mirk-toggle">
-      <input type="checkbox" role="switch" class="mirk-sr-only" data-hcms-field="published">
-      <span class="mirk-toggle__track"><span class="mirk-toggle__thumb"></span></span>
-    </label>
-    <div class="hcms-error" hidden></div>
-  </div>
-</template>
-
-<template data-hcms-tpl="priority">
-  <label class="hcms-field" data-hcms-shape="scalar">
-    <span class="hcms-label" data-hcms-label></span>
-    <div class="mirk-select">
-      <select class="mirk-select__field" data-hcms-field="priority">
-        <option value="low">Low</option>
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
-      </select>
-      <span aria-hidden="true" class="mirk-select__chevron">›</span>
-    </div>
-    <div class="hcms-error" hidden></div>
-  </label>
-</template>
-
-<template data-hcms-tpl="color">
-  <div class="hcms-field" data-hcms-shape="scalar">
-    <span class="hcms-label" data-hcms-label></span>
-    <div class="hcms-radio-row">
-      <label class="mirk-radio">
-        <input type="radio" name="pq-color" value="red" class="mirk-sr-only" data-hcms-field="color">
-        <span class="mirk-radio__ring"><span class="mirk-radio__fill"></span><span class="mirk-radio__dot"></span></span>
-        <span class="mirk-radio__label">Red</span>
-      </label>
-      <label class="mirk-radio">
-        <input type="radio" name="pq-color" value="green" class="mirk-sr-only" data-hcms-field="color">
-        <span class="mirk-radio__ring"><span class="mirk-radio__fill"></span><span class="mirk-radio__dot"></span></span>
-        <span class="mirk-radio__label">Green</span>
-      </label>
-      <label class="mirk-radio">
-        <input type="radio" name="pq-color" value="blue" class="mirk-sr-only" data-hcms-field="color">
-        <span class="mirk-radio__ring"><span class="mirk-radio__fill"></span><span class="mirk-radio__dot"></span></span>
-        <span class="mirk-radio__label">Blue</span>
-      </label>
-    </div>
-    <div class="hcms-error" hidden></div>
-  </div>
-</template>
-
-<!-- Tags as mirk chips, wired through hypercms's scalar-array machinery:
-     .hcms-array-items IS the .mirk-tags box (a direct child of the path node so
-     the engine's "> .hcms-array-items > [item]" selector resolves), each chip is
-     a [data-hcms-array-item] holding an inline-editable field, and "+ tag" /
-     remove × route through the standard data-hcms-action hooks. -->
-<template data-hcms-tpl="tags">
-  <div class="hcms-field" data-hcms-shape="scalar-array">
-    <span class="hcms-label" data-hcms-label></span>
-    <div class="mirk-tags hcms-array-items"></div>
-    <button type="button" class="hcms-add mirk-button mirk-button--small" data-hcms-action="add"><span class="mirk-button__label">+ Add</span></button>
-    <div class="hcms-error" hidden></div>
-  </div>
-</template>
-<template data-hcms-tpl="tags.*">
-  <span class="mirk-tags__chip" data-hcms-array-item>
-    <input class="pq-chip-field" data-hcms-field value="" aria-label="Tag" placeholder="tag">
-    <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove tag">×</button>
-  </span>
-</template>
-
-<style>
-  /* chip-field: a borderless inline input that sizes to its text, so chips read
-     like the mockup's static chips but stay inline-editable + hypercms-bound. */
-  .hcms-shell .mirk-tags__chip { padding-right: 6px; }
-  .hcms-shell .pq-chip-field {
-    border: 0; background: transparent; color: inherit; font: inherit;
-    outline: none; min-width: 2ch; field-sizing: content; padding: 0;
-  }
-  .hcms-shell .mirk-tags .hcms-add { margin-top: 4px; }
-</style>
 
 </head>
 <body>
@@ -153,12 +77,19 @@
   <h1 class="page-title">Hyperclay</h1>
   <p class="tagline">Edit the right-side panel; this page updates live.</p>
   <p class="bio">A short bio about the page goes here. Everything on this page is editable from the Pixel Quiet sidebar, and saves back into the HTML.</p>
-  <p class="meta" data-published="true" data-color="red" data-priority="medium" hidden></p>
+  <!-- data-hcms-component is per-element, so each meta field lives on its own
+       hidden host: toggle (boolean attr), select + radio (data-hcms-options
+       supplies the choices, labels humanize automatically). -->
+  <span class="meta-published" data-published="true" data-hcms-component="toggle" hidden></span>
+  <span class="meta-priority" data-priority="medium" data-hcms-component="select" data-hcms-options="low medium high" hidden></span>
+  <span class="meta-color" data-color="red" data-hcms-component="radio" data-hcms-options="red green blue" hidden></span>
 </header>
 
 <section class="card">
   <h2>Tags</h2>
-  <ul class="tags">
+  <!-- data-hcms-component="chips" on the list swaps the scalar-array chrome for
+       the mirk chip list (the built theme ships .hcms-chip-field). -->
+  <ul class="tags" data-hcms-component="chips">
     <li>foo</li>
     <li>bar</li>
     <li>baz</li>

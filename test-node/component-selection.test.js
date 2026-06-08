@@ -4,7 +4,7 @@ import { JSDOM } from 'jsdom'
 import {
   componentForScalarRule,
   injectDefaults,
-  injectUploadComponents,
+  injectComponents,
   findTemplate,
   buildTemplateMap,
 } from '../src/templates.js'
@@ -23,7 +23,7 @@ const FILE_BODY = `<a class="cv" data-hcms-component="file" href=""></a><a class
 // selects, before deriving rules / building the form.
 function prepare(doc, rules) {
   injectDefaults(doc)
-  injectUploadComponents(doc, rules)
+  injectComponents(doc, rules)
 }
 
 test('componentForScalarRule: @src suffix → @image; @href is a plain URL field, NOT a file', () => {
@@ -59,18 +59,18 @@ test('componentForScalarRule: a bad selector never throws', () => {
   assert.equal(componentForScalarRule('::::@data-x', doc), '@scalar')
 })
 
-test('injectUploadComponents: injects only the components the rules select', () => {
+test('injectComponents: injects only the components the rules select', () => {
   const doc = setupDoc()
   injectDefaults(doc)
-  injectUploadComponents(doc, { title: '.title', hero: 'img@src' })
+  injectComponents(doc, { title: '.title', hero: 'img@src' })
   assert.ok(findTemplate(doc, '@image'), '@image injected (a rule selects it)')
   assert.equal(findTemplate(doc, '@file'), null, '@file not injected (no rule selects it)')
 })
 
-test('injectUploadComponents: descends into object + object-array card fields', () => {
+test('injectComponents: descends into object + object-array card fields', () => {
   const doc = setupDoc(`<a class="cv" data-hcms-component="file" href=""></a>`)
   injectDefaults(doc)
-  injectUploadComponents(doc, {
+  injectComponents(doc, {
     cv: '.cv@href',
     meta: { logo: 'img@src' },
     products: ['.product', { photo: 'img@src', name: '.n' }],

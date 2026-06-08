@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { loadPage, reset } from './_helpers.js'
 import { open, close } from '../src/hypercms.js'
-import { injectDefaults, injectUploadComponents } from '../src/templates.js'
+import { injectDefaults, injectComponents } from '../src/templates.js'
 import { deriveFormRules } from '../src/form-rules.js'
 import { JSDOM } from 'jsdom'
 
@@ -10,7 +10,7 @@ test('card fields recurse through the component seam: photo→img@src (image), l
   const doc = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>').window.document
   const rules = { products: ['.product', { photo: 'img@src', link: 'a@href', name: '.n' }] }
   injectDefaults(doc)
-  injectUploadComponents(doc, rules)
+  injectComponents(doc, rules)
   const formRules = deriveFormRules(rules, doc)
   const [, itemShape] = formRules.products
   assert.equal(itemShape.photo, 'img[data-hcms-field="photo"]@src') // image inferred in cards

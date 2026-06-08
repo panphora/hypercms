@@ -116,11 +116,89 @@ const DEFAULT_TEMPLATES = {
       <div class="hcms-error" hidden></div>
     </div>
   `,
+  // Named built-in controls, opt-in via data-hcms-component on the page element
+  // a rule points at. Promoted from the demo custom templates (mirk chrome,
+  // already themed in theme.generated.css), so the easy path needs no template
+  // authoring. @checkbox/@toggle bind the same input[type=checkbox]@checked
+  // machinery; @select/@radio get their entries from data-hcms-options (the
+  // form-builder populates the empty <select> / clones the radio prototype).
+  '@checkbox': `
+    <div class="hcms-field hcms-field--row" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <label class="mirk-checkbox">
+        <input type="checkbox" class="mirk-sr-only" data-hcms-field />
+        <span class="mirk-checkbox__box"><span class="mirk-checkbox__mark"></span></span>
+      </label>
+      <div class="hcms-error" hidden></div>
+    </div>
+  `,
+  '@toggle': `
+    <div class="hcms-field hcms-field--row" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <label class="mirk-toggle">
+        <input type="checkbox" role="switch" class="mirk-sr-only" data-hcms-field />
+        <span class="mirk-toggle__track"><span class="mirk-toggle__thumb"></span></span>
+      </label>
+      <div class="hcms-error" hidden></div>
+    </div>
+  `,
+  '@select': `
+    <label class="hcms-field" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <div class="mirk-select">
+        <select class="mirk-select__field" data-hcms-field></select>
+        <span aria-hidden="true" class="mirk-select__chevron">›</span>
+      </div>
+      <div class="hcms-error" hidden></div>
+    </label>
+  `,
+  '@radio': `
+    <div class="hcms-field" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <div class="hcms-radio-row">
+        <label class="mirk-radio">
+          <input type="radio" class="mirk-sr-only" data-hcms-field />
+          <span class="mirk-radio__ring"><span class="mirk-radio__fill"></span><span class="mirk-radio__dot"></span></span>
+          <span class="mirk-radio__label"></span>
+        </label>
+      </div>
+      <div class="hcms-error" hidden></div>
+    </div>
+  `,
+  '@textarea': `
+    <label class="hcms-field" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <textarea class="mirk-textarea" rows="3" data-hcms-field></textarea>
+      <div class="hcms-error" hidden></div>
+    </label>
+  `,
+  '@number': `
+    <label class="hcms-field" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <input class="mirk-input" type="number" data-hcms-field />
+      <div class="hcms-error" hidden></div>
+    </label>
+  `,
+  '@chips': `
+    <div class="hcms-field hcms-chips" data-hcms-shape="scalar-array">
+      <span class="hcms-label" data-hcms-label></span>
+      <div class="mirk-tags hcms-array-items"></div>
+      <button type="button" class="hcms-add mirk-button mirk-button--small" data-hcms-action="add"><span class="mirk-button__label">+ Add</span></button>
+      <div class="hcms-error" hidden></div>
+    </div>
+  `,
+  '@chips-item': `
+    <span class="mirk-tags__chip" data-hcms-array-item>
+      <input class="hcms-chip-field" data-hcms-field aria-label="Item" placeholder="…" />
+      <button type="button" class="hcms-remove" data-hcms-action="remove" aria-label="Remove">×</button>
+    </span>
+  `,
 }
 
-// Shape templates fill-the-gaps on every managed page. The opt-in upload
-// components (@file/@image) are injected on demand the first time a field
-// selects them (the Slice-2 component seam), so pages using neither stay clean.
+// Shape templates fill-the-gaps on every managed page. The opt-in components
+// (@file/@image uploads + the named controls) are injected on demand the first
+// time a field selects them (the Slice-2 component seam), so pages using none
+// stay clean.
 const ALWAYS_INJECT_KEYS = [
   '@scalar',
   '@object',
@@ -136,9 +214,9 @@ export function injectDefaults(doc) {
   for (const key of ALWAYS_INJECT_KEYS) injectTemplate(doc, head, key)
 }
 
-// Inject one opt-in component template (@file/@image) if the page hasn't
-// already defined its own. Called by the component-selection seam the first
-// time a field resolves to an upload component.
+// Inject one opt-in component template if the page hasn't already defined its
+// own. Called by the component-selection seam the first time a field resolves
+// to a component.
 export function injectComponentTemplate(doc, key) {
   if (!DEFAULT_TEMPLATES[key]) return null
   const head = doc && (doc.head || doc.documentElement)
@@ -146,33 +224,204 @@ export function injectComponentTemplate(doc, key) {
   return injectTemplate(doc, head, key)
 }
 
-// Opt-in upload-component selection. A scalar field upgrades from a plain text
-// input to an image-upload widget when its rule ends in @src (uploading is the
-// dominant image-CMS workflow). @href is NOT inferred: editing a link/URL is far
-// more common than uploading a file, so an a@href rule stays a plain URL field.
-// A file upload (and an image override) is opt-in via data-hcms-component on the
-// page element the rule points at — the only branch that reads the page DOM.
-// Suffix is split like the engine (lastIndexOf('@'), see engine/extract.js).
-// Returns a DEFAULT_TEMPLATES key.
-const PROP_TO_COMPONENT = { src: '@image' }
-const UPLOAD_COMPONENT_KEYS = new Set(['@image', '@file'])
+// Named-component selection. Explicit beats inferred: a data-hcms-component
+// attribute on the page element a rule points at wins over the @prop-suffix
+// inference, so a checked-bound field can still opt into the @toggle look.
+// Inference stays narrow: @src means image upload (the dominant image-CMS
+// workflow) and @checked means checkbox (a text input showing the literal word
+// "true" helps nobody). @href is NOT inferred: editing a link/URL is far more
+// common than uploading a file, so an a@href rule stays a plain URL field and
+// the file upload is opt-in. Suffix is split like the engine (lastIndexOf('@'),
+// see engine/extract.js). Returns a DEFAULT_TEMPLATES key.
+const PROP_TO_COMPONENT = { src: '@image', checked: '@checkbox' }
+// data-hcms-component values for scalar rules. "chips" is array-only (below).
+const SCALAR_COMPONENT_BY_NAME = {
+  image: '@image',
+  file: '@file',
+  checkbox: '@checkbox',
+  toggle: '@toggle',
+  select: '@select',
+  radio: '@radio',
+  textarea: '@textarea',
+  number: '@number',
+}
+// Every opt-in component injects on demand; only the 6 shape templates are
+// always present.
+const ON_DEMAND_COMPONENT_KEYS = new Set([
+  ...Object.values(SCALAR_COMPONENT_BY_NAME),
+  '@chips',
+  '@chips-item',
+])
 
-export function componentForScalarRule(rule, doc) {
+export function componentForScalarRule(rule, doc, pathArr) {
   if (typeof rule !== 'string') return '@scalar'
   const at = rule.lastIndexOf('@')
+  const override = readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-component')
+  if (override && SCALAR_COMPONENT_BY_NAME[override]) {
+    const key = SCALAR_COMPONENT_BY_NAME[override]
+    // Value guards check exactly the elements the engine binds: under an array
+    // the same rule binds one element per item (every match votes), while a
+    // plain scalar binds only the FIRST match — a decorative second element
+    // sharing the selector must not veto the control.
+    const multi = Array.isArray(pathArr) && pathArr.some((s) => s === '*' || typeof s === 'number')
+    if (key === '@number' && !currentScalarValues(rule, at, doc, multi).every(numberInputCanHold)) {
+      return '@scalar'
+    }
+    if (
+      (key === '@checkbox' || key === '@toggle') &&
+      (at < 0 || rule.slice(at + 1) !== 'checked') &&
+      !currentScalarValues(rule, at, doc, multi).every(checkboxCanHold)
+    ) {
+      return '@scalar'
+    }
+    return key
+  }
   if (at >= 0) {
     const prop = rule.slice(at + 1)
     if (PROP_TO_COMPONENT[prop]) return PROP_TO_COMPONENT[prop]
   }
-  const override = readComponentOverride(rule, at, doc)
-  if (override === 'image') return '@image'
-  if (override === 'file') return '@file'
   return '@scalar'
 }
 
-function readComponentOverride(rule, at, doc) {
+// The data-hcms-component key the page element explicitly declares for this
+// rule, or null (absent / unknown name / value-guard fallback). Lets the
+// builder tell "author asked for this" apart from suffix inference when
+// logging shadowing notices.
+export function declaredComponentKey(rule, doc) {
+  if (typeof rule !== 'string') return null
+  const at = rule.lastIndexOf('@')
+  const name = readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-component')
+  return (name && SCALAR_COMPONENT_BY_NAME[name]) || null
+}
+
+// A number input physically rejects any value that isn't a plain number — it
+// reads back '' — and the whole-form commit would then blank the page value on
+// the next edit of ANY field. When any bound value isn't number-shaped, fall
+// back to the plain text control. This runs inside componentForScalarRule so
+// the builder and deriveFormRules stay in lockstep (both call it).
+const NUMBER_VALUE_RE = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/
+
+function numberInputCanHold(value) {
+  if (value == null || value === '') return true
+  return NUMBER_VALUE_RE.test(String(value))
+}
+
+// A checkbox/toggle extracts its checked property — 'true' or 'false' — so any
+// other bound value ("yes", "on", "1") would be clobbered to 'false' on the
+// next whole-form commit. @checked projections are exempt in the caller: they
+// round-trip the checked state faithfully by construction.
+function checkboxCanHold(value) {
+  return value == null || value === '' || value === 'true' || value === 'false'
+}
+
+// Read the page values the rule binds, the way the engine extracts them:
+// trimmed textContent for text projections (adapter.text trims), the live
+// property for @value, the raw attribute otherwise. Mirrors extraction's
+// skips: cms-template seeds and the shell are never extracted, so their
+// values don't get a vote. `multi` mirrors the engine's binding: all matches
+// under an array (one element per item), only the first match otherwise.
+function currentScalarValues(rule, at, doc, multi) {
+  if (!doc || !doc.querySelectorAll) return []
+  const selector = scalarSelectorOf(rule, at)
+  if (!selector || selector === '.') return []
+  let els = null
+  try {
+    els = doc.querySelectorAll(selector)
+  } catch {
+    return []
+  }
+  const prop = at >= 0 ? rule.slice(at + 1) : null
+  const out = []
+  for (const el of els) {
+    if (el.closest && el.closest('[cms-template], [data-hcms-shell]')) continue
+    if (prop) {
+      if (prop === 'value' && 'value' in el) out.push(el.value)
+      else out.push(el.getAttribute ? el.getAttribute(prop) : null)
+    } else {
+      out.push((el.textContent || '').trim())
+    }
+    if (!multi) break
+  }
+  return out
+}
+
+// Array-level component selection: data-hcms-component="chips" on the list
+// container (or any ancestor of the items) swaps the scalar-array chrome for
+// the chip list. Resolved through the first item the rule's selector matches,
+// then closest(), so the natural authoring spot — the <ul> — works even though
+// the selector targets the items. Growable-from-zero lists carry a cms-template
+// item, so the item selector always has something to match.
+export function componentForScalarArrayRule(rule, doc) {
+  if (typeof rule !== 'string' || !rule.endsWith('[]')) return null
   if (!doc || !doc.querySelector) return null
-  const selector = at >= 0 ? rule.slice(0, at) : rule
+  const selector = rule.slice(0, -2).trim()
+  if (!selector) return null
+  let item = null
+  try {
+    item = doc.querySelector(selector)
+  } catch {
+    return null
+  }
+  const host = item && item.closest ? item.closest('[data-hcms-component]') : null
+  const name = host && host.getAttribute ? host.getAttribute('data-hcms-component') : null
+  if (name === 'chips') return { array: '@chips', item: '@chips-item' }
+  return null
+}
+
+// Template resolution shared by the builder and deriveFormRules: a custom
+// template at the exact path wins, then a wildcard-path one, then the default.
+export function resolveTemplate(pathArr, defaultKey, doc) {
+  const pathStr = pathArr.join('.')
+  const wildcardKey = pathArr.map((s) => (typeof s === 'number' ? '*' : s)).join('.')
+  return (
+    (pathStr && findTemplate(doc, pathStr)) ||
+    (wildcardKey && wildcardKey !== pathStr && findTemplate(doc, wildcardKey)) ||
+    findTemplate(doc, defaultKey)
+  )
+}
+
+// The declared array component, but only when its array template actually
+// wins at this path — a custom path/wildcard template that shadows it returns
+// null. The form-builder (item chrome) and deriveFormRules (item leaf
+// selector) MUST share this verdict: if they diverge, the derived selector
+// stops matching the rendered item leaf, every item extracts null, and the
+// whole-form commit writes those nulls back over real page data.
+export function winningScalarArrayComponent(rule, pathArr, doc) {
+  const comp = componentForScalarArrayRule(rule, doc)
+  if (!comp) return null
+  const winner = resolveTemplate(pathArr, comp.array, doc)
+  if (winner && winner.getAttribute('data-hcms-tpl') === comp.array) return comp
+  return null
+}
+
+// Option list for @select/@radio: data-hcms-options="low medium high" on the
+// same page element as data-hcms-component. Space-separated value tokens (the
+// data-rules-name idiom); labels derive via humanize() like every other label.
+export function readOptionsOverride(rule, doc) {
+  if (typeof rule !== 'string') return null
+  const at = rule.lastIndexOf('@')
+  const raw = readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-options')
+  if (raw == null) return null
+  const tokens = raw.trim().split(/\s+/).filter(Boolean)
+  return tokens.length ? tokens : null
+}
+
+// Crop opt-in for @image: data-hcms-crop="1:1" | "16:9" | "free" on the page
+// element. The form-builder copies it onto the built field so the upload path
+// reads it without a second page lookup.
+export function readCropOverride(rule, doc) {
+  if (typeof rule !== 'string') return null
+  const at = rule.lastIndexOf('@')
+  return readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-crop')
+}
+
+function scalarSelectorOf(rule, at) {
+  return at >= 0 ? rule.slice(0, at) : rule
+}
+
+// The only branch that reads the page DOM during selection.
+function readElementAttr(selector, doc, attrName) {
+  if (!doc || !doc.querySelector) return null
   if (!selector || selector === '.') return null
   let el = null
   try {
@@ -180,13 +429,13 @@ function readComponentOverride(rule, at, doc) {
   } catch {
     return null
   }
-  return el && el.getAttribute ? el.getAttribute('data-hcms-component') : null
+  return el && el.getAttribute ? el.getAttribute(attrName) : null
 }
 
-// Pre-inject the @file/@image templates this page's rules actually select, so
+// Pre-inject the component templates this page's rules actually select, so
 // both deriveFormRules (selectors) and buildForm (DOM) resolve them. Walks the
 // same rule shapes as buildTemplateMap; idempotent and author-template-safe.
-export function injectUploadComponents(doc, pageRules) {
+export function injectComponents(doc, pageRules) {
   if (!doc || pageRules == null) return
   walk(pageRules)
 
@@ -194,7 +443,15 @@ export function injectUploadComponents(doc, pageRules) {
     const kind = shapeKindOf(rule)
     if (kind === 'scalar') {
       const key = componentForScalarRule(rule, doc)
-      if (UPLOAD_COMPONENT_KEYS.has(key)) injectComponentTemplate(doc, key)
+      if (ON_DEMAND_COMPONENT_KEYS.has(key)) injectComponentTemplate(doc, key)
+      return
+    }
+    if (kind === 'scalar-array') {
+      const comp = componentForScalarArrayRule(rule, doc)
+      if (comp) {
+        injectComponentTemplate(doc, comp.array)
+        injectComponentTemplate(doc, comp.item)
+      }
       return
     }
     if (kind === 'object') {
@@ -275,8 +532,14 @@ export function buildTemplateMap(pageRules, doc) {
     const pathStr = pathArr.join('.')
     const wildcardKey = pathArr.map((s) => (typeof s === 'number' ? '*' : s)).join('.')
     const shape = shapeKindOf(rule)
+    const arrayComp = shape === 'scalar-array' ? componentForScalarArrayRule(rule, doc) : null
+    // Items follow the WINNING component (a shadowed chips array renders
+    // default items), matching buildScalarArray.
+    const winningComp = shape === 'scalar-array' ? winningScalarArrayComponent(rule, pathArr, doc) : null
     const defaultKey =
-      shape === 'scalar' ? componentForScalarRule(rule, doc) : SHAPE_TO_DEFAULT_KEY[shape] || '@scalar'
+      shape === 'scalar'
+        ? componentForScalarRule(rule, doc, pathArr)
+        : (arrayComp && arrayComp.array) || SHAPE_TO_DEFAULT_KEY[shape] || '@scalar'
 
     let tpl =
       (pathStr && findTemplate(doc, pathStr)) ||
@@ -292,7 +555,9 @@ export function buildTemplateMap(pageRules, doc) {
       const itemKey = itemPath.map((s) => (typeof s === 'number' ? '*' : s)).join('.')
       const itemShape = shape === 'object-array' ? 'object-array-item' : 'scalar-array-item'
       const itemTpl =
-        findTemplate(doc, itemKey) || findTemplate(doc, '@' + itemShape)
+        findTemplate(doc, itemKey) ||
+        (winningComp && findTemplate(doc, winningComp.item)) ||
+        findTemplate(doc, '@' + itemShape)
       map.set(itemKey, itemTpl)
       if (shape === 'object-array') {
         const itemRule = rule[1]

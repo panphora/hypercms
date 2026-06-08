@@ -26,14 +26,17 @@
   #event-log .err { color: #ffb4a8; }
 </style>
 
-<!-- Rules tag: complete shape — scalars, object, scalar-array, object-array, nested object-array -->
+<!-- Rules tag: complete shape — scalars, object, scalar-array, object-array, nested object-array.
+     published / color / priority / bio opt into named built-in controls via
+     data-hcms-component on the page elements they point at (see <body>); each
+     meta field needs its own host since data-hcms-component is per-element. -->
 <script data-rules-name="cms" data-rules-version="1" type="application/json">
 {
   "title": "h1.page-title",
   "tagline": ".tagline",
-  "published": ".meta@data-published",
-  "color": ".meta@data-color",
-  "priority": ".meta@data-priority",
+  "published": ".meta-published@data-published",
+  "color": ".meta-color@data-color",
+  "priority": ".meta-priority@data-priority",
   "avatar": "img.avatar@src",
   "homepage": "a.homepage@href",
   "attachment": "a.attachment@href",
@@ -83,39 +86,14 @@
   </section>
 </template>
 
-<!-- Inline template for radio-group field — color picker -->
-<template data-hcms-tpl="color">
-  <label class="hcms-field" data-hcms-shape="scalar">
-    <span class="hcms-label" data-hcms-label></span>
-    <span class="field-row">
-      <label><input type="radio" name="color" value="red" data-hcms-field="color"/> red</label>
-      <label><input type="radio" name="color" value="green" data-hcms-field="color"/> green</label>
-      <label><input type="radio" name="color" value="blue" data-hcms-field="color"/> blue</label>
-    </span>
-  </label>
-</template>
+<!-- published (checkbox), color (radio) and priority (select) now ride the named
+     built-in controls — opted in with data-hcms-component (+ data-hcms-options
+     for the choices) on their page hosts in <body>, no template needed. bio is
+     a built-in @textarea, opted in on the real <textarea class="bio"> element. -->
 
-<!-- Inline template for checkbox -->
-<template data-hcms-tpl="published">
-  <label class="hcms-field" data-hcms-shape="scalar">
-    <span class="hcms-label" data-hcms-label></span>
-    <input type="checkbox" data-hcms-field="published"/>
-  </label>
-</template>
-
-<!-- Inline template for <select> field — exercises select@value extract/apply -->
-<template data-hcms-tpl="priority">
-  <label class="hcms-field" data-hcms-shape="scalar">
-    <span class="hcms-label" data-hcms-label></span>
-    <select data-hcms-field="priority">
-      <option value="low">low</option>
-      <option value="medium">medium</option>
-      <option value="high">high</option>
-    </select>
-  </label>
-</template>
-
-<!-- Inline template for number field with HTML5 min/max + step -->
+<!-- Custom-template example: a number field with HTML5 min/max + step, bound at
+     a wildcard path so it applies to every variant's quantity. Keeping one
+     custom template shows the escape hatch the built-in controls don't need. -->
 <template data-hcms-tpl="products.*.variants.*.quantity">
   <label class="hcms-field" data-hcms-shape="scalar">
     <span class="hcms-label" data-hcms-label></span>
@@ -144,7 +122,10 @@
 <header>
   <h1 class="page-title">hypercms — comprehensive demo</h1>
   <p class="tagline">Edit the right-side panel; the page updates live.</p>
-  <p class="meta" data-published="true" data-color="green" data-priority="medium"></p>
+  <!-- One host per meta field — data-hcms-component is per-element. -->
+  <span class="meta-published" data-published="true" data-hcms-component="checkbox" hidden></span>
+  <span class="meta-color" data-color="green" data-hcms-component="radio" data-hcms-options="red green blue" hidden></span>
+  <span class="meta-priority" data-priority="medium" data-hcms-component="select" data-hcms-options="low medium high" hidden></span>
 </header>
 
 <section class="demo">
@@ -161,7 +142,8 @@
   <!-- Option B: a URL stored in a data-* attribute, forced to the image widget
        via data-hcms-component (the rule suffix @data-icon can't be inferred). -->
   <span class="badge" data-hcms-component="image" data-icon="https://placehold.co/40x40/4a5/fff?text=B" aria-label="badge"></span>
-  <textarea class="bio" readonly>Short bio about Pat goes here.</textarea>
+  <!-- bio opts into the built-in @textarea control on the real page <textarea>. -->
+  <textarea class="bio" data-hcms-component="textarea" readonly>Short bio about Pat goes here.</textarea>
 </section>
 
 <section class="demo">

@@ -264,6 +264,15 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
 /* inline radio row */
 .hcms-radio-row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
 
+/* chip-field (the @chips built-in): a borderless inline input that sizes to its
+   text, so chips read like static chips but stay inline-editable. */
+.hcms-shell .mirk-tags__chip { padding-right: 6px; }
+.hcms-shell .hcms-chip-field {
+  border: 0; background: transparent; color: inherit; font: inherit;
+  outline: none; min-width: 2ch; field-sizing: content; padding: 0;
+}
+.hcms-shell .hcms-chips .hcms-add { margin-top: 4px; align-self: flex-start; }
+
 /* ---------- OBJECT GROUP — a quiet framed band, not a heavy card ---------- */
 .hcms-object {
   display: flex;

@@ -4,6 +4,12 @@ import {
   humanize,
   shapeKindOf,
   componentForScalarRule,
+  componentForScalarArrayRule,
+  winningScalarArrayComponent,
+  resolveTemplate,
+  declaredComponentKey,
+  readOptionsOverride,
+  readCropOverride,
 } from './templates.js'
 import { fieldPropertyFor } from './form-rules.js'
 
@@ -27,12 +33,12 @@ export function buildForm({ pageRules, formRules: _formRules, data, doc }) {
   return fragment
 }
 
-export function buildItem({ shape, itemShape, pathArr, data, doc }) {
+export function buildItem({ shape, itemShape, pathArr, data, doc, itemKey }) {
   if (shape === 'object-array-item') {
     return buildObjectArrayItem(itemShape, pathArr, data, doc)
   }
   if (shape === 'scalar-array-item') {
-    return buildScalarArrayItem(pathArr, data, doc)
+    return buildScalarArrayItem(pathArr, data, doc, itemKey || null)
   }
   throw new Error(`hypercms: buildItem called with unknown shape "${shape}"`)
 }
@@ -47,14 +53,40 @@ function buildNode(rule, pathArr, data, doc) {
 }
 
 function buildScalar(rule, pathArr, data, doc) {
-  // Opt-in upload components select a richer template (@image/@file) off the
-  // bound rule's @prop suffix; plain scalars stay @scalar. A path-bound
-  // template override still wins inside resolveTemplate.
-  const componentKey = componentForScalarRule(rule, doc)
+  // Opt-in components select a richer template off the bound rule (explicit
+  // data-hcms-component, then @prop inference); plain scalars stay @scalar.
+  // A path-bound template override still wins inside resolveTemplate.
+  const componentKey = componentForScalarRule(rule, doc, pathArr)
   const tpl = resolveTemplate(pathArr, componentKey, doc)
   if (!tpl) throw new Error(`hypercms: missing template for scalar at "${pathArr.join('.')}"`)
+  const declaredKey = declaredComponentKey(rule, doc)
+  // A value-guard fell back to text: say so, or "where did my number input /
+  // checkbox go" has no answer.
+  if (declaredKey === '@number' && componentKey === '@scalar') {
+    console.info(
+      `[hypercms] field "${pathArr.join('.')}" declares component "@number" but its value isn't a plain number; rendering a text input so the value is preserved`
+    )
+  }
+  if ((declaredKey === '@checkbox' || declaredKey === '@toggle') && componentKey === '@scalar') {
+    console.info(
+      `[hypercms] field "${pathArr.join('.')}" declares component "${declaredKey}" but its value isn't true/false; rendering a text input so the value is preserved`
+    )
+  }
+  noteShadowedComponent(tpl, declaredKey === componentKey ? declaredKey : null, pathArr)
   const node = cloneTemplate(tpl, doc)
   stampPath(node, pathArr)
+  // Component-specific setup runs only when the component's own template won —
+  // a custom path/wildcard template that shadows it is the author's UI, and
+  // injecting options, dropping radio rows, or stamping crop into it would
+  // corrupt that UI.
+  const winnerKey = tpl.getAttribute?.('data-hcms-tpl')
+  if ((componentKey === '@select' || componentKey === '@radio') && winnerKey === componentKey) {
+    populateOptions(node, rule, pathArr, data, doc, componentKey)
+  }
+  if (componentKey === '@image' && winnerKey === '@image') {
+    const crop = readCropOverride(rule, doc)
+    if (crop != null && !node.hasAttribute('data-hcms-crop')) node.setAttribute('data-hcms-crop', crop)
+  }
   // Stamp leaf input(s) FIRST so the container's data-hcms-field doesn't
   // make stampScalarField early-return (which would leave the input without
   // a key).
@@ -65,6 +97,89 @@ function buildScalar(rule, pathArr, data, doc) {
   populateScalarValue(node, data)
   if (componentKey === '@file') syncFileLeafText(node)
   return node
+}
+
+// A custom template (exact or wildcard path) outranks a named component, by
+// design: the author's template is the stronger signal. Surface the shadowing
+// so "my data-hcms-component does nothing" has a visible answer — but only for
+// EXPLICITLY declared components (declaredKey non-null): a custom template
+// quietly outranking @src/@checked inference is unremarkable.
+function noteShadowedComponent(tpl, declaredKey, pathArr) {
+  if (!declaredKey) return
+  const winner = tpl.getAttribute?.('data-hcms-tpl')
+  if (winner && winner !== declaredKey) {
+    console.info(
+      `[hypercms] field "${pathArr.join('.')}" declares component "${declaredKey}" but custom template "${winner}" wins`
+    )
+  }
+}
+
+// Fill a @select's <select> with <option>s, or clone a @radio's prototype row
+// per option, from the page element's data-hcms-options tokens. The current
+// page value is prepended when it isn't in the list, so opening the editor
+// never silently changes data. Radio inputs get a per-field name derived from
+// the path so sibling fields (and array items) never cross-group.
+function populateOptions(node, rule, pathArr, data, doc, componentKey) {
+  const provided = readOptionsOverride(rule, doc)
+  const values = provided ? [...provided] : []
+  const current = data == null ? '' : String(data)
+  if (current !== '' && !values.includes(current)) values.unshift(current)
+  if (!provided) {
+    // Missing data-hcms-options is an authoring error: surface it ALWAYS, not
+    // just when the page value is empty too. When a value exists, fall through
+    // and render it as the single option so the data still round-trips while
+    // the attribute is missing.
+    setFieldError(node, 'data-hcms-options required (space-separated values)')
+    if (values.length === 0) {
+      // No options AND no value: drop the radio prototype so no phantom empty
+      // row renders. The null/'' extract this leaves behind applies as ''
+      // (writePropOrAttr), matching the already empty page value, so no data
+      // moves.
+      node.querySelector('.mirk-radio')?.remove()
+      return
+    }
+  }
+  if (componentKey === '@select') {
+    const select = node.querySelector('select[data-hcms-field]')
+    if (!select) return
+    for (const v of values) {
+      const opt = doc.createElement('option')
+      opt.value = v
+      opt.textContent = humanize(v)
+      select.appendChild(opt)
+    }
+    return
+  }
+  const proto = node.querySelector('.mirk-radio')
+  if (!proto || !proto.parentNode) return
+  const name = radioGroupName(pathArr.join('.'))
+  for (const v of values) {
+    const row = proto.cloneNode(true)
+    const input = row.querySelector('input[type="radio"]')
+    if (input) {
+      input.value = v
+      input.name = name
+    }
+    const label = row.querySelector('.mirk-radio__label')
+    if (label) label.textContent = humanize(v)
+    proto.parentNode.insertBefore(row, proto)
+  }
+  proto.remove()
+}
+
+// The radio group name a field at this dot-path gets. Shared with the restamp
+// machinery in events.js: names derive from paths, so when a remove/move
+// restamps paths, the names must be recomputed with the same formula or
+// sibling items end up sharing a group.
+export function radioGroupName(pathStr) {
+  return 'hcms-' + String(pathStr).replace(/[^A-Za-z0-9_-]/g, '-')
+}
+
+function setFieldError(node, message) {
+  const slot = node.querySelector ? node.querySelector('.hcms-error') : null
+  if (!slot) return
+  slot.textContent = message
+  slot.hidden = false
 }
 
 // The @file leaf is an <a> whose value is the href; populateScalarValue sets
@@ -149,27 +264,41 @@ function buildObjectArrayItem(itemShape, pathArr, data, doc) {
 }
 
 function buildScalarArray(rule, pathArr, data, doc) {
-  const tpl = resolveTemplate(pathArr, '@scalar-array', doc)
+  // The chips component swaps the scalar-array chrome (data-hcms-component=
+  // "chips" on the list container or an item ancestor). A path-bound template
+  // still wins inside resolveTemplate — and when it does, `comp` is null
+  // (winningScalarArrayComponent shares that verdict with deriveFormRules, so
+  // the item chrome and the derived item selector can never diverge) and the
+  // custom template's own UI is left untouched.
+  const declared = componentForScalarArrayRule(rule, doc)
+  const comp = winningScalarArrayComponent(rule, pathArr, doc)
+  const defaultKey = declared ? declared.array : '@scalar-array'
+  const tpl = resolveTemplate(pathArr, defaultKey, doc)
   if (!tpl) throw new Error(`hypercms: missing template for scalar-array at "${pathArr.join('.')}"`)
+  // chips is always an explicit declaration (attr-driven), so always notable.
+  noteShadowedComponent(tpl, declared ? declared.array : null, pathArr)
   const node = cloneTemplate(tpl, doc)
   stampPath(node, pathArr)
   stampContainerField(node, lastKey(pathArr))
   setLabel(node, lastKey(pathArr))
   copyArrayConstraintAttrs(node, tpl)
   wireSortable(node, tpl, pathArr)
+  // Record the resolved item-template key so onAdd (which has no rule context)
+  // builds new items with the same component chrome.
+  if (comp) node.setAttribute('data-hcms-item-tpl', comp.item)
 
   const slot = requireSlot(node, '.hcms-array-items', tpl, pathArr)
   const items = Array.isArray(data) ? data : []
   items.forEach((itemValue, i) => {
-    const itemNode = buildScalarArrayItem([...pathArr, i], itemValue, doc)
+    const itemNode = buildScalarArrayItem([...pathArr, i], itemValue, doc, comp ? comp.item : null)
     if (itemNode) slot.appendChild(itemNode)
   })
   applyConstraintVisibility(node)
   return node
 }
 
-function buildScalarArrayItem(pathArr, value, doc) {
-  const tpl = resolveItemTemplate(pathArr, 'scalar-array-item', doc)
+function buildScalarArrayItem(pathArr, value, doc, itemKey) {
+  const tpl = resolveItemTemplate(pathArr, 'scalar-array-item', doc, itemKey)
   if (!tpl) throw new Error(`hypercms: missing item template for "${pathArr.join('.')}"`)
   const node = cloneTemplate(tpl, doc)
   node.setAttribute('data-hcms-array-item', '')
@@ -180,19 +309,13 @@ function buildScalarArrayItem(pathArr, value, doc) {
   return node
 }
 
-function resolveTemplate(pathArr, defaultKey, doc) {
-  const pathStr = pathArr.join('.')
+function resolveItemTemplate(pathArr, defaultShape, doc, itemKey) {
   const wildcardKey = pathArr.map((s) => (typeof s === 'number' ? '*' : s)).join('.')
   return (
-    (pathStr && findTemplate(doc, pathStr)) ||
-    (wildcardKey && wildcardKey !== pathStr && findTemplate(doc, wildcardKey)) ||
-    findTemplate(doc, defaultKey)
+    findTemplate(doc, wildcardKey) ||
+    (itemKey && findTemplate(doc, itemKey)) ||
+    findTemplate(doc, '@' + defaultShape)
   )
-}
-
-function resolveItemTemplate(pathArr, defaultShape, doc) {
-  const wildcardKey = pathArr.map((s) => (typeof s === 'number' ? '*' : s)).join('.')
-  return findTemplate(doc, wildcardKey) || findTemplate(doc, '@' + defaultShape)
 }
 
 function cloneTemplate(tpl, doc) {

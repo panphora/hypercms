@@ -143,3 +143,23 @@ test('onUploadChange: no uploader + no createObjectURL → no throw, no commit',
 
   close(); reset(dom)
 })
+
+test('onUploadChange: a fresh pick clears a stale inline error before running', async () => {
+  const { dom, formRoot } = setup(async (f) => ({
+    uploads: [{ name: f.name, nodeId: 'n1', url: '/u/new.png' }],
+  }))
+  const fieldEl = formRoot.querySelector('[data-hcms-path="hero"]')
+  const slot = fieldEl.querySelector(':scope > .hcms-error')
+  slot.textContent = 'quickcrop: already open'
+  slot.hidden = false
+
+  const input = fileInput(formRoot, 'hero')
+  setFiles(input, [new window.File(['x'], 'next.png', { type: 'image/png' })])
+  input.dispatchEvent(new window.Event('change', { bubbles: true }))
+
+  await flush(() => slot.hidden)
+  assert.equal(slot.hidden, true, 'stale error cleared by the new attempt')
+  assert.equal(slot.textContent, '', 'stale message wiped')
+
+  close(); reset(dom)
+})

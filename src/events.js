@@ -1,7 +1,7 @@
 import { engine } from 'hyper-html-api'
 import { applyWithRollback } from './apply-loop.js'
 import { fromString as pathFromString, getRuleAtPath } from './path.js'
-import { buildItem, fileNameFromUrl } from './form-builder.js'
+import { buildItem, fileNameFromUrl, radioGroupName } from './form-builder.js'
 import { scaffold } from './scaffold.js'
 
 const BOUND = new WeakSet()
@@ -172,13 +172,54 @@ export function onScalarChange(target, ctx) {
   }
 }
 
-// Crop adapter seam. A pass-through today; Slice 6 fills the body to route the
-// file through window.hyperclay.quickcrop before upload when the field opts in
-// via data-hcms-crop. Returns { file, dataURL? }, or null to abort (crop
-// cancelled). Keeping ALL crop coupling here means no other upload code changes
-// when crop lands.
-async function maybeCrop(file /*, fieldEl */) {
-  return { file }
+// Crop adapter seam: ALL crop coupling lives here, between the file pick and
+// the upload. A field opts in via data-hcms-crop on the page element (copied
+// onto the built @image field by the form-builder); absent attr or absent
+// quickcrop (standalone page) uploads raw. Returns { file, dataURL? }, or null
+// to abort (crop cancelled / failed) — the caller resets the picker and skips
+// the commit. quickcrop resolves null on cancel (it does NOT reject), so the
+// cancel branch is the null check, not the catch.
+const CROP_OUTPUT = { type: 'image/webp', quality: 0.85, maxWidth: 2048, maxHeight: 2048 }
+
+async function maybeCrop(file, fieldEl) {
+  const attr = fieldEl && fieldEl.getAttribute ? fieldEl.getAttribute('data-hcms-crop') : null
+  if (attr == null) return { file }
+  const crop = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.quickcrop) || null
+  if (typeof crop !== 'function') return { file }
+  try {
+    const r = await crop(file, { aspect: parseCropAspect(attr), ...CROP_OUTPUT })
+    if (r === null) return null
+    return { file: blobToFile(r.blob, file.name), dataURL: r.dataURL }
+  } catch (err) {
+    showFieldUploadError(fieldEl, (err && err.message) || 'Crop failed')
+    return null
+  }
+}
+
+// "1:1" → 1, "16:9" → 16/9, "free" / "" / unparseable → null (freeform crop).
+// Exported for tests.
+export function parseCropAspect(value) {
+  const v = String(value ?? '').trim().toLowerCase()
+  if (v === '' || v === 'free') return null
+  const m = v.match(/^(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)$/)
+  if (!m) return null
+  const w = parseFloat(m[1])
+  const h = parseFloat(m[2])
+  if (!w || !h) return null
+  return w / h
+}
+
+// quickcrop returns a nameless Blob; uploadFileBasic rejects raw Blobs and the
+// server keys content-type off the filename extension, so wrap it as a File
+// whose extension matches the encoded mime. Exported for tests.
+export function blobToFile(blob, originalName) {
+  const ext = blob.type === 'image/webp' ? '.webp' : blob.type === 'image/jpeg' ? '.jpg' : '.png'
+  const base = String(originalName || 'image').replace(/\.[^.]+$/, '')
+  try {
+    return new File([blob], base + ext, { type: blob.type })
+  } catch {
+    return blob
+  }
 }
 
 // A file was picked in an @file/@image widget. Optionally crop, upload via the
@@ -192,6 +233,10 @@ export async function onUploadChange(inputEl, ctx) {
   const fieldEl = inputEl.closest('[data-hcms-path]')
   if (!fieldEl) return
   const pathStr = fieldEl.getAttribute('data-hcms-path') || ''
+
+  // A fresh pick is a fresh attempt: clear any stale inline error (e.g. a
+  // crop failure from a previous attempt) before running the new flow.
+  showFieldUploadError(fieldEl, null)
 
   const cropped = await maybeCrop(file, fieldEl)
   if (!cropped || ctx.closed) { resetPicker(inputEl); return }
@@ -316,6 +361,9 @@ export function onAdd(arrayPath, ctx) {
     pathArr: [...pathArr, nextIndex],
     data: itemData,
     doc: ctx.doc,
+    // Component arrays (chips) record their item-template key at build time so
+    // added items keep the same chrome.
+    itemKey: arrayEl.getAttribute('data-hcms-item-tpl') || null,
   })
   slot.appendChild(itemNode)
   updateArrayButtonsVisibility(arrayEl)
@@ -619,6 +667,16 @@ export function restampAllSiblings(formRoot) {
 }
 
 function restampSiblingPaths(parent) {
+  // Radio names are rewritten one item at a time below, so during a move or
+  // drag a just-renamed radio can transiently share a name with a
+  // not-yet-renamed sibling — and the browser enforces single-selection per
+  // group AT THAT INSTANT, permanently unchecking one of them (null extract →
+  // the whole-form commit clobbers that field's page value). Snapshot every
+  // radio's checked state and re-assert it once all names are final (and
+  // unique per field) again.
+  const radios = parent.querySelectorAll
+    ? Array.from(parent.querySelectorAll('input[type="radio"][data-hcms-field]'), (r) => [r, r.checked])
+    : []
   let i = 0
   for (const child of parent.children) {
     if (!child.matches?.('[data-hcms-card], [data-hcms-array-item]')) continue
@@ -629,6 +687,9 @@ function restampSiblingPaths(parent) {
     const newPath = segs.join('.')
     if (newPath !== path) restampSubtree(child, path, newPath)
     i++
+  }
+  for (const [r, wasChecked] of radios) {
+    if (r.checked !== wasChecked) r.checked = wasChecked
   }
 }
 
@@ -642,6 +703,22 @@ function restampSubtree(root, oldPrefix, newPrefix) {
     } else if (p && p.startsWith(oldPrefix + '.')) {
       el.setAttribute('data-hcms-path', newPrefix + p.slice(oldPrefix.length))
     }
+  }
+  syncRadioGroupNames(root)
+}
+
+// Radio group names derive from the field path at build time (populateOptions),
+// so a restamp that moves paths must recompute them. Otherwise a removed-then-
+// re-added sibling gets a fresh name that collides with this item's stale one:
+// the two fields share a browser radio group, checking one unchecks the other,
+// and the whole-form commit clobbers the unchecked field's page value. Only
+// names the builder minted ('hcms-' prefix) are touched — radios in inline or
+// custom templates keep whatever name the author gave them.
+function syncRadioGroupNames(root) {
+  for (const input of root.querySelectorAll('input[type="radio"][data-hcms-field]')) {
+    if (!input.name || !input.name.startsWith('hcms-')) continue
+    const host = input.closest('[data-hcms-path]')
+    if (host) input.name = radioGroupName(host.getAttribute('data-hcms-path'))
   }
 }
 
