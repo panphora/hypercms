@@ -15,11 +15,11 @@
   .variants { margin-left: 1rem; padding-left: 1rem; border-left: 2px solid #e3e7ef; }
   ul.tags { list-style: none; padding: 0; display: flex; gap: .5rem; flex-wrap: wrap; }
   ul.tags li { padding: .15rem .5rem; background: #e9eef7; border-radius: 1rem; }
-  .product-card { border: 1px solid #d8dde6; padding: .5rem .75rem; border-radius: 6px; margin-bottom: .5rem; background: #fcfdff; }
+  .product-card { border: 1px solid var(--mirk-input-border, #6E738E); padding: .5rem .75rem; border-radius: 6px; margin-bottom: .5rem; background: var(--mirk-bevel-bg, #1A1D2C); }
   .product-card-head { display: flex; align-items: center; gap: .5rem; font-weight: 600; }
   .product-card-grip { color: #9aa5bb; cursor: grab; }
   .product-card-title { flex: 1; }
-  .product-card-x { background: transparent; border: 1px solid #cfd5e0; border-radius: 4px; cursor: pointer; }
+  .product-card-x { background: transparent; border: 1px solid var(--mirk-input-border, #6E738E); border-radius: 4px; cursor: pointer; color: inherit; }
   .toolbar { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
   button.tool { font: inherit; padding: .25rem .6rem; border-radius: 4px; border: 1px solid #b9c1d1; background: #f9fafd; cursor: pointer; }
   #event-log { font-family: ui-monospace, Menlo, monospace; background: #1f2532; color: #e6ebf3; padding: .5rem; border-radius: 4px; max-height: 200px; overflow: auto; font-size: .8rem; }
@@ -71,8 +71,8 @@
   <section class="hcms-object author-inline" data-hcms-shape="object">
     <h3 class="hcms-object-title" data-hcms-label></h3>
     <div class="field-row">
-      <label>Name<input class="hcms-input" data-hcms-field="name"/></label>
-      <label>Email<input class="hcms-input" type="email" data-hcms-field="email"/></label>
+      <label>Name<input class="mirk-input" data-hcms-field="name"/></label>
+      <label>Email<input class="mirk-input" type="email" data-hcms-field="email"/></label>
     </div>
   </section>
 </template>
@@ -82,7 +82,7 @@
   <section class="hcms-array hcms-object-array" data-hcms-shape="object-array">
     <header class="hcms-array-header"><h3 class="hcms-array-title" data-hcms-label></h3></header>
     <div class="hcms-array-items"></div>
-    <button type="button" class="hcms-add" data-hcms-action="add">+ Add product</button>
+    <button type="button" class="hcms-add mirk-button mirk-button--small" data-hcms-action="add"><span class="mirk-button__label">+ Add product</span></button>
   </section>
 </template>
 
@@ -97,7 +97,7 @@
 <template data-hcms-tpl="products.*.variants.*.quantity">
   <label class="hcms-field" data-hcms-shape="scalar">
     <span class="hcms-label" data-hcms-label></span>
-    <input type="number" data-hcms-field="quantity" min="0" max="999" step="1"/>
+    <input type="number" class="mirk-input" data-hcms-field="quantity" min="0" max="999" step="1"/>
   </label>
 </template>
 
