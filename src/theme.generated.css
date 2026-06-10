@@ -432,17 +432,20 @@
   .hcms-shell .mirk-file--compact .mirk-file__name { font-size: 16px; }
   .hcms-shell .mirk-file--compact.mirk-file--round { border-radius: 15px; }
 
-  /* Filled: the name slot becomes a link to the chosen file, beside a bare × to
-     clear it (the tags-remove pattern). Empty keeps the placeholder span. */
+  /* Filled: the name slot becomes a link to the chosen file, beside a circular ×
+     to clear it: a 1px ring over a bevel fill that turns destructive on hover.
+     Empty keeps the placeholder span. */
   .hcms-shell a.mirk-file__name { text-decoration: underline; text-underline-offset: 2px; }
   .hcms-shell .mirk-file__remove {
     appearance: none; -webkit-appearance: none; flex-shrink: 0;
+    width: 18px; height: 18px; border-radius: 50%;
     display: inline-flex; align-items: center; justify-content: center;
-    margin: 0; padding: 0; border: 0; background: none; color: inherit;
-    cursor: pointer; line-height: 0;
+    margin: 0; padding: 0; cursor: pointer; line-height: 0;
+    color: var(--mirk-bevel-fg); background: var(--mirk-bevel-bg);
+    border: 1px solid var(--mirk-input-border);
   }
-  .hcms-shell .mirk-file__remove svg { display: block; width: 14px; height: 14px; }
-  .hcms-shell .mirk-file__remove:hover { color: var(--mirk-destructive); }
+  .hcms-shell .mirk-file__remove svg { display: block; width: 66%; height: 66%; }
+  .hcms-shell .mirk-file__remove:hover { border-color: var(--mirk-destructive); color: var(--mirk-destructive); }
 
   /* ============================ IMAGE ============================ */
   .hcms-shell .mirk-image { display: flex; flex-direction: column; gap: 0.5rem; }
