@@ -123,40 +123,25 @@
   <div id="log"></div>
 </section>
 
-<script src="../dist/hypercms.min.js"></script>
-<!-- Real DOM undo/redo engine (local hyper-undo build). The IIFE exposes
-     window.hyperundo; we bridge its singleton to window.hyperclay.undo, which
-     hypercms subscribes to on open(). A classic script so it loads over file://
-     (ES-module imports are CORS-blocked from file:// origins). -->
-<script src="../../hyper-undo/dist/hyper-undo.min.js"></script>
+<!-- Loads the real hyperclayjs runtime (smooth-sailing preset) exactly as the
+     platform does: vendored hypercms + drag-reorder (sortable) + undo/redo +
+     crop-on-upload (quickcrop) + styled dialogs + save, from the sibling repo via
+     the ./hyperclayjs symlink (-> ../../hyperclayjs/src). __hyperclayEditMode
+     turns on the edit-only modules for this always-editable demo (no platform
+     owner cookie). -->
+<script>window.__hyperclayEditMode = true</script>
 <script type="module">
-  window.hyperclay = window.hyperclay || {}
+  await import('./hyperclayjs/hyperclay.js?preset=smooth-sailing')
 
-  // hypercms's change observer needs window.hyperclay.Mutation. Edits flow
-  // form -> page -> save, and undo/redo re-syncs the form through hypercms's undo
-  // subscription (not this observer), so a no-op stub still satisfies the
-  // contract; the real hyperclayjs Mutation pulls in siblings that don't resolve
-  // from this folder.
-  if (!window.hyperclay.Mutation) {
-    const off = () => () => {}
-    window.hyperclay.Mutation = {
-      onAnyChange: off, onAddOrRemove: off, onAddElement: off, onRemoveElement: off, onAttribute: off,
-      pause() {}, resume() {},
-    }
-  }
-
-  // Attach + start undo BEFORE cms.open() (which subscribes to it on open).
-  // Scope is document.body, matching the platform's smooth-sailing preset:
-  // hypercms suppresses its own shell/body-class mutations and the demo chrome
-  // is marked mutations-ignore, so neither lands in the undo stack.
-  const undo = window.hyperundo.undo
-  window.hyperclay.undo = undo
-  undo.start({ scope: document.body, bindKeys: true })
-
-  const cms = window.hypercms.cms
+  // The loader exposes window.hyperclay.{hypercms, undo, quickcrop, Mutation}.
+  // undo auto-starts on document.body in edit mode (bindKeys for ⌘Z / ⌘⇧Z) and
+  // hypercms subscribes to it on open(); the demo chrome (undo bar + log) is
+  // marked mutations-ignore, so neither lands in the undo stack.
+  const cms = window.hyperclay.hypercms
+  const undo = window.hyperclay.undo
   window.cms = cms
 
-  // Undo / Redo toolbar; Cmd+Z / Cmd+Shift+Z also work via bindKeys.
+  // Undo / Redo toolbar; ⌘Z / ⌘⇧Z also work via the auto-started bindKeys.
   const undoBtn = document.getElementById('undo-btn')
   const redoBtn = document.getElementById('redo-btn')
   const syncButtons = () => { undoBtn.disabled = !undo.canUndo; redoBtn.disabled = !undo.canRedo }
@@ -176,16 +161,15 @@
     document.addEventListener(e, (ev) => record(e, ev.detail))
   }
 
-  // The shell Save button carries [trigger-save] (hyperclayjs's save attribute).
-  // hyperclayjs isn't loaded here, so delegate it ourselves — the standalone-host pattern.
+  // Save now flows through hyperclayjs's save system; on this static server it
+  // 404s (no backend). This is just a passive logger for the event panel.
   document.addEventListener('click', (e) => {
     if (e.target.closest('[trigger-save]')) record('[trigger-save]', cms.api.getData())
   })
 
   // ?theme=light|dark pins the panel for showcasing; default follows the OS.
-  // Removing a product card confirms first by default (the built-in card-only
-  // policy). With no hyperclay around this bare file, that confirm is the native
-  // dialog; inside hyperclay it becomes the styled consent() modal automatically.
+  // Removing a product card confirms first via hyperclayjs's styled consent()
+  // modal (dialogs + the-modal ship in smooth-sailing).
   const theme = new URLSearchParams(location.search).get('theme')
   cms.open({ showSaveButton: true, theme: theme === 'light' || theme === 'dark' ? theme : undefined })
 </script>

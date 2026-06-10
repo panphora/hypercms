@@ -134,7 +134,8 @@
     <p>Name: <span class="author-name">Pat Doe</span></p>
     <p>Email: <span class="author-email">pat@example.com</span></p>
   </div>
-  <img class="avatar" src="https://placehold.co/64x64/333/eee?text=PD" alt="avatar" width="64" height="64"/>
+  <!-- data-hcms-crop routes the picked image through quickcrop (smooth-sailing) before upload. -->
+  <img class="avatar" data-hcms-crop="1:1" src="https://placehold.co/64x64/333/eee?text=PD" alt="avatar" width="64" height="64"/>
   <!-- a@href is a plain URL field by default (linking is the common case). -->
   <p><a class="homepage" href="https://example.com">homepage</a></p>
   <!-- A file upload is opt-in via data-hcms-component="file" on the anchor. -->
@@ -201,24 +202,32 @@
   </div>
 </section>
 
-<section class="demo">
+<!-- mutations-ignore: log rows churn on every event; keep them out of the undo stack. -->
+<section class="demo" mutations-ignore>
   <h2>Event log</h2>
   <div id="event-log"></div>
 </section>
 
-<script src="../dist/hypercms.min.js"></script>
+<!-- Loads the real hyperclayjs runtime (smooth-sailing preset) exactly as the
+     platform does: vendored hypercms + drag-reorder (sortable) + undo/redo
+     (⌘Z / ⌘⇧Z) + crop-on-upload (quickcrop) + save. hyperclayjs lives in the
+     sibling repo, reached via the ./hyperclayjs symlink (-> ../../hyperclayjs/src)
+     so this still serves under the hypercms repo root. __hyperclayEditMode turns
+     on the edit-only modules (sortable/undo/save) for this always-editable demo,
+     which has no platform owner cookie. -->
+<script>window.__hyperclayEditMode = true</script>
 <script type="module">
-  // Load hyperclay's Mutation utility before initializing hypercms.
-  // It auto-installs onto window.hyperclay.Mutation as a side effect of the import.
-  // hyperclayjs-mutation.js is a symlink to ../../hyperclayjs/src/utilities/mutation.js
-  // (http-server only serves files under hypercms/, so we expose it via symlink).
-  await import('./hyperclayjs-mutation.js')
+  await import('./hyperclayjs/hyperclay.js?preset=smooth-sailing')
 
-  // dist bundle creates `window.hypercms = { cms }` IIFE.
-  const cms = window.hypercms.cms
+  // The loader exposes the vendored hypercms at window.hyperclay.hypercms, plus
+  // window.hyperclay.{undo, quickcrop, Mutation, Sortable} from their modules.
+  const cms = window.hyperclay.hypercms
   window.cms = cms
-  window.hyperclay = window.hyperclay || {}
-  window.hyperclay.hypercms = cms
+
+  // No sidebar-sortable glue needed: hyperclayjs's sortable observer is
+  // require:'observed' (so it sees inside the panel's no-save region) and
+  // pausable:false (so it wires even while hypercms builds the sidebar inside
+  // Mutation.pause()). The panel's [sortable] lists auto-wire on open/reopen.
 
   const log = document.getElementById('event-log')
   function record(name, detail) {
@@ -232,8 +241,9 @@
     document.addEventListener(e, (ev) => record(e, ev.detail))
   }
 
-  // The shell Save button carries [trigger-save] (hyperclayjs's save attribute).
-  // hyperclayjs isn't loaded here, so delegate it ourselves — the standalone-host pattern.
+  // Save now flows through hyperclayjs's save system. On this static server it
+  // 404s (no backend) — the expected "changes are local only" path. This is just
+  // a passive logger so the event log shows the payload that would be saved.
   document.addEventListener('click', (e) => {
     if (e.target.closest('[trigger-save]')) record('[trigger-save]', cms.api.getData())
   })
