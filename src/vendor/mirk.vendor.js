@@ -1,4 +1,4 @@
-/* VENDORED from mirk-ui-kit/mirk.js — DO NOT EDIT. Regenerate: npm run build:theme */
+/* VENDORED from mirk-interface/mirk.js — DO NOT EDIT. Regenerate: npm run build:theme */
 if (typeof window !== "undefined" && typeof document !== "undefined") {
 /*
  * mirk.js — the delegated runtime for the mirk UI kit, v2.
