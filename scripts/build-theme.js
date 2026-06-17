@@ -36,7 +36,7 @@ function findMirkRepo(from) {
 }
 const mirkRepo = findMirkRepo(root)
 
-const MIRK_VERSION = '2.0.1'
+const MIRK_VERSION = '2.2.0'
 const FONT_CDN =
   `https://cdn.jsdelivr.net/npm/mirk-interface@${MIRK_VERSION}/fonts/DepartureMono-1.500/DepartureMono-Regular.woff2`
 

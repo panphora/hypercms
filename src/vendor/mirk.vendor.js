@@ -2,7 +2,7 @@
 if (typeof window !== "undefined" && typeof document !== "undefined") {
 /*
  * mirk.js — the delegated runtime for the mirk UI kit, v2.
- * https://github.com/davidmiranda/mirk-ui-kit
+ * https://github.com/panphora/mirk-interface
  *
  * One listener per interaction on `document`. No init(), no MutationObserver:
  * every current AND future element is handled, so injected / re-rendered /
