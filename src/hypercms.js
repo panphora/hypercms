@@ -511,7 +511,13 @@ function autoOpenReady() {
 //      deadline is hit (warn, never throw).
 function whenReady(fn) {
   if (autoOpenReady()) {
-    fn()
+    // Defer one microtask. On the bundled entry (hypercms-bundle.js), installStyles()
+    // runs AFTER this module evaluates, so firing open() synchronously here would
+    // mount the shell with cssText still empty (an unstyled sidebar). A microtask
+    // runs only after the synchronous bundle evaluation completes, by which point
+    // styles are installed. The event/backstop paths below already fire post-eval,
+    // so only this fast path needed deferring.
+    queueMicrotask(fn)
     return
   }
   const deadline = Date.now() + AUTO_OPEN_DEADLINE_MS

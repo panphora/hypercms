@@ -155,6 +155,10 @@ function ensureStyles(doc) {
     const style = doc.createElement('style')
     style.id = SHELL_STYLE_ID
     style.setAttribute('save-remove', '')
+    // save-ignore mirrors the shell root so a full-document morph (e.g. a live-sync
+    // head-merge) preserves the stylesheet instead of stripping it; without it the
+    // style survives only via restoreChrome's reactive re-injection.
+    style.setAttribute('save-ignore', '')
     style.textContent = cssText
     ;(doc.head || doc.documentElement).appendChild(style)
     styledDocs.add(doc)
@@ -170,12 +174,19 @@ function ensureStyles(doc) {
     link.rel = 'stylesheet'
     link.id = SHELL_STYLE_ID
     link.setAttribute('save-remove', '')
+    link.setAttribute('save-ignore', '')
     link.href = href
     ;(doc.head || doc.documentElement).appendChild(link)
     styledDocs.add(doc)
   } catch (_) {
-    // SSR or environments without import.meta.url — author can call
-    // installStyles(text) manually.
+    // No bundled CSS and no resolvable co-located theme (e.g. the IIFE bundle,
+    // where import.meta is undefined). Warn loudly rather than mount a silently
+    // unstyled shell — the host must call installStyles(themeText) before opening.
+    console.warn(
+      'hypercms: shell stylesheet not applied — cssText is empty and the ' +
+      'co-located theme fallback is unavailable. Call installStyles(themeText) ' +
+      'before opening the CMS.'
+    )
   }
 }
 

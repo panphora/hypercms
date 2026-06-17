@@ -8,6 +8,7 @@ import {
   close,
   isOpen,
   maybeAutoOpen,
+  installStyles,
 } from '../src/hypercms.js'
 
 // ---------------------------------------------------------------------------
@@ -187,5 +188,31 @@ test('auto-open backstop self-cancels once the event opens (no late re-open afte
   await new Promise((r) => setTimeout(r, 350))
   assert.equal(isOpen(), false, 'backstop did not re-open after the event path finished')
 
+  dom.window.close()
+})
+
+// ---------------------------------------------------------------------------
+// Regression: the synchronous fast-path must not race installStyles. On the
+// bundled entry (hypercms-bundle.js) installStyles() runs AFTER the module that
+// fires maybeAutoOpen() evaluates, so a synchronous fast-path open() would mount
+// the shell with cssText still empty — an unstyled sidebar. The fast-path now
+// defers a microtask, so styles installed right after maybeAutoOpen still land.
+// ---------------------------------------------------------------------------
+
+test('auto-open fast-path: styles installed AFTER maybeAutoOpen still reach the shell (bundle order)', async () => {
+  const dom = setupDom('http://localhost/page?cms=true') // Mutation present → fast-path
+  installStyles('') // cssText not yet set, as before the bundle's installStyles runs
+  maybeAutoOpen() // fast-path defers open() to a microtask (the bug fired it synchronously)
+  installStyles('.hcms-shell { position: fixed }') // bundle installs styles post-eval
+  await new Promise((r) => setTimeout(r, 0)) // drain the microtask → open() runs now
+
+  assert.equal(isOpen(), true, 'auto-open mounted the shell')
+  const style = dom.window.document.getElementById('hcms-shell-styles')
+  assert.ok(style, 'shell stylesheet element exists')
+  assert.equal(style.tagName, 'STYLE', 'injected an inline <style>, not the fallback <link>')
+  assert.match(style.textContent, /position: fixed/, 'injected the late-installed CSS')
+
+  close()
+  installStyles('') // reset module-global cssText for the rest of the suite
   dom.window.close()
 })
