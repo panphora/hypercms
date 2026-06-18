@@ -1,5 +1,22 @@
 # hypercms changelog
 
+## [0.6.0] - 2026-06-18
+
+### Added
+- Named controls (checkbox, toggle, select, radio, textarea, number, chips) plus crop-on-upload
+
+### Changed
+- Bump mirk-interface dependency to 2.2.0 and regenerate theme and vendored mirk.js
+- Restyle the file-remove button as a circular × with bevel and ring
+- Migrate demos to the hyperclayjs smooth-sailing preset via symlink
+
+### Fixed
+- Point build-theme at the renamed mirk-interface and regenerate the theme
+- Style the ?cms=true auto-open shell by deferring the fast-path a microtask
+- Theme the comprehensive demo's custom templates with mirk classes
+
+
+
 ## [0.5.0] - 2026-06-07
 
 ### Added
