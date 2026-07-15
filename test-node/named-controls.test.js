@@ -353,7 +353,7 @@ test('componentForScalarRule: @number falls back to @scalar when the value is no
   assert.equal(componentForScalarRule('.attr@data-n', doc), '@scalar', 'attrs extract raw, padded attr falls back')
 })
 
-test('buildForm: @number fallback renders a text input that preserves the value, and logs the fallback', () => {
+test('buildForm: @number fallback renders a textarea that preserves the value, and logs the fallback', () => {
   const doc = setupDoc(`<p class="price" data-hcms-component="number">$5</p>`)
   const rules = { price: '.price' }
   prepare(doc, rules)
@@ -366,8 +366,8 @@ test('buildForm: @number fallback renders a text input that preserves the value,
   } finally {
     console.info = original
   }
-  const input = frag.querySelector('input[data-hcms-field="price"]')
-  assert.ok(input, 'leaf input rendered')
+  const input = frag.querySelector('textarea[data-hcms-field="price"]')
+  assert.ok(input, 'leaf textarea rendered')
   assert.notEqual(input.getAttribute('type'), 'number', 'not a number input')
   assert.equal(input.value, '$5', 'value preserved, not blanked')
   assert.ok(messages.some((m) => m.includes('@number') && m.includes('preserved')), 'fallback logged')
@@ -483,7 +483,7 @@ test('componentForScalarRule: @checked rules are exempt from the canonical-bool 
   assert.equal(componentForScalarRule('.flag@checked', doc), '@toggle')
 })
 
-test('buildForm: checkbox fallback renders a text input that preserves the value, and logs the fallback', () => {
+test('buildForm: checkbox fallback renders a textarea that preserves the value, and logs the fallback', () => {
   const doc = setupDoc(`<span class="pub" data-hcms-component="checkbox" data-v="yes"></span>`)
   const rules = { published: '.pub@data-v' }
   prepare(doc, rules)
@@ -496,8 +496,8 @@ test('buildForm: checkbox fallback renders a text input that preserves the value
   } finally {
     console.info = original
   }
-  const input = frag.querySelector('input[data-hcms-field="published"]')
-  assert.ok(input, 'leaf input rendered')
+  const input = frag.querySelector('textarea[data-hcms-field="published"]')
+  assert.ok(input, 'leaf textarea rendered')
   assert.notEqual(input.getAttribute('type'), 'checkbox', 'not a checkbox')
   assert.equal(input.value, 'yes', 'value preserved, not coerced to false')
   assert.ok(messages.some((m) => m.includes('@checkbox') && m.includes('preserved')), 'fallback logged')

@@ -85,9 +85,9 @@ test('deriveFormRules: img@src reads img@src; a@href stays @value; data-hcms-com
   prepare(doc, rules)
   const formRules = deriveFormRules(rules, doc)
   assert.equal(formRules.hero, 'img[data-hcms-field="hero"]@src')
-  assert.equal(formRules.link, 'input[data-hcms-field="link"]@value') // plain URL field by default
+  assert.equal(formRules.link, 'textarea[data-hcms-field="link"]@value') // plain scalar field by default
   assert.equal(formRules.cv, 'a[data-hcms-field="cv"]@href')           // opted into file
-  assert.equal(formRules.name, 'input[data-hcms-field="name"]@value')
+  assert.equal(formRules.name, 'textarea[data-hcms-field="name"]@value')
 })
 
 test('buildForm: @image clones the image widget and writes the URL to img.src', () => {
@@ -130,7 +130,7 @@ test('buildForm: a bare a@href is a plain URL input, not a file widget', () => {
   prepare(doc, rules)
   const frag = buildForm({ pageRules: rules, formRules: null, data: { link: 'https://example.com' }, doc })
   assert.equal(frag.querySelector('.hcms-upload'), null, 'no upload widget for a plain link')
-  const input = frag.querySelector('input[data-hcms-field="link"]')
+  const input = frag.querySelector('textarea[data-hcms-field="link"]')
   assert.equal(input.value, 'https://example.com')
 })
 
@@ -140,7 +140,7 @@ test('buildForm: plain scalar still clones @scalar (no widget)', () => {
   prepare(doc, rules)
   const frag = buildForm({ pageRules: rules, formRules: null, data: { name: 'Ada' }, doc })
   assert.equal(frag.querySelector('.hcms-upload'), null)
-  const input = frag.querySelector('input[data-hcms-field="name"]')
+  const input = frag.querySelector('textarea[data-hcms-field="name"]')
   assert.equal(input.value, 'Ada')
 })
 
@@ -154,7 +154,7 @@ test('buildForm: card photo field clones @image inside its card', () => {
   assert.equal(cards.length, 2)
   const img0 = cards[0].querySelector('.hcms-upload--image img[data-hcms-field="photo"]')
   assert.equal(img0.getAttribute('src'), '/u/a.png')
-  assert.ok(cards[0].querySelector('input[data-hcms-field="name"]'), 'sibling scalar still a text input')
+  assert.ok(cards[0].querySelector('textarea[data-hcms-field="name"]'), 'sibling scalar still a plain textarea')
 })
 
 test('buildTemplateMap: scalar component selection parity (image inferred, href plain, file opt-in)', () => {

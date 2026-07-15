@@ -3,6 +3,7 @@ import { applyWithRollback } from './apply-loop.js'
 import { fromString as pathFromString, getRuleAtPath } from './path.js'
 import { buildItem, fileNameFromUrl, radioGroupName } from './form-builder.js'
 import { scaffold } from './scaffold.js'
+import { autosizeTextarea, enhanceFields } from './enhance.js'
 
 const BOUND = new WeakSet()
 
@@ -55,7 +56,8 @@ export function bindEvents(ctx) {
     const target = e.target
     if (!target || !target.closest) return
     if (!target.closest('[data-hcms-form-root]')) return
-    if (!target.matches('input, textarea, select')) return
+    if (!target.matches('input, textarea, select, [contenteditable][data-hcms-field]')) return
+    if (target.tagName === 'TEXTAREA') autosizeTextarea(target)
     // The upload picker fires `input` too, but its .value is the OS fake path
     // (C:\fakepath\…); it's handled on `change` via onUploadChange. The wrapper
     // carries data-hcms-field, so without this guard the closest() below would
@@ -366,6 +368,7 @@ export function onAdd(arrayPath, ctx) {
     itemKey: arrayEl.getAttribute('data-hcms-item-tpl') || null,
   })
   slot.appendChild(itemNode)
+  enhanceFields(itemNode, ctx.doc)
   updateArrayButtonsVisibility(arrayEl)
   return commitWithUndo(`Add ${arrayPath}`, () =>
     commit(extractFormData(ctx), { path: arrayPath, structural: true }, ctx)

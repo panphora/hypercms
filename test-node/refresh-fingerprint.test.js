@@ -25,7 +25,7 @@ test('refresh updates fingerprint so edits-back commit', () => {
     assert.equal(api.getData().title, 'Second')
 
     // Edit form back to the original value; should still commit, not short-circuit.
-    const input = document.querySelector('[data-hcms-form-root] input')
+    const input = document.querySelector('[data-hcms-form-root] textarea')
     input.value = 'First'
     input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
     assert.equal(document.querySelector('.title').textContent, 'First', 'page reflects revert')

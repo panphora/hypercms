@@ -23,10 +23,13 @@ const SORTABLE_GRIP = `<div class="hcms-drag-handle mirk-sortable__grip" aria-hi
 const CLOSE_ICON = `<svg class="hcms-x" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><path d="M4 4 L12 12 M12 4 L4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"></path></svg>`
 
 const DEFAULT_TEMPLATES = {
+  // The default scalar is a one-row auto-growing textarea, not an <input>:
+  // page copy is prose and routinely wraps. Growth comes from field-sizing:
+  // content in the theme, with a scrollHeight fallback (enhance.js).
   '@scalar': `
     <label class="hcms-field" data-hcms-shape="scalar">
       <span class="hcms-label" data-hcms-label></span>
-      <input class="mirk-input" data-hcms-field />
+      <textarea class="mirk-textarea" rows="1" data-hcms-field></textarea>
       <div class="hcms-error" hidden></div>
     </label>
   `,
@@ -172,6 +175,17 @@ const DEFAULT_TEMPLATES = {
       <div class="hcms-error" hidden></div>
     </label>
   `,
+  // Rich-text surface for @innerHTML-bound rules: a contenteditable div whose
+  // value interface is innerHTML (fieldPropertyFor), so links and inline
+  // formatting survive the round-trip. richclay mounts on it when the host
+  // page ships it (enhance.js); otherwise it stays a plain contenteditable.
+  '@richtext': `
+    <div class="hcms-field" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <div class="mirk-textarea hcms-richtext" contenteditable="true" data-hcms-field></div>
+      <div class="hcms-error" hidden></div>
+    </div>
+  `,
   '@number': `
     <label class="hcms-field" data-hcms-shape="scalar">
       <span class="hcms-label" data-hcms-label></span>
@@ -233,7 +247,7 @@ export function injectComponentTemplate(doc, key) {
 // common than uploading a file, so an a@href rule stays a plain URL field and
 // the file upload is opt-in. Suffix is split like the engine (lastIndexOf('@'),
 // see engine/extract.js). Returns a DEFAULT_TEMPLATES key.
-const PROP_TO_COMPONENT = { src: '@image', checked: '@checkbox' }
+const PROP_TO_COMPONENT = { src: '@image', checked: '@checkbox', innerHTML: '@richtext' }
 // data-hcms-component values for scalar rules. "chips" is array-only (below).
 const SCALAR_COMPONENT_BY_NAME = {
   image: '@image',
@@ -244,6 +258,7 @@ const SCALAR_COMPONENT_BY_NAME = {
   radio: '@radio',
   textarea: '@textarea',
   number: '@number',
+  richtext: '@richtext',
 }
 // Every opt-in component injects on demand; only the 6 shape templates are
 // always present.

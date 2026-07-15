@@ -227,7 +227,7 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
   display: flex;
   flex-direction: column;
   gap: 26px;
-  padding: 24px 24px 28px;
+  padding: 12px 24px 28px;
 }
 
 /* one labeled scalar field */
@@ -253,6 +253,31 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
   padding: 9px 14px 10px;
 }
 .hcms-shell.pixel-quiet textarea.mirk-input { min-height: 76px; resize: vertical; }
+
+/* default scalar fields: one-row textareas that grow with their content.
+   Browsers without field-sizing get a scrollHeight fallback (enhance.js). */
+.hcms-shell.pixel-quiet .hcms-form textarea.mirk-textarea {
+  field-sizing: content;
+  resize: none;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* rich-text surface (@richtext): a contenteditable styled like a textarea */
+.hcms-shell.pixel-quiet .hcms-richtext {
+  min-height: 2.5em;
+  cursor: text;
+  overflow-wrap: break-word;
+}
+.hcms-shell.pixel-quiet .hcms-richtext a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.hcms-shell.pixel-quiet .hcms-richtext:empty::before {
+  content: attr(data-hcms-placeholder);
+  color: var(--mirk-placeholder-color);
+}
 .hcms-shell.pixel-quiet .mirk-select__field {
   font-size: 15px;
   padding: 8px 40px 9px 14px;

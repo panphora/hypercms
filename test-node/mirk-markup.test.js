@@ -19,11 +19,11 @@ function build(pageRules, data) {
 // The defaults must render real mirk components so the generated form is
 // pixel-quiet out of the box — while keeping every data-hcms-* binding hook.
 
-test('default scalar renders a .mirk-input bound to the field', () => {
+test('default scalar renders a .mirk-textarea bound to the field', () => {
   const f = build({ title: '.title' }, { title: 'Hi' })
   const field = f.querySelector('[data-hcms-path="title"]')
-  const input = field.querySelector('input.mirk-input[data-hcms-field="title"]')
-  assert.ok(input, 'mirk-input present and field-bound')
+  const input = field.querySelector('textarea.mirk-textarea[data-hcms-field="title"]')
+  assert.ok(input, 'mirk-textarea present and field-bound')
   assert.equal(input.value, 'Hi')
 })
 
@@ -49,7 +49,7 @@ test('default object-array item is a mirk-sortable card with a grip + body slot'
   // the body holds the engine's field slot + its child mirk-input fields
   const body = card.querySelector('.mirk-sortable__body')
   assert.ok(body.querySelector('.hcms-card-fields'), 'card-fields slot inside the sortable body')
-  assert.ok(card.querySelector('[data-hcms-path="products.0.name"] input.mirk-input'), 'child field is a mirk-input')
+  assert.ok(card.querySelector('[data-hcms-path="products.0.name"] textarea.mirk-textarea'), 'child field is a mirk-textarea')
   // remove + reorder controls still present
   assert.ok(card.querySelector('[data-hcms-action="move-up"]'))
   // remove is the corner button: a square-able .hcms-remove--card holding the SVG ×

@@ -20,6 +20,8 @@ import {
 import { mountShell, setShellStyles, markStylesBundled } from './shell.js'
 import { refreshForm, installObserver } from './refresh.js'
 import { warnUnmatchedTemplates } from './diagnostics.js'
+import { enhanceFields, upgradeRichTextRules } from './enhance.js'
+import { maybeInjectToggle } from './toggle.js'
 
 export function installStyles(text) {
   setShellStyles(text)
@@ -100,7 +102,12 @@ export function open(opts = {}) {
     const what = typeof source === 'string' ? `data-rules-name~="${source}"` : 'the provided rules object'
     throw new Error(`hypercms: no rules found for ${what}`)
   }
-  const pageRules = found.rules
+  // Rich-text upgrade (default on): bare scalar rules whose page element
+  // contains child elements are rebound through @innerHTML so links and
+  // inline formatting survive the round-trip, and their form fields render
+  // the @richtext component. Opt out with cms.open({ richText: false }).
+  const richText = opts.richText !== false
+  const pageRules = richText ? upgradeRichTextRules(found.rules, pageRoot) : found.rules
   const rulesTagNode = found.tagNode
 
   injectDefaults(doc)
@@ -130,6 +137,7 @@ export function open(opts = {}) {
     formRules,
     rulesTagNode,
     rulesSource: source,
+    richText,
     formRoot: shell.formRoot,
     shellRoot: shell.root,
     errorEl: shell.errorEl,
@@ -165,6 +173,7 @@ export function open(opts = {}) {
   try {
   const fragment = buildForm({ pageRules, formRules, data, doc })
   shell.formRoot.appendChild(fragment)
+  enhanceFields(shell.formRoot, doc)
 
   bindEvents(ctx)
   ctx.updateFingerprint()
@@ -455,6 +464,10 @@ function writeFieldValue(el, value, formRoot, path) {
     el.href = value == null ? '' : String(value)
     return
   }
+  if (el.hasAttribute && el.hasAttribute('contenteditable')) {
+    el.innerHTML = value == null ? '' : String(value)
+    return
+  }
   if ('value' in el) {
     el.value = value == null ? '' : String(value)
     return
@@ -565,6 +578,14 @@ function whenReady(fn) {
 // Auto-open at module load (browser only — node tests import this without a real
 // window, and the guards above no-op there).
 maybeAutoOpen()
+
+// Floating edit-mode toggle at module load (same browser-only no-op in node).
+maybeInjectToggle({
+  open,
+  close,
+  isOpen,
+  hasRules: (doc) => !!engine.findRules(doc, 'cms'),
+})
 
 const cms = {
   open,

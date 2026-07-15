@@ -21,6 +21,8 @@ export function fieldPropertyFor(el) {
   }
   if (tag === 'TEXTAREA' || tag === 'SELECT') return 'value'
   if (TAG_PROP_MAP[tag]) return TAG_PROP_MAP[tag]
+  // Rich-text surfaces (the @richtext component): the value IS the markup.
+  if (el.hasAttribute && el.hasAttribute('contenteditable')) return 'innerHTML'
   return null
 }
 

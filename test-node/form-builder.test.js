@@ -17,7 +17,7 @@ test('buildForm: scalar field with value', () => {
   const fragment = buildForm({ pageRules, formRules, data: { title: 'Hello' }, doc })
   const fieldRow = fragment.querySelector('[data-hcms-path="title"]')
   assert.ok(fieldRow, 'field row stamped with path')
-  const input = fieldRow.querySelector('input[data-hcms-field="title"]')
+  const input = fieldRow.querySelector('textarea[data-hcms-field="title"]')
   assert.ok(input)
   assert.equal(input.value, 'Hello')
 })
@@ -32,7 +32,7 @@ test('buildForm: object with two children', () => {
   assert.ok(authorSection)
   const fields = authorSection.querySelectorAll('.hcms-field')
   assert.equal(fields.length, 2)
-  const nameInput = fragment.querySelector('[data-hcms-path="author.name"] input')
+  const nameInput = fragment.querySelector('[data-hcms-path="author.name"] textarea')
   assert.equal(nameInput.value, 'Ada')
 })
 
@@ -53,7 +53,7 @@ test('buildForm: object-array with three items', () => {
   assert.equal(cards.length, 3)
   assert.equal(cards[0].getAttribute('data-hcms-path'), 'products.0')
   assert.equal(cards[2].getAttribute('data-hcms-path'), 'products.2')
-  const nameAt2 = fragment.querySelector('[data-hcms-path="products.2.name"] input')
+  const nameAt2 = fragment.querySelector('[data-hcms-path="products.2.name"] textarea')
   assert.equal(nameAt2.value, 'C')
 })
 

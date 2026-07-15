@@ -73,7 +73,7 @@ test('integration: form reflects page data', () => {
   const dom = loadPage(FIXTURE)
   open()
   try {
-    const titleInput = document.querySelector('[data-hcms-path="title"] input')
+    const titleInput = document.querySelector('[data-hcms-path="title"] textarea')
     assert.equal(titleInput.value, 'Hello')
     const products = document.querySelectorAll('[data-hcms-card]')
     assert.equal(products.length, 2)
@@ -132,7 +132,7 @@ test('integration: open({ rules: object }) uses the literal rules', () => {
   )
   open({ rules: { title: '.title' } })
   try {
-    const titleInput = document.querySelector('[data-hcms-path="title"] input')
+    const titleInput = document.querySelector('[data-hcms-path="title"] textarea')
     assert.equal(titleInput.value, 'Hello')
   } finally {
     close()
@@ -156,7 +156,7 @@ test('integration: open({ rules: "token" }) resolves a named tag', () => {
   )
   open({ rules: 'custom' })
   try {
-    const titleInput = document.querySelector('[data-hcms-path="title"] input')
+    const titleInput = document.querySelector('[data-hcms-path="title"] textarea')
     assert.equal(titleInput.value, 'Named')
   } finally {
     close()
@@ -164,6 +164,36 @@ test('integration: open({ rules: "token" }) resolves a named tag', () => {
   dom.window.close()
 })
 
+
+test('integration: a bare scalar whose page element holds markup upgrades to a richtext contenteditable (default)', () => {
+  const dom = loadPage(
+    '<!DOCTYPE html><html><head></head><body><div class="body"><b>Hi</b> there</div></body></html>',
+  )
+  open({ rules: { body: '.body' } })
+  try {
+    const field = document.querySelector('[data-hcms-path="body"] [contenteditable][data-hcms-field="body"]')
+    assert.ok(field, 'richtext contenteditable field rendered')
+    assert.equal(field.innerHTML, '<b>Hi</b> there', 'markup round-trips through @innerHTML')
+  } finally {
+    close()
+  }
+  dom.window.close()
+})
+
+test('integration: richText:false keeps a markup scalar as a plain textarea', () => {
+  const dom = loadPage(
+    '<!DOCTYPE html><html><head></head><body><div class="body"><b>Hi</b> there</div></body></html>',
+  )
+  open({ rules: { body: '.body' }, richText: false })
+  try {
+    const field = document.querySelector('[data-hcms-path="body"] textarea[data-hcms-field="body"]')
+    assert.ok(field, 'plain textarea rendered when the upgrade is opted out')
+    assert.equal(field.value, 'Hi there', 'text is flattened for the plain-text control')
+  } finally {
+    close()
+  }
+  dom.window.close()
+})
 
 test('integration: open warns on double-open', () => {
   const dom = loadPage(FIXTURE)

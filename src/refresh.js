@@ -4,6 +4,7 @@ import { morphForm } from './morph.js'
 import { injectDefaults, injectComponents } from './templates.js'
 import { deriveFormRules } from './form-rules.js'
 import { coerceBooleans, applyErrorState } from './events.js'
+import { enhanceFields, upgradeRichTextRules } from './enhance.js'
 
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 
@@ -13,7 +14,10 @@ export function refreshForm(ctx, { ignoreActiveValue } = {}) {
   // livesync-replaced rules tag is picked up. Document-scoped via ctx.doc.
   const found = engine.findRules(ctx.doc, ctx.rulesSource || 'cms')
   if (found) {
-    ctx.pageRules = found.rules
+    // Re-apply the rich-text upgrade open() performed: the tag holds the
+    // author's bare rules, and using them raw would rebind upgraded fields
+    // back to textContent mid-session.
+    ctx.pageRules = ctx.richText ? upgradeRichTextRules(found.rules, ctx.pageRoot) : found.rules
     ctx.rulesTagNode = found.tagNode
   }
   // Re-derive formRules so schema changes (rule shape, template overrides) flow through.
@@ -32,6 +36,9 @@ export function refreshForm(ctx, { ignoreActiveValue } = {}) {
     doc: ctx.doc,
   })
   morphForm(ctx.formRoot, fragment, { ignoreActiveValue })
+  // The morph can rebuild field nodes, dropping autosize heights and richclay
+  // instances (instances are per-element); re-enhance whatever is new.
+  enhanceFields(ctx.formRoot, ctx.doc)
   // morphForm rebuilds the form structure; inline error slots get wiped. Re-apply
   // the last error state so error messages survive across observer-driven refreshes
   // (e.g., the rollback after a failed add).

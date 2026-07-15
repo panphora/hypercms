@@ -162,6 +162,21 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
     if (tags && e.target === tags) tags.querySelector(".mirk-tags__input")?.focus();
   });
 
+  // Collapsible chip — open the panel, collapse back to the chip, toggle the
+  // before/after field table. State lives in classes on the markup, so a
+  // saved-and-reopened chip keeps whatever it was; this only flips them live.
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-mirk-chip]");
+    if (!t) return;
+    const action = t.getAttribute("data-mirk-chip");
+    if (action === "open") t.closest(".mirk-chip")?.classList.add("mirk-chip--open");
+    else if (action === "collapse") t.closest(".mirk-chip")?.classList.remove("mirk-chip--open");
+    else if (action === "changes") {
+      const on = t.closest(".mirk-chip__panel")?.classList.toggle("is-changes");
+      t.textContent = on ? "(hide changes)" : "(view changes)";
+    }
+  });
+
   // Copy button — delegated so dynamically-added buttons work too.
   // [data-copy]         copies the component's innerHTML (clean markup).
   // [data-copy="text"]  copies textContent (for <pre>/<code> source blocks

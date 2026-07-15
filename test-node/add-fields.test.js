@@ -21,10 +21,10 @@ test('onAdd: new card has every field from item shape', () => {
     const cards = document.querySelectorAll('[data-hcms-form-root] [data-hcms-card]')
     assert.equal(cards.length, 2, 'second card appended')
     const newCard = cards[1]
-    // Query inputs only — since v0.3 stamps data-hcms-field on wrapping
+    // Query leaf textareas only — since v0.3 stamps data-hcms-field on wrapping
     // containers too (option 1), a bare [data-hcms-field] would match the
-    // container AND the input for each field.
-    const fields = Array.from(newCard.querySelectorAll('input[data-hcms-field]')).map(
+    // container AND the leaf field for each field.
+    const fields = Array.from(newCard.querySelectorAll('textarea[data-hcms-field]')).map(
       (e) => e.getAttribute('data-hcms-field')
     )
     assert.deepEqual(fields.sort(), ['name', 'price'])

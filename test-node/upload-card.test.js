@@ -14,8 +14,8 @@ test('card fields recurse through the component seam: photo→img@src (image), l
   const formRules = deriveFormRules(rules, doc)
   const [, itemShape] = formRules.products
   assert.equal(itemShape.photo, 'img[data-hcms-field="photo"]@src') // image inferred in cards
-  assert.equal(itemShape.link, 'input[data-hcms-field="link"]@value') // a@href stays a plain URL field
-  assert.equal(itemShape.name, 'input[data-hcms-field="name"]@value')
+  assert.equal(itemShape.link, 'textarea[data-hcms-field="link"]@value') // a@href stays a plain scalar field
+  assert.equal(itemShape.name, 'textarea[data-hcms-field="name"]@value')
 })
 
 const FIXTURE = `<!DOCTYPE html><html><head></head><body>

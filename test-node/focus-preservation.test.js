@@ -16,8 +16,8 @@ test('keystroke commit preserves focus + selection on input', () => {
   </body></html>`)
   open()
   try {
-    const input = document.querySelector('[data-hcms-form-root] input')
-    assert.ok(input, 'form input present')
+    const input = document.querySelector('[data-hcms-form-root] textarea')
+    assert.ok(input, 'form textarea present')
     input.focus()
     input.value = 'Helloo'
     input.setSelectionRange(6, 6)

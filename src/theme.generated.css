@@ -35,37 +35,52 @@
   /* Preflight sets these to ui-monospace; keep them in Departure Mono. */
   .hcms-shell pre, .hcms-shell code, .hcms-shell kbd, .hcms-shell samp { font-family: inherit; }
 
-  /* 28 tokens, one value each. light-dark() picks the side from color-scheme. */
+  /* 28 tokens, one value each. light-dark() picks the side from color-scheme.
+     :root paints the DEFAULT theme — "Pixel Quiet" (see 0030): mirk's warm soul
+     with the volume down. The louder original palette is the opt-in
+     [data-theme="full-volume"] block below. */
   .hcms-shell {
     color-scheme: light dark;                 /* default: follow the OS */
 
-    --mirk-canvas:        light-dark(#F7F2EA, #0B0C13);
-    --mirk-bg:            light-dark(#F7F2EA, #1D1F2F);
-    --mirk-fg:            light-dark(#15120e, #F6F7F9);
-    --mirk-accent:        light-dark(#efefe5, #232639);
-    --mirk-destructive:   light-dark(#d4183d, #ff5566);
-    --mirk-focus-color:   light-dark(#BBA288, #5A607F);
-    --mirk-bevel-bg:      light-dark(#e9d3bd, #1D1F2F);
-    --mirk-bevel-fg:      light-dark(#15120e, #F6F7F9);
-    --mirk-bevel-tl:      light-dark(#f3ddc7, #474C65);
-    --mirk-bevel-br:      light-dark(#c2ad95, #131725);
-    --mirk-bevel-hover-bg: light-dark(#dfc9b3, #232639);
-    --mirk-pill-inner-top: light-dark(#efdac7, #232639);
-    --mirk-input-border:  light-dark(#957E65, #6E738E);
-    --mirk-placeholder-color: light-dark(#7F7366, #545973);
+    --mirk-canvas:        light-dark(#FDF8F0, #0B0C13);
+    --mirk-bg:            light-dark(#FDF8F0, #11131E);
+    --mirk-fg:            light-dark(#2B241B, #ECEAF2);
+    --mirk-accent:        light-dark(#efefe5, #1D1F2F);
+    --mirk-destructive:   light-dark(#C24A3A, #ff5566);
+    --mirk-focus-color:   light-dark(#C7AE93, #4A506B);
+    --mirk-bevel-bg:      light-dark(#FCF8F1, #1A1D2C);
+    --mirk-bevel-fg:      light-dark(#2B241B, #ECEAF2);
+    --mirk-bevel-tl:      light-dark(#F0E7D8, #2A2E42);
+    --mirk-bevel-br:      light-dark(#E2D4BF, #14182A);
+    --mirk-bevel-hover-bg: light-dark(#F4ECDF, #202436);
+    --mirk-pill-inner-top: light-dark(#FBF6EE, #202436);
+    --mirk-input-border:  light-dark(#D8C8AF, #353B52);
+    --mirk-placeholder-color: light-dark(#A8987F, #6A7090);
     --mirk-ctrl-bg:       light-dark(#8C7660, #5F6582);
-    --mirk-toggle-bg:     light-dark(#DFC9AF, #656D95);
-    --mirk-toggle-hi:     light-dark(#E9D6C3, #7F87AD);
-    --mirk-toggle-lo:     light-dark(#C7A88A, #505677);
-    --mirk-mark-fg:       light-dark(#3F3225, #E1E3EA);
-    --mirk-sortable-dot:  light-dark(#e2c5a6, #393f5b);
-    --mirk-sortable-shadow:    light-dark(#c7a47f, #111527);
-    --mirk-sortable-label:     light-dark(#231e18, #edeef2);
-    --mirk-sortable-placeholder: light-dark(#99826c, #6f7695);
-    --mirk-slider-fill:   light-dark(#e9d3bd, #232639);
-    --mirk-slider-nub-bg: light-dark(#DFC9AF, #656D95);
-    --mirk-slider-nub-hi: light-dark(#E9D6C3, #7F87AD);
-    --mirk-slider-nub-lo: light-dark(#C7A88A, #505677);
+    --mirk-toggle-bg:     light-dark(#EFDBBD, #3E4660);
+    --mirk-toggle-hi:     light-dark(#F4EADA, #4E567A);
+    --mirk-toggle-lo:     light-dark(#C2A87E, #262B42);
+    --mirk-mark-fg:       light-dark(#6B5942, #C9CDE0);
+    --mirk-sortable-dot:  light-dark(#DDCBB0, #353B52);
+    --mirk-sortable-shadow:    light-dark(#C9B493, #0E1120);
+    --mirk-sortable-label:     light-dark(#8C7B62, #8A90AB);
+    --mirk-sortable-placeholder: light-dark(#A8987F, #6A7090);
+    --mirk-slider-fill:   light-dark(#F2E0BD, #2A2E42);
+    --mirk-slider-nub-bg: light-dark(#EFDBBD, #3E4660);
+    --mirk-slider-nub-hi: light-dark(#F4EADA, #4E567A);
+    --mirk-slider-nub-lo: light-dark(#C2A87E, #262B42);
+
+    /* Chip — the recovery/notification component reads from the kit's own tokens
+       via 5 slim hooks, so it matches the kit by default and reskins by overriding
+       a hook (not a rule). Each follows the theme (incl. the Full Volume variant)
+       and OS light/dark with no per-theme repaint; the one exception is the primary
+       fill, which the default (Pixel Quiet) leaves as the theme's fg ink while the
+       Full Volume variant tints it a warm brown in light (see below). */
+    --mirk-chip-surface:     var(--mirk-bg);            /* raised panel face */
+    --mirk-chip-edge:        var(--mirk-input-border);  /* panel + recess outline */
+    --mirk-chip-primary-bg:  var(--mirk-fg);            /* primary action fill — the theme's fg ink (Full Volume tints it warm brown in light) */
+    --mirk-chip-primary-fg:  var(--mirk-bg);
+    --mirk-chip-alert:       var(--mirk-destructive);   /* icon + struck "now" value */
 
     --mirk-radius: 5px;                        /* the "rounded" corner */
     --mirk-focus-offset: 2px;                  /* non-color → can't ride light-dark() */
@@ -89,41 +104,44 @@
     background: var(--mirk-canvas); color: var(--mirk-fg);
   }
 
-  /* Built-in brand variant — "Pixel Quiet": mirk's warm soul with the volume
-     down. A softened, near-equal bevel, warmer ink, terracotta destructive, a
-     deeper navy-black dark. Authored with light-dark() like :root, so it follows
-     the OS and still flips with .dark / .light. Opt in: data-theme="pixel-quiet".
-     Sits after :root (equal specificity, source order wins). --mirk-radius /
-     --mirk-focus-offset are inherited unchanged; --mirk-ctrl-bg is unused. */
-  .hcms-shell[data-theme="pixel-quiet"] {
-    --mirk-fg:            light-dark(#2B241B, #ECEAF2);
-    --mirk-bg:            light-dark(#F7F2EA, #11131E);
+  /* Built-in brand variant — "Full Volume": mirk's original full-strength palette,
+     the loud pole of the volume axis (Pixel Quiet, now the default, is the quiet
+     end). Full-contrast bevel, warm cream / deep navy, crimson destructive.
+     Authored with light-dark() like :root, so it follows the OS and still flips
+     with .dark / .light. Opt in: data-theme="full-volume". Sits after :root
+     (equal specificity, source order wins). --mirk-radius / --mirk-focus-offset /
+     --mirk-ctrl-bg and the four shared --mirk-chip-* hooks inherit from :root
+     unchanged; only the tokens that differ from the default are re-declared here. */
+  .hcms-shell[data-theme="full-volume"] {
     --mirk-canvas:        light-dark(#F7F2EA, #0B0C13);
-    --mirk-accent:        light-dark(#efefe5, #1D1F2F);
-    --mirk-destructive:   light-dark(#C24A3A, #ff5566);
-    --mirk-focus-color:   light-dark(#C7AE93, #4A506B);
-    --mirk-bevel-bg:      light-dark(#FCF8F1, #1A1D2C);
-    --mirk-bevel-fg:      light-dark(#2B241B, #ECEAF2);
-    --mirk-bevel-tl:      light-dark(#F0E7D8, #2A2E42);
-    --mirk-bevel-br:      light-dark(#E2D4BF, #14182A);
-    --mirk-bevel-hover-bg: light-dark(#F4ECDF, #202436);
-    --mirk-pill-inner-top: light-dark(#FBF6EE, #202436);
-    --mirk-input-border:  light-dark(#D8C8AF, #353B52);
-    --mirk-placeholder-color: light-dark(#A8987F, #6A7090);
-    --mirk-mark-fg:       light-dark(#6B5942, #C9CDE0);
-    --mirk-toggle-bg:     light-dark(#EFDBBD, #3E4660);
-    --mirk-toggle-hi:     light-dark(#F4EADA, #4E567A);
-    --mirk-toggle-lo:     light-dark(#C2A87E, #262B42);
-    --mirk-sortable-dot:  light-dark(#DDCBB0, #353B52);
-    --mirk-sortable-shadow:    light-dark(#C9B493, #0E1120);
-    --mirk-sortable-label:     light-dark(#8C7B62, #8A90AB);
-    --mirk-sortable-placeholder: light-dark(#A8987F, #6A7090);
-    /* slider nub reuses the toggle family (identical pairing in :root); the fill
-       is the one value with no CMS precedent — a soft warm / muted navy track. */
-    --mirk-slider-fill:   light-dark(#F2E0BD, #2A2E42);
-    --mirk-slider-nub-bg: light-dark(#EFDBBD, #3E4660);
-    --mirk-slider-nub-hi: light-dark(#F4EADA, #4E567A);
-    --mirk-slider-nub-lo: light-dark(#C2A87E, #262B42);
+    --mirk-bg:            light-dark(#F7F2EA, #1D1F2F);
+    --mirk-fg:            light-dark(#15120e, #F6F7F9);
+    --mirk-accent:        light-dark(#efefe5, #232639);
+    --mirk-destructive:   light-dark(#d4183d, #ff5566);
+    --mirk-focus-color:   light-dark(#BBA288, #5A607F);
+    --mirk-bevel-bg:      light-dark(#e9d3bd, #1D1F2F);
+    --mirk-bevel-fg:      light-dark(#15120e, #F6F7F9);
+    --mirk-bevel-tl:      light-dark(#f3ddc7, #474C65);
+    --mirk-bevel-br:      light-dark(#c2ad95, #131725);
+    --mirk-bevel-hover-bg: light-dark(#dfc9b3, #232639);
+    --mirk-pill-inner-top: light-dark(#efdac7, #232639);
+    --mirk-input-border:  light-dark(#957E65, #6E738E);
+    --mirk-placeholder-color: light-dark(#7F7366, #545973);
+    --mirk-toggle-bg:     light-dark(#DFC9AF, #656D95);
+    --mirk-toggle-hi:     light-dark(#E9D6C3, #7F87AD);
+    --mirk-toggle-lo:     light-dark(#C7A88A, #505677);
+    --mirk-mark-fg:       light-dark(#3F3225, #E1E3EA);
+    --mirk-sortable-dot:  light-dark(#e2c5a6, #393f5b);
+    --mirk-sortable-shadow:    light-dark(#c7a47f, #111527);
+    --mirk-sortable-label:     light-dark(#231e18, #edeef2);
+    --mirk-sortable-placeholder: light-dark(#99826c, #6f7695);
+    --mirk-slider-fill:   light-dark(#e9d3bd, #232639);
+    --mirk-slider-nub-bg: light-dark(#DFC9AF, #656D95);
+    --mirk-slider-nub-hi: light-dark(#E9D6C3, #7F87AD);
+    --mirk-slider-nub-lo: light-dark(#C7A88A, #505677);
+    /* :root (Pixel Quiet) leaves the chip primary as its own fg ink; the original
+       default tinted it a warm brown in light — restore that here. */
+    --mirk-chip-primary-bg: light-dark(#1C170E, var(--mirk-fg));
   }
 
   /* Roll your own the same way — an explicit [data-theme] block is the escape hatch:
@@ -193,6 +211,15 @@
   .hcms-shell .mirk-button--round.mirk-button--small .mirk-button__label { padding: 2px 14px; border-radius: 10px; }
   .hcms-shell .mirk-button--round.mirk-button--large { border-radius: 16px; }
   .hcms-shell .mirk-button--round.mirk-button--large .mirk-button__label { padding: 7px 24px 9px; border-radius: 14px; }
+
+  /* Quiet: a borderless text button (transparent border keeps the hit area + the
+     baseline aligned with neighbouring bevel buttons). For tertiary actions. */
+  .hcms-shell .mirk-button--quiet {
+    background: none; background-image: none;
+    border-color: transparent; color: var(--mirk-placeholder-color);
+  }
+  .hcms-shell .mirk-button--quiet:hover { background: none; color: var(--mirk-fg); }
+  .hcms-shell .mirk-button--quiet:active { border-color: transparent; }
 
   /* ============================ TEXT INPUT ============================ */
   .hcms-shell .mirk-input {
@@ -371,6 +398,7 @@
   .hcms-shell .mirk-toggle { display: inline-flex; align-items: center; gap: 0.75rem; cursor: pointer; width: fit-content; }
   .hcms-shell .mirk-toggle__track {
     position: relative; flex-shrink: 0; width: 49px; height: 27px; border-radius: 0;
+    background: var(--mirk-canvas);            /* own recessed channel, like the slider track — never the host page (0033) */
     border: 1px solid var(--mirk-input-border);
   }
   .hcms-shell .mirk-toggle__thumb {
@@ -649,6 +677,326 @@
   .hcms-shell .mirk-sortable--small .mirk-sortable__row { padding: 5px 13px 6px; }
   .hcms-shell .mirk-sortable--small .mirk-sortable__label { font-size: 10px; margin-bottom: 1px; }
   .hcms-shell .mirk-sortable--small .mirk-sortable__field { font-size: 14px; }
+
+  /* ============================ CHIP ============================ */
+  /* A collapsible recovery/notification: a round pill that expands into a RAISED
+     panel — the kit's one elevated surface (a distinct --mirk-bg face, a hairline
+     outline, and a soft drop shadow, the only shadow in the kit, reserved for this
+     raised tier). State lives in classes (--open, is-changes) so it round-trips via
+     outerHTML; mirk.js only flips them on click. Color reads from generic kit
+     tokens through 5 slim --mirk-chip-* hooks, so it matches the kit and reskins by
+     overriding a hook, not a rule. In a Hyperclay app, add `save-remove` to the
+     block so a transient prompt never persists into the saved file. */
+  .hcms-shell .mirk-chip { display: inline-flex; flex-direction: column; align-items: flex-start; }
+  .hcms-shell .mirk-chip__panel { display: none; }
+  .hcms-shell .mirk-chip--open .mirk-chip__trigger { display: none; }
+  .hcms-shell .mirk-chip--open .mirk-chip__panel { display: flex; }
+
+  /* Collapsed chip — a round mirk-button pill (mirk-button--round in the markup),
+     the alert glyph seated in the label, so it reads as a distinct affordance, not
+     a flat button. A soft, tight lift sets it above the page; deeper on a dark
+     canvas (same media + forced-mode pattern as the panel shadow below). */
+  .hcms-shell .mirk-chip__trigger .mirk-button__label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+  .hcms-shell .mirk-chip__trigger { box-shadow: 0 6px 14px -8px rgba(43, 36, 27, 0.5), 0 2px 5px -3px rgba(43, 36, 27, 0.32); }
+  @media (prefers-color-scheme: dark) { .hcms-shell .mirk-chip__trigger { box-shadow: 0 6px 14px -8px rgba(0, 0, 0, 0.6), 0 2px 6px -3px rgba(0, 0, 0, 0.5); } }
+  .hcms-shell.light .mirk-chip__trigger, .hcms-shell[data-theme="light"] .mirk-chip__trigger { box-shadow: 0 6px 14px -8px rgba(43, 36, 27, 0.5), 0 2px 5px -3px rgba(43, 36, 27, 0.32); }
+  .hcms-shell.dark .mirk-chip__trigger, .hcms-shell[data-theme="dark"] .mirk-chip__trigger { box-shadow: 0 6px 14px -8px rgba(0, 0, 0, 0.6), 0 2px 6px -3px rgba(0, 0, 0, 0.5); }
+  /* Drive the warning fill from CSS, not an SVG fill="var(...)" presentation
+     attribute (var() is not reliably honored there). */
+  .hcms-shell .mirk-chip__warn { fill: var(--mirk-chip-alert); }
+  .hcms-shell .mirk-chip__trigger .mirk-chip__warn { vertical-align: -2px; }
+
+  /* The panel — the raised surface: a --mirk-bg face over the page, a hairline
+     outline, a soft drop shadow. */
+  .hcms-shell .mirk-chip__panel {
+    width: 300px; max-width: calc(100vw - 44px);
+    background: var(--mirk-chip-surface); color: var(--mirk-fg);
+    border: 1px solid var(--mirk-chip-edge); border-radius: var(--mirk-radius);
+    box-shadow: 0 20px 50px -30px rgba(43, 36, 27, 0.6);
+    padding: 14px 15px 13px; flex-direction: column; gap: 12px;
+  }
+  /* The panel's larger drop (the collapsed pill above carries a tighter one); deepen
+     both on a dark canvas. Mirrors the --focus-offset pattern: a media default for
+     the OS, plus explicit forced-mode overrides. */
+  @media (prefers-color-scheme: dark) { .hcms-shell .mirk-chip__panel { box-shadow: 0 20px 52px -26px rgba(0, 0, 0, 0.78); } }
+  .hcms-shell.light .mirk-chip__panel, .hcms-shell[data-theme="light"] .mirk-chip__panel { box-shadow: 0 20px 50px -30px rgba(43, 36, 27, 0.6); }
+  .hcms-shell.dark .mirk-chip__panel, .hcms-shell[data-theme="dark"] .mirk-chip__panel { box-shadow: 0 20px 52px -26px rgba(0, 0, 0, 0.78); }
+
+  /* Head — icon, text, collapse glyph. */
+  .hcms-shell .mirk-chip__head { display: flex; gap: 10px; align-items: flex-start; }
+  .hcms-shell .mirk-chip__icon { flex-shrink: 0; line-height: 0; margin-top: 1px; }
+  .hcms-shell .mirk-chip__headtext { min-width: 0; }
+  .hcms-shell .mirk-chip__eyebrow {
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.2em;
+    color: var(--mirk-placeholder-color); margin-bottom: 3px;
+  }
+  .hcms-shell .mirk-chip__title { margin: 0; font-size: 13px; font-weight: 400; line-height: 1.3; color: var(--mirk-fg); }
+  .hcms-shell .mirk-chip__collapse {
+    margin-left: auto; flex-shrink: 0; width: 24px; height: 24px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: none; border: 0; cursor: pointer; padding: 0;
+    color: var(--mirk-placeholder-color);
+  }
+  .hcms-shell .mirk-chip__collapse:hover { color: var(--mirk-fg); }
+  .hcms-shell .mirk-chip__collapse svg { display: block; }
+
+  /* Meta line. */
+  .hcms-shell .mirk-chip__meta { font-size: 11px; letter-spacing: 0.04em; color: var(--mirk-placeholder-color); }
+  .hcms-shell .mirk-chip__changes-toggle {
+    background: none; border: 0; cursor: pointer; font: inherit; font-size: 11px; padding: 0 0 0 4px;
+    color: var(--mirk-placeholder-color); text-decoration: underline; text-underline-offset: 2px;
+  }
+  .hcms-shell .mirk-chip__changes-toggle:hover { color: var(--mirk-fg); }
+
+  /* Before/after field table — a recessed stack, revealed by the changes toggle. */
+  .hcms-shell .mirk-chip__preview {
+    display: none; flex-direction: column; gap: 11px;
+    background: var(--mirk-bevel-bg); border: 1px solid var(--mirk-chip-edge);
+    padding: 10px 11px;
+  }
+  .hcms-shell .mirk-chip__panel.is-changes .mirk-chip__preview { display: flex; }
+  .hcms-shell .mirk-chip__row { display: flex; flex-direction: column; gap: 2px; }
+  .hcms-shell .mirk-chip__key {
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--mirk-placeholder-color);
+  }
+  .hcms-shell .mirk-chip__old, .hcms-shell .mirk-chip__new { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hcms-shell .mirk-chip__old { font-size: 11px; color: var(--mirk-chip-alert); text-decoration: line-through; opacity: 0.85; }
+  .hcms-shell .mirk-chip__new { font-size: 12px; color: var(--mirk-fg); }
+
+  /* Action stack — full-width buttons by weight: an embossed primary, a plain bevel
+     revert, a quiet (--quiet) dismiss. */
+  .hcms-shell .mirk-chip__actions { display: flex; flex-direction: column; gap: 8px; margin-top: 1px; }
+  .hcms-shell .mirk-chip__actions .mirk-button { width: 100%; }
+  /* Primary action — a genuine kit bevel button whose bevel palette is derived from
+     the chip's primary fill (lighter top-left, darker bottom-right), so it embosses
+     on any color. The base .mirk-button rules then drive its border, hover, and the
+     :active flip, identical to the kit's other buttons. */
+  .hcms-shell .mirk-chip__actions .mirk-chip__action--primary {
+    --mirk-bevel-bg:       var(--mirk-chip-primary-bg);
+    --mirk-bevel-fg:       var(--mirk-chip-primary-fg);
+    --mirk-bevel-tl:       color-mix(in srgb, var(--mirk-chip-primary-bg), white 24%);
+    --mirk-bevel-br:       color-mix(in srgb, var(--mirk-chip-primary-bg), black 32%);
+    --mirk-bevel-hover-bg: color-mix(in srgb, var(--mirk-chip-primary-bg), white 10%);
+  }
+
+  /* ============================ FIELD ============================ */
+  /* Label + control + hint as one unit, so a form composes without utilities
+     (and without needing the mirk-page rhythm). Any control drops in; the gap
+     matches the page scaffold's label/hint hug. Consecutive fields space
+     themselves. */
+  .hcms-shell .mirk-field { display: flex; flex-direction: column; gap: 6px; }
+  .hcms-shell .mirk-field__label { font-size: 16px; line-height: 1.5; }
+  .hcms-shell .mirk-field + .mirk-field { margin-block-start: 18px; }
+  .hcms-shell .mirk-field--small .mirk-field__label { font-size: 14px; }
+
+  /* An alert hint inside a field stays hidden until a control in the field
+     goes :user-invalid — a zero-JS native-validation message. Show one
+     unconditionally (a server-side error) by placing it outside the field or
+     overriding display. */
+  .hcms-shell .mirk-field .mirk-hint--alert { display: none; }
+  .hcms-shell .mirk-field:has(:user-invalid) .mirk-hint--alert { display: block; }
+
+  /* ============================ INVALID ============================ */
+  /* Native constraint validation, styled. :user-invalid fires only after the
+     user interacts (unlike :invalid, which would paint required fields red on
+     load). A flat destructive border is the 0012 stateful read; the focus ring
+     stays the focus signal. Pair the message with mirk-hint--alert. */
+  .hcms-shell .mirk-input:user-invalid, .hcms-shell .mirk-textarea:user-invalid, .hcms-shell .mirk-date__field:user-invalid, .hcms-shell .mirk-select__field:user-invalid, .hcms-shell .mirk-number:has(.mirk-number__input:user-invalid) {
+    border-color: var(--mirk-destructive);
+  }
+  .hcms-shell .mirk-checkbox:has(:user-invalid) .mirk-checkbox__box, .hcms-shell .mirk-toggle:has(:user-invalid) .mirk-toggle__track {
+    border-color: var(--mirk-destructive);
+  }
+  /* The unchecked ring is a borderless gradient pill; invalid swaps it for a
+     flat destructive ring (the fill pill still seats inside). */
+  .hcms-shell .mirk-radio:has(:user-invalid) .mirk-radio__ring {
+    background-image: none;
+    border: 2px solid var(--mirk-destructive);
+  }
+
+  /* ============================ PROGRESS ============================ */
+  /* A native <progress> in the slider's clothes: the canvas channel, the
+     slider-fill value bar. --blocks segments the fill into pixel blocks.
+     Keep the -webkit and -moz rules separate — an unrecognized pseudo-element
+     invalidates the whole selector list. */
+  .hcms-shell .mirk-progress {
+    appearance: none; -webkit-appearance: none;
+    display: block; width: 100%; height: 12px;
+    border: 1px solid var(--mirk-input-border);
+    background: var(--mirk-canvas);
+  }
+  .hcms-shell .mirk-progress::-webkit-progress-bar { background: transparent; }
+  .hcms-shell .mirk-progress::-webkit-progress-value { background: var(--mirk-slider-fill); }
+  .hcms-shell .mirk-progress::-moz-progress-bar { background: var(--mirk-slider-fill); }
+  .hcms-shell .mirk-progress--small { height: 8px; }
+  .hcms-shell .mirk-progress--round { border-radius: 9999px; overflow: hidden; }
+  .hcms-shell .mirk-progress--blocks::-webkit-progress-value {
+    background: repeating-linear-gradient(to right,
+      var(--mirk-slider-fill) 0 8px, transparent 8px 11px);
+  }
+  .hcms-shell .mirk-progress--blocks::-moz-progress-bar {
+    background: repeating-linear-gradient(to right,
+      var(--mirk-slider-fill) 0 8px, transparent 8px 11px);
+  }
+
+  /* ============================ NOTE ============================ */
+  /* An informational callout. Flat on purpose: bevel means pressable in this
+     kit (0012) and a note is content, so it gets the 1px content border over
+     the recessed face, never the raised edge. The 4px left edge carries the
+     status: neutral ink by default, destructive on --alert. */
+  .hcms-shell .mirk-note {
+    display: flex; flex-direction: column; gap: 4px;
+    background: var(--mirk-bevel-bg);
+    border: 1px solid var(--mirk-input-border);
+    border-left: 4px solid var(--mirk-mark-fg);
+    padding: 10px 14px 11px;
+    font-size: 14px; line-height: 1.5;
+  }
+  .hcms-shell .mirk-note__title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em;
+    color: var(--mirk-mark-fg);
+  }
+  .hcms-shell .mirk-note__body { color: var(--mirk-fg); }
+  .hcms-shell .mirk-note--alert { border-left-color: var(--mirk-destructive); }
+  .hcms-shell .mirk-note--alert .mirk-note__title { color: var(--mirk-destructive); }
+  .hcms-shell .mirk-note--rounded { border-radius: var(--mirk-radius); }
+
+  /* ============================ HINT ============================ */
+  /* Small print under a field: neutral help text, or --alert validation text. */
+  .hcms-shell .mirk-hint { margin: 0; font-size: 13px; line-height: 1.5; color: var(--mirk-placeholder-color); }
+  .hcms-shell .mirk-hint--alert { color: var(--mirk-destructive); }
+
+  /* ============================ LIST ============================ */
+  /* Content bullets. <ul> gets a square pixel dot (the sortable dot's idiom,
+     one step larger); a nested <ul> hollows it. <ol> gets zero-padded counters
+     in the muted label ink. Styles the bare <li> by descent, like the platform. */
+  .hcms-shell .mirk-list {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: 6px;
+    font-size: 16px; line-height: 1.5;
+  }
+  .hcms-shell .mirk-list li { position: relative; padding-left: 22px; }
+  .hcms-shell ul.mirk-list > li::before {
+    content: ""; position: absolute; left: 2px; top: 0.55em;
+    width: 6px; height: 6px; background: var(--mirk-mark-fg);
+    box-shadow: 1px 1px 0 0 var(--mirk-sortable-shadow);
+  }
+  .hcms-shell ol.mirk-list { counter-reset: mirk-li; }
+  .hcms-shell ol.mirk-list > li { counter-increment: mirk-li; padding-left: 38px; }
+  .hcms-shell ol.mirk-list > li::before {
+    content: counter(mirk-li, decimal-leading-zero) ".";
+    position: absolute; left: 0; top: 0;
+    color: var(--mirk-sortable-label);
+  }
+
+  /* One nested level: hollow square, same stack. */
+  .hcms-shell .mirk-list ul {
+    list-style: none; margin: 6px 0 0; padding: 0;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .hcms-shell .mirk-list ul > li::before {
+    content: ""; position: absolute; left: 2px; top: 0.55em;
+    width: 6px; height: 6px; background: transparent;
+    border: 1.5px solid var(--mirk-mark-fg); box-shadow: none;
+  }
+
+  .hcms-shell .mirk-list--small { font-size: 14px; gap: 4px; }
+  .hcms-shell .mirk-list--small li { padding-left: 18px; }
+  .hcms-shell ul.mirk-list--small > li::before, .hcms-shell .mirk-list--small ul > li::before { width: 5px; height: 5px; }
+  .hcms-shell ol.mirk-list--small > li { padding-left: 32px; }
+
+  /* ============================ BADGE ============================ */
+  /* A static tag label — the display counterpart to the mirk-tags input. Flat
+     on purpose: bevel means pressable (0012), a badge is content. */
+  .hcms-shell .mirk-badge {
+    display: inline-flex; align-items: center; gap: 0.375rem;
+    padding: 1px 8px 2px; font-size: 12px; line-height: 1.5;
+    color: var(--mirk-fg); background: var(--mirk-bevel-bg);
+    border: 1px solid var(--mirk-input-border);
+    white-space: nowrap; vertical-align: middle;
+  }
+  .hcms-shell .mirk-badge--accent { background: var(--mirk-accent); }
+  .hcms-shell .mirk-badge--round { border-radius: 9999px; padding: 1px 10px 2px; }
+  .hcms-shell .mirk-badge--alert { color: var(--mirk-destructive); border-color: var(--mirk-destructive); }
+
+  /* ============================ TABLE ============================ */
+  /* A flat data surface: the content face in a 1px frame, header cells in the
+     eyebrow register, hairline row dividers. Semantic <table> styled by
+     descent — no per-cell classes. The header/stripe tints ride color-mix
+     toward the ink so they stay visible in every palette (Pixel Quiet's
+     canvas and face are nearly the same value). Wrap in an overflow-x:auto
+     div when the table can outgrow its column. */
+  .hcms-shell .mirk-table {
+    width: 100%; border-collapse: collapse;
+    background: var(--mirk-bevel-bg);
+    border: 1px solid var(--mirk-input-border);
+    font-size: 14px; line-height: 1.5;
+  }
+  .hcms-shell .mirk-table th {
+    text-align: left; font-weight: 400;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em;
+    color: var(--mirk-placeholder-color);
+    background: color-mix(in srgb, var(--mirk-bevel-bg), var(--mirk-fg) 4%);
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--mirk-input-border);
+  }
+  .hcms-shell .mirk-table td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--mirk-input-border);
+    vertical-align: top;
+  }
+  .hcms-shell .mirk-table tbody tr:last-child td { border-bottom: 0; }
+  .hcms-shell .mirk-table--striped tbody tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--mirk-bevel-bg), var(--mirk-fg) 3%);
+  }
+  .hcms-shell .mirk-table--small { font-size: 13px; }
+  .hcms-shell .mirk-table--small th { padding: 5px 12px; font-size: 10px; }
+  .hcms-shell .mirk-table--small td { padding: 5px 12px; }
+
+  /* ============================ PAGE ============================ */
+  /* The quickstart shell: mirk-page on <body> (or any wrapper) gives a centered
+     column + typographic defaults, so two CDN tags and one class boot a full
+     page. Every rule rides :where() (zero specificity): any utility, component
+     class, or consumer rule beats it. Flow rhythm targets direct children only,
+     so margins never leak inside component internals. */
+  .hcms-shell .mirk-page { max-width: 640px; margin-inline: auto; padding: 48px 24px 96px; }
+  .hcms-shell .mirk-page--wide { max-width: 960px; }
+
+  /* Departure Mono ships one weight — hierarchy comes from size, never bold. */
+  .hcms-shell .mirk-page :where(h1, h2, h3, h4) { margin: 0; font-weight: 400; line-height: 1.15; }
+  .hcms-shell .mirk-page :where(h1) { font-size: 40px; }
+  .hcms-shell .mirk-page :where(h2) { font-size: 26px; }
+  .hcms-shell .mirk-page :where(h3) { font-size: 20px; }
+  .hcms-shell .mirk-page :where(h4) { font-size: 16px; }
+  .hcms-shell .mirk-page :where(p) { margin: 0; font-size: 16px; line-height: 1.6; }
+
+  .hcms-shell .mirk-page :where(a) { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  .hcms-shell .mirk-page :where(code, kbd) {
+    font-size: 0.875em; padding: 1px 4px;
+    background: var(--mirk-bevel-bg); border: 1px solid var(--mirk-input-border);
+  }
+  .hcms-shell .mirk-page :where(pre) {
+    margin: 0; padding: 12px 14px; font-size: 13px; line-height: 1.5; overflow-x: auto;
+    background: var(--mirk-bevel-bg); border: 1px solid var(--mirk-input-border);
+  }
+  .hcms-shell .mirk-page :where(pre code) { padding: 0; border: 0; background: none; font-size: inherit; }
+  .hcms-shell .mirk-page :where(hr) { border: 0; border-top: 1px solid var(--mirk-input-border); }
+
+  /* Flow rhythm — direct children only; headings open sections, eyebrows and
+     hints hug their neighbors. Equal specificity, so source order settles ties. */
+  .hcms-shell .mirk-page > :where(* + *) { margin-block-start: 14px; }
+  .hcms-shell .mirk-page > :where(h1, h2, h3, h4):where(* + *) { margin-block-start: 40px; }
+  .hcms-shell .mirk-page > :where(.mirk-eyebrow + *), .hcms-shell .mirk-page > :where(* + .mirk-hint) { margin-block-start: 6px; }
+
+  /* ============================ EYEBROW ============================ */
+  /* The kit's signature section label, as a shippable class. Block so it works
+     the same on <p>, <label>, or <div>, and flow margins always apply. */
+  .hcms-shell .mirk-eyebrow {
+    display: block; margin: 0;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em;
+    color: var(--mirk-placeholder-color);
+  }
 }
 
 /* Respect the machine — outside @layer components so it always wins. */
@@ -890,7 +1238,7 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
   display: flex;
   flex-direction: column;
   gap: 26px;
-  padding: 24px 24px 28px;
+  padding: 12px 24px 28px;
 }
 
 /* one labeled scalar field */
@@ -916,6 +1264,31 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
   padding: 9px 14px 10px;
 }
 .hcms-shell.pixel-quiet textarea.mirk-input { min-height: 76px; resize: vertical; }
+
+/* default scalar fields: one-row textareas that grow with their content.
+   Browsers without field-sizing get a scrollHeight fallback (enhance.js). */
+.hcms-shell.pixel-quiet .hcms-form textarea.mirk-textarea {
+  field-sizing: content;
+  resize: none;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* rich-text surface (@richtext): a contenteditable styled like a textarea */
+.hcms-shell.pixel-quiet .hcms-richtext {
+  min-height: 2.5em;
+  cursor: text;
+  overflow-wrap: break-word;
+}
+.hcms-shell.pixel-quiet .hcms-richtext a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.hcms-shell.pixel-quiet .hcms-richtext:empty::before {
+  content: attr(data-hcms-placeholder);
+  color: var(--mirk-placeholder-color);
+}
 .hcms-shell.pixel-quiet .mirk-select__field {
   font-size: 15px;
   padding: 8px 40px 9px 14px;

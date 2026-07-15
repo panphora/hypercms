@@ -45,7 +45,7 @@ test('refresh: re-extracts page data and updates form', () => {
   try {
     document.querySelector('.title').textContent = 'External'
     refresh()
-    const input = document.querySelector('[data-hcms-path="title"] input')
+    const input = document.querySelector('[data-hcms-path="title"] textarea')
     assert.equal(input.value, 'External')
   } finally {
     close()

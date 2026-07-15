@@ -49,9 +49,9 @@ test('deriveFormRules: scalar', () => {
   const doc = setupDoc()
   injectDefaults(doc)
   const form = deriveFormRules({ title: '.title' }, doc)
-  // Selectors are tag-qualified (`input[...]@value`) so the wrapping container
-  // (which also carries data-hcms-field="title") doesn't shadow the leaf input.
-  eq(form, { title: 'input[data-hcms-field="title"]@value' })
+  // Selectors are tag-qualified (`textarea[...]@value`) so the wrapping container
+  // (which also carries data-hcms-field="title") doesn't shadow the leaf field.
+  eq(form, { title: 'textarea[data-hcms-field="title"]@value' })
 })
 
 test('deriveFormRules: object', () => {
@@ -60,8 +60,8 @@ test('deriveFormRules: object', () => {
   const form = deriveFormRules({ author: { name: '.n', bio: '.b' } }, doc)
   eq(form, {
     author: {
-      name: 'input[data-hcms-field="name"]@value',
-      bio: 'input[data-hcms-field="bio"]@value',
+      name: 'textarea[data-hcms-field="name"]@value',
+      bio: 'textarea[data-hcms-field="bio"]@value',
     },
   })
 })
@@ -73,8 +73,8 @@ test('deriveFormRules: object-array', () => {
   // Top-level array: scoped by data-hcms-path. Nested would use data-hcms-field.
   eq(form, {
     products: ['[data-hcms-path="products"] > .hcms-array-items > [data-hcms-card]', {
-      name: 'input[data-hcms-field="name"]@value',
-      price: 'input[data-hcms-field="price"]@value',
+      name: 'textarea[data-hcms-field="name"]@value',
+      price: 'textarea[data-hcms-field="price"]@value',
     }],
   })
 })
@@ -173,6 +173,9 @@ test('deriveFormRules: contenteditable in scalar wrapper does not get shadowed b
     form.title,
     /:not\(\[data-hcms-shape="scalar"\]\).*data-hcms-field="title"/
   )
+  // A contenteditable leaf's value interface is innerHTML now, so the selector
+  // binds @innerHTML rather than @value.
+  assert.match(form.title, /@innerHTML$/, 'contenteditable leaf binds via innerHTML')
   // End-to-end: synthesize the form fragment and confirm querySelector
   // resolves to the contenteditable, not the wrapper.
   const wrapper = doc.createElement('label')
@@ -180,7 +183,7 @@ test('deriveFormRules: contenteditable in scalar wrapper does not get shadowed b
   wrapper.setAttribute('data-hcms-field', 'title')
   wrapper.innerHTML = '<span>Title</span><div contenteditable data-hcms-field="title">Hello</div>'
   const matched = wrapper.parentNode || (() => { const p = doc.createElement('div'); p.appendChild(wrapper); return p })()
-  const selector = form.title.replace(/@value$/, '')
+  const selector = form.title.replace(/@innerHTML$/, '')
   const found = matched.querySelector(selector)
   assert.ok(found, 'selector resolves')
   assert.equal(found.tagName, 'DIV', 'leaf is the contenteditable div, not the wrapping label')
