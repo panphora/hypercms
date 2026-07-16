@@ -30,9 +30,14 @@ describe('hypercms floating toggle', () => {
     window.hyperclay.Mutation = makeMutationShim(page)
   }
 
+  // page is moved OUT of open-wc's fixture wrapper (document.body.appendChild),
+  // so fixtureCleanup can't remove it — remove it here or its rules tag leaks
+  // into the next spec's document-scoped findRules.
   afterEach(() => {
     try { close() } catch {}
     cleanupToggle()
+    page?.remove()
+    page = undefined
     delete window.__hyperclayEditMode
     if (window.hyperclay) delete window.hyperclay.Mutation
   })
@@ -49,17 +54,21 @@ describe('hypercms floating toggle', () => {
     expect(document.getElementById('hcms-toggle-style')).to.exist
   })
 
+  // Absence checks compare a boolean, never the element: a failing assertion
+  // whose `actual` is a DOM node wedges the whole WTR session while it tries
+  // to serialize the error (verified empirically — the session reports 0/0
+  // and times out).
   it('does not inject when not in edit mode', async () => {
     await mountPage()
     maybeInjectToggle(realApi())
-    expect(document.getElementById('hcms-toggle')).to.equal(null)
+    expect(document.getElementById('hcms-toggle') === null).to.equal(true)
   })
 
   it('does not inject on a page without cms rules', async () => {
     page = await fixture(html`<div id="toggle-page-norules"><h1>Hi</h1></div>`)
     window.__hyperclayEditMode = true
     maybeInjectToggle(realApi())
-    expect(document.getElementById('hcms-toggle')).to.equal(null)
+    expect(document.getElementById('hcms-toggle') === null).to.equal(true)
   })
 
   it('click opens the real shell, click again closes it', async () => {
@@ -77,7 +86,7 @@ describe('hypercms floating toggle', () => {
     btn.click()
     await waitFor(() => !isOpen())
     expect(isOpen()).to.equal(false)
-    expect(document.querySelector('[data-hcms-shell]')).to.equal(null)
+    expect(document.querySelector('[data-hcms-shell]') === null).to.equal(true)
     expect(document.getElementById('hcms-toggle'), 'toggle survives close').to.exist
   })
 })
