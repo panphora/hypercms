@@ -23,14 +23,28 @@ Add hypercms and a trigger:
 
 ```html
 <script type="module" src="https://cdn.jsdelivr.net/npm/hyperclayjs@latest/src/utilities/mutation.js"></script>
-<script type="module">
-  import { cms } from 'https://cdn.jsdelivr.net/npm/hypercms@latest/src/hypercms.js'
-  document.getElementById('edit-btn').addEventListener('click', () => cms.open())
+<script src="https://cdn.jsdelivr.net/npm/@panphora/hyper-cms@latest/dist/hypercms.min.js"></script>
+<script>
+  document.getElementById('edit-btn').addEventListener('click', () => hypercms.cms.open())
 </script>
 <button id="edit-btn">Edit</button>
 ```
 
-That's the whole integration.
+That's the whole integration. The bundle exposes a global `hypercms` and
+installs its own styles, so nothing else is needed.
+
+Loading from a bundler instead:
+
+```js
+import { cms } from '@panphora/hyper-cms'
+import '@panphora/hyper-cms/styles.css'
+```
+
+Note the package's `.` export (`src/hypercms.js`) imports `hyper-html-api`
+by bare specifier, so it only resolves through a bundler or an import map.
+Loading that path straight from a CDN will fail. Use `dist/hypercms.min.js`
+in the browser, or jsDelivr's `+esm` route, which rewrites the bare imports
+for you but leaves you to call `installStyles()` yourself.
 
 `cms.open()` also accepts an explicit rules source:
 
@@ -252,7 +266,7 @@ Inside a template, the engine looks for these slots:
 ## API
 
 ```js
-import { cms } from 'hypercms'
+import { cms } from '@panphora/hyper-cms'
 
 cms.open(opts?)
 cms.close()
