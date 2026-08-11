@@ -1,5 +1,15 @@
 # hypercms changelog
 
+## [0.6.2] - 2026-08-11
+
+### Added
+- `kind`, `status`, and `url` fields to the `hyper` key
+
+### Changed
+- Synced ecosystem dependencies to their latest versions
+
+
+
 ## [0.6.0] - 2026-06-18
 
 ### Added
