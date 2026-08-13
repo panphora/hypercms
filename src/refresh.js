@@ -4,7 +4,9 @@ import { morphForm } from './morph.js'
 import { injectDefaults, injectComponents } from './templates.js'
 import { deriveFormRules } from './form-rules.js'
 import { coerceBooleans, applyErrorState } from './events.js'
+import { findUnresolved, applyUnresolvedState } from './unresolved.js'
 import { enhanceFields, upgradeRichTextRules } from './enhance.js'
+import { platform } from './platform.js'
 
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 
@@ -24,6 +26,8 @@ export function refreshForm(ctx, { ignoreActiveValue } = {}) {
   injectDefaults(ctx.doc)
   injectComponents(ctx.doc, ctx.pageRules)
   ctx.formRules = deriveFormRules(ctx.pageRules, ctx.doc)
+  // Before the extract below, for the same readable-failure reason as open().
+  ctx.unresolved = findUnresolved(ctx.pageRoot, ctx.pageRules)
 
   const newData = coerceBooleans(
     engine.extract(ctx.pageRoot, ctx.pageRules, ENGINE_OPTS),
@@ -43,14 +47,15 @@ export function refreshForm(ctx, { ignoreActiveValue } = {}) {
   // the last error state so error messages survive across observer-driven refreshes
   // (e.g., the rollback after a failed add).
   applyErrorState(ctx)
+  applyUnresolvedState(ctx)
   // Update fingerprint so subsequent commits against the new page state compare correctly.
   if (ctx.updateFingerprint) ctx.updateFingerprint()
 }
 
 export function installObserver({ debounce = 100, onRefresh }) {
-  const M = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.Mutation) || null
+  const M = platform('Mutation')
   if (!M || typeof M.onAnyChange !== 'function') {
-    throw new Error('hypercms: window.hyperclay.Mutation is required. Load hyperclayjs (or just the mutation utility) before initializing hypercms.')
+    throw new Error('hypercms: a mutation hub is required (clay.Mutation or hyperclay.Mutation). Load clayjs or hyperclayjs, or just the mutation utility, before initializing hypercms.')
   }
   let paused = 0
   const unsub = M.onAnyChange({ debounce }, () => {

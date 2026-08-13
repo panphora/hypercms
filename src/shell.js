@@ -79,6 +79,7 @@ export function mountShell({
           <span class="mirk-button__label">×</span>
         </button>
       </header>
+      <div class="hcms-shell-notice" role="status" hidden></div>
       <div class="hcms-shell-error" role="alert" hidden></div>
       <div data-hcms-form-root class="hcms-form"></div>
       <footer class="hcms-shell-footer"${showSaveButton ? '' : ' hidden'}>
@@ -106,6 +107,7 @@ export function mountShell({
   return {
     root,
     formRoot: root.querySelector('[data-hcms-form-root]'),
+    noticeEl: root.querySelector('.hcms-shell-notice'),
     errorEl: root.querySelector('.hcms-shell-error'),
     saveButton: root.querySelector('.hcms-shell-save'),
     destroy() {

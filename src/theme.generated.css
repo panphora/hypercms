@@ -1495,6 +1495,18 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
 .hcms-upload-clear--badge:hover { color: var(--mirk-destructive); border-color: var(--mirk-destructive); }
 .hcms-upload-clear--badge .hcms-x { width: 10px; height: 10px; }
 
+/* ---------- UNRESOLVED-FIELDS NOTICE ---------- */
+.hcms-shell-notice {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--mirk-mark-fg);
+  background: var(--mirk-bevel-bg);
+  border: 1px solid var(--mirk-input-border);
+  padding: 8px 12px;
+  margin: 0 24px 8px;
+}
+.hcms-shell-notice[hidden] { display: none; }
+
 /* ---------- ERROR BANNER + inline errors ---------- */
 .hcms-shell-error,
 .hcms-error {

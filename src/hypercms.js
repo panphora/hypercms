@@ -20,8 +20,10 @@ import {
 import { mountShell, setShellStyles, markStylesBundled } from './shell.js'
 import { refreshForm, installObserver } from './refresh.js'
 import { warnUnmatchedTemplates } from './diagnostics.js'
+import { findUnresolved, applyUnresolvedState } from './unresolved.js'
 import { enhanceFields, upgradeRichTextRules } from './enhance.js'
 import { maybeInjectToggle } from './toggle.js'
+import { platform, onPlatformEvent, MUTATION_READY, LIVESYNC_APPLIED } from './platform.js'
 
 export function installStyles(text) {
   setShellStyles(text)
@@ -72,8 +74,7 @@ function resyncForm(ctx, reason) {
 let prepareHookInstalled = false
 function installSavePrepareHook() {
   if (prepareHookInstalled) return
-  const onPrepareForSave =
-    (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.onPrepareForSave) || null
+  const onPrepareForSave = platform('onPrepareForSave')
   if (typeof onPrepareForSave !== 'function') return
   onPrepareForSave((clonedDocEl) => {
     const b = clonedDocEl && clonedDocEl.querySelector && clonedDocEl.querySelector('body')
@@ -114,6 +115,9 @@ export function open(opts = {}) {
   injectComponents(doc, pageRules)
   warnUnmatchedTemplates(doc, pageRules)
   const formRules = deriveFormRules(pageRules, doc)
+  // Runs before the first extract so a rule with invalid CSS names its field
+  // instead of throwing a bare SyntaxError out of querySelectorAll.
+  const unresolved = findUnresolved(pageRoot, pageRules)
   const data = coerceBooleans(engine.extract(pageRoot, pageRules, { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }), pageRules)
 
   // Suppress undo around mountShell: it toggles chrome-only classes on
@@ -141,6 +145,9 @@ export function open(opts = {}) {
     formRoot: shell.formRoot,
     shellRoot: shell.root,
     errorEl: shell.errorEl,
+    noticeEl: shell.noticeEl,
+    unresolved,
+    lastTwinSignature: null,
     lastFingerprint: null,
     lastData: null,
     observerHandle: null,
@@ -174,6 +181,7 @@ export function open(opts = {}) {
   const fragment = buildForm({ pageRules, formRules, data, doc })
   shell.formRoot.appendChild(fragment)
   enhanceFields(shell.formRoot, doc)
+  applyUnresolvedState(ctx)
 
   bindEvents(ctx)
   ctx.updateFingerprint()
@@ -187,7 +195,7 @@ export function open(opts = {}) {
   // is source-blind, so subscribe to the undo scope and force a non-ignoring refresh.
   // Fires synchronously before the debounced observer refresh, which then no-ops on
   // the active field. Guarded so it degrades to today's behavior when undo isn't loaded.
-  const u = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.undo) || null
+  const u = platform('undo')
   if (u && typeof u.on === 'function') {
     const onRevert = () => {
       if (state.ctx !== ctx) return
@@ -222,8 +230,7 @@ export function open(opts = {}) {
   // with ignoreActiveValue:true (preserve the user's in-progress field). Same
   // document live-sync dispatches on; unsubscribed in close().
   const onLivesync = () => resyncForm(ctx, 'livesync')
-  doc.addEventListener('hyperclay:livesync-applied', onLivesync)
-  ctx.livesyncUnsub = () => doc.removeEventListener('hyperclay:livesync-applied', onLivesync)
+  ctx.livesyncUnsub = onPlatformEvent(doc, LIVESYNC_APPLIED, onLivesync)
 
   // Wire global sortable callback to current ctx (replaced by close()).
   globalCommitTarget.ctx = ctx
@@ -507,17 +514,19 @@ export function maybeAutoOpen() {
 // Auto-open is ready only once <body> is parsed AND window.hyperclay.Mutation is
 // installed (open() needs both). NEVER throw out of module scope.
 function autoOpenReady() {
-  return !!document.body && !!(window.hyperclay && window.hyperclay.Mutation)
+  return !!document.body && !!platform('Mutation')
 }
 
 // Three layers, in order of preference:
 //   1. Sync fast-path: if <body> and Mutation are already here, fire now.
-//   2. Event: hyperclayjs's mutation.js dispatches 'hyperclay:mutation-ready' the
-//      instant it installs window.hyperclay.Mutation. On loader pages this is
-//      moot — the loader's first wave evaluates mutation before hypercms, so the
-//      fast-path wins — but the event catches any late install (the deferred
-//      `await import()` ordering). The body gate is re-checked in the handler
-//      because the event can land before <body> is parsed.
+//   2. Event: both clients dispatch a mutation-ready signal the instant they
+//      install the mutation hub, under two spellings ('clay:mutation-ready' and
+//      'hyperclay:mutation-ready'), so hypercms listens for both and dedups. On
+//      loader pages this is moot — the loader's first wave evaluates mutation
+//      before hypercms, so the fast-path wins — but the event catches any late
+//      install (the deferred `await import()` ordering). The body gate is
+//      re-checked in the handler because the event can land before <body> is
+//      parsed.
 //   3. Backstop: a slow self-cancelling 250ms poll for exotic hosts that hand-roll
 //      window.hyperclay.Mutation by direct assignment WITHOUT dispatching the
 //      event. It cancels the moment the event fires, open succeeds, or the
@@ -536,11 +545,12 @@ function whenReady(fn) {
   const deadline = Date.now() + AUTO_OPEN_DEADLINE_MS
   let done = false
   let timer = null
+  let offMutationReady = null
   const finish = () => {
     if (done) return
     done = true
     if (timer !== null) clearInterval(timer)
-    document.removeEventListener('hyperclay:mutation-ready', onMutationReady)
+    if (offMutationReady) offMutationReady()
   }
   function onMutationReady() {
     if (state.isOpen) {
@@ -551,10 +561,11 @@ function whenReady(fn) {
       finish()
       fn()
     }
-    // Body may still be pending — the one-shot listener is already consumed,
-    // so only the backstop remains to catch it once body arrives.
+    // Body may still be pending. Unlike the old one-shot listener this stays
+    // subscribed, so a later dispatch is still caught and the backstop is no
+    // longer the only remaining path.
   }
-  document.addEventListener('hyperclay:mutation-ready', onMutationReady, { once: true })
+  offMutationReady = onPlatformEvent(document, MUTATION_READY, onMutationReady)
   timer = setInterval(() => {
     if (state.isOpen) {
       finish()
@@ -568,8 +579,8 @@ function whenReady(fn) {
     if (Date.now() >= deadline) {
       finish()
       console.warn(
-        'hypercms: ?cms=true auto-open gave up — window.hyperclay.Mutation never appeared. ' +
-        'Load hyperclayjs (or the mutation utility) so the CMS can initialize.'
+        'hypercms: ?cms=true auto-open gave up — no mutation hub appeared. ' +
+        'Load clayjs or hyperclayjs (or just the mutation utility) so the CMS can initialize.'
       )
     }
   }, SAFETY_POLL_MS)

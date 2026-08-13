@@ -9,6 +9,8 @@
 // whose element holds only text are left untouched. Hosts opt out with
 // cms.open({ richText: false }).
 
+import { platform } from './platform.js'
+
 export function upgradeRichTextRules(rules, pageRoot) {
   if (!pageRoot || rules == null) return rules
   return walk(rules)
@@ -61,7 +63,7 @@ export function enhanceFields(root, doc) {
   const win = (doc && doc.defaultView) || (typeof window !== 'undefined' ? window : null)
   const RichClay =
     (win && win.richclay && win.richclay.RichClay) ||
-    (win && win.hyperclay && win.hyperclay.RichClay) ||
+    platform('RichClay', win) ||
     (win && typeof win.RichClay === 'function' ? win.RichClay : null)
   if (!RichClay) return
 

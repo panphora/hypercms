@@ -4,6 +4,7 @@ import { fromString as pathFromString, getRuleAtPath } from './path.js'
 import { buildItem, fileNameFromUrl, radioGroupName } from './form-builder.js'
 import { scaffold } from './scaffold.js'
 import { autosizeTextarea, enhanceFields } from './enhance.js'
+import { platform } from './platform.js'
 
 const BOUND = new WeakSet()
 
@@ -15,7 +16,7 @@ const BOUND = new WeakSet()
 //
 // No-op pass-through when window.hyperclay.undo isn't loaded.
 export function commitWithUndo(label, fn) {
-  const u = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.undo) || null
+  const u = platform('undo')
   if (!u) return fn()
   u.pause()
   try {
@@ -36,7 +37,7 @@ export function commitWithUndo(label, fn) {
 // on mount/unmount) never enter the undo stack. No-op pass-through when undo
 // isn't loaded.
 export function suppressUndo(fn) {
-  const u = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.undo) || null
+  const u = platform('undo')
   if (!u) return fn()
   u.pause()
   try {
@@ -167,7 +168,7 @@ export function onScalarChange(target, ctx) {
   const proj = resolveUnobservedProjection(ctx, pathStr)
   commit(extractFormData(ctx), { path: pathStr, structural: false }, ctx)
   if (proj) {
-    const u = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.undo) || null
+    const u = platform('undo')
     if (u && typeof u.recordValue === 'function') {
       u.recordValue(proj.el, { prop: proj.prop, oldValue: proj.oldValue, newValue: proj.el[proj.prop] })
     }
@@ -186,7 +187,7 @@ const CROP_OUTPUT = { type: 'image/webp', quality: 0.85, maxWidth: 2048, maxHeig
 async function maybeCrop(file, fieldEl) {
   const attr = fieldEl && fieldEl.getAttribute ? fieldEl.getAttribute('data-hcms-crop') : null
   if (attr == null) return { file }
-  const crop = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.quickcrop) || null
+  const crop = platform('quickcrop')
   if (typeof crop !== 'function') return { file }
   try {
     const r = await crop(file, { aspect: parseCropAspect(attr), ...CROP_OUTPUT })
@@ -245,7 +246,7 @@ export async function onUploadChange(inputEl, ctx) {
   const fileLike = cropped.file
   const previewDataUrl = cropped.dataURL || null
 
-  const upload = (typeof window !== 'undefined' && window.hyperclay && window.hyperclay.uploadFileBasic) || null
+  const upload = platform('uploadFileBasic')
   let url = null
   if (typeof upload === 'function') {
     try {
@@ -440,7 +441,7 @@ export function requestRemove(itemEl, ctx) {
   const arrayEl = itemEl.closest('[data-hcms-shape="object-array"], [data-hcms-shape="scalar-array"]')
   const message = resolveRemoveConfirm(arrayEl, ctx)
   if (message == null) return onRemove(itemEl, ctx)
-  const consent = typeof window !== 'undefined' && (window.hyperclay?.consent || window.consent)
+  const consent = platform('consent') || (typeof window !== 'undefined' && window.consent)
   if (typeof consent === 'function') {
     Promise.resolve(consent(message)).then(() => onRemove(itemEl, ctx), () => {})
   } else if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
