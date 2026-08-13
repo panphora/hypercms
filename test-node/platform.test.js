@@ -32,11 +32,11 @@ test('platform() finds Mutation under window.clay, under window.hyperclay, and r
   })
 })
 
-test("clayjs's renames resolve: clay.beforeSave is onPrepareForSave, clay.confirm is consent", () => {
-  const beforeSave = () => {}
+test("clayjs's renames resolve: clay.addDocumentTransform is onPrepareForSave, clay.confirm is consent", () => {
+  const addDocumentTransform = () => {}
   const confirm = () => {}
-  withWindow({ clay: { beforeSave, confirm } }, () => {
-    assert.equal(platform('onPrepareForSave'), beforeSave, 'onPrepareForSave reads clay.beforeSave')
+  withWindow({ clay: { addDocumentTransform, confirm } }, () => {
+    assert.equal(platform('onPrepareForSave'), addDocumentTransform, 'onPrepareForSave reads clay.addDocumentTransform')
     assert.equal(platform('consent'), confirm, 'consent reads clay.confirm')
   })
 })

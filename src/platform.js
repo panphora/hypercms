@@ -4,7 +4,7 @@
 //
 // TWO clients provide this and they disagree on names. hyperclayjs owns
 // window.hyperclay; clayjs owns window.clay and renamed things on the way past
-// (onPrepareForSave -> beforeSave, consent -> confirm) while leaving RichClay and
+// (onPrepareForSave -> addDocumentTransform, consent -> confirm) while leaving RichClay and
 // both upload helpers off its namespace entirely. So this is a capability table
 // rather than a namespace pointer: `window.clay ?? window.hyperclay` would resolve
 // to clay, find no onPrepareForSave, and silently stop stripping the CMS's own
@@ -15,7 +15,7 @@
 const CAPABILITIES = {
   Mutation:         (clay, hyperclay) => clay?.Mutation ?? hyperclay?.Mutation,
   undo:             (clay, hyperclay) => clay?.undo ?? hyperclay?.undo,
-  onPrepareForSave: (clay, hyperclay) => clay?.beforeSave ?? hyperclay?.onPrepareForSave,
+  onPrepareForSave: (clay, hyperclay) => clay?.addDocumentTransform ?? hyperclay?.onPrepareForSave,
   consent:          (clay, hyperclay) => clay?.confirm ?? hyperclay?.consent,
   RichClay:         (clay, hyperclay) => clay?.RichClay ?? hyperclay?.RichClay,
   quickcrop:        (clay, hyperclay) => clay?.quickcrop ?? hyperclay?.quickcrop,
