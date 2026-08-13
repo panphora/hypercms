@@ -35,6 +35,7 @@
     "build": "npm run build:theme && npx esbuild src/hypercms-bundle.js --bundle --minify --format=iife --global-name=hypercms --loader:.css=text --outfile=dist/hypercms.min.js",
     "prepublishOnly": "npm run build",
     "copy-to-hyperclayjs": "npm run build && node scripts/copy-to-hyperclayjs.js",
+    "copy-to-clayjs": "npm run build && node scripts/copy-to-clayjs.js",
     "test:node": "node --test 'test-node/**/*.test.js'",
     "test": "npm run test:node",
     "demo": "http-server . -p 5694 -c-1 -o /demo/",
