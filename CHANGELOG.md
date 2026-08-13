@@ -1,5 +1,16 @@
 # hypercms changelog
 
+## [0.7.0] - 2026-08-12
+
+### Added
+- Copy-to-clayjs delivery script
+
+### Changed
+- Renamed `clay.beforeSave` to `addDocumentTransform` in the platform
+- Updated hypercms
+
+
+
 ## [0.6.2] - 2026-08-11
 
 ### Added
