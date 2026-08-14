@@ -1,5 +1,16 @@
 # hypercms changelog
 
+## [0.7.1] - 2026-08-14
+
+### Added
+- Nothing
+
+### Changed
+- Sync package-lock with published dependencies
+- Update hypercms
+
+
+
 ## [0.7.0] - 2026-08-12
 
 ### Added
