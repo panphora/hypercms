@@ -1,3 +1,4 @@
+import { ruleAttrIndex } from 'hyper-html-api/engine'
 import { getRuleAtPath } from './path.js'
 
 export function humanize(key) {
@@ -245,7 +246,7 @@ export function injectComponentTemplate(doc, key) {
 // workflow) and @checked means checkbox (a text input showing the literal word
 // "true" helps nobody). @href is NOT inferred: editing a link/URL is far more
 // common than uploading a file, so an a@href rule stays a plain URL field and
-// the file upload is opt-in. Suffix is split like the engine (lastIndexOf('@'),
+// the file upload is opt-in. Suffix is split like the engine (ruleAttrIndex,
 // see engine/extract.js). Returns a DEFAULT_TEMPLATES key.
 const PROP_TO_COMPONENT = { src: '@image', checked: '@checkbox', innerHTML: '@richtext' }
 // data-hcms-component values for scalar rules. "chips" is array-only (below).
@@ -270,7 +271,7 @@ const ON_DEMAND_COMPONENT_KEYS = new Set([
 
 export function componentForScalarRule(rule, doc, pathArr) {
   if (typeof rule !== 'string') return '@scalar'
-  const at = rule.lastIndexOf('@')
+  const at = ruleAttrIndex(rule)
   const override = readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-component')
   if (override && SCALAR_COMPONENT_BY_NAME[override]) {
     const key = SCALAR_COMPONENT_BY_NAME[override]
@@ -304,7 +305,7 @@ export function componentForScalarRule(rule, doc, pathArr) {
 // logging shadowing notices.
 export function declaredComponentKey(rule, doc) {
   if (typeof rule !== 'string') return null
-  const at = rule.lastIndexOf('@')
+  const at = ruleAttrIndex(rule)
   const name = readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-component')
   return (name && SCALAR_COMPONENT_BY_NAME[name]) || null
 }
@@ -414,7 +415,7 @@ export function winningScalarArrayComponent(rule, pathArr, doc) {
 // data-rules-name idiom); labels derive via humanize() like every other label.
 export function readOptionsOverride(rule, doc) {
   if (typeof rule !== 'string') return null
-  const at = rule.lastIndexOf('@')
+  const at = ruleAttrIndex(rule)
   const raw = readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-options')
   if (raw == null) return null
   const tokens = raw.trim().split(/\s+/).filter(Boolean)
@@ -426,7 +427,7 @@ export function readOptionsOverride(rule, doc) {
 // reads it without a second page lookup.
 export function readCropOverride(rule, doc) {
   if (typeof rule !== 'string') return null
-  const at = rule.lastIndexOf('@')
+  const at = ruleAttrIndex(rule)
   return readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-crop')
 }
 

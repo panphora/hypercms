@@ -149,7 +149,7 @@ function resolveUnobservedProjection(ctx, pathStr) {
   if (fullPath.some((seg) => typeof seg === 'number' || seg === '*')) return null
   const rule = getRuleAtPath(ctx.pageRules, fullPath)
   if (typeof rule !== 'string') return null
-  const at = rule.lastIndexOf('@')
+  const at = engine.ruleAttrIndex(rule)
   if (at === -1) return null                       // text projection — observed
   const prop = rule.slice(at + 1)
   if (!UNOBSERVED_FIELD_PROPS.has(prop)) return null

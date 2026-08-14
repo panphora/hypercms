@@ -10,6 +10,7 @@
 // cms.open({ richText: false }).
 
 import { platform } from './platform.js'
+import { ruleAttrIndex } from 'hyper-html-api/engine'
 
 export function upgradeRichTextRules(rules, pageRoot) {
   if (!pageRoot || rules == null) return rules
@@ -18,7 +19,7 @@ export function upgradeRichTextRules(rules, pageRoot) {
   function walk(rule) {
     if (typeof rule === 'string') {
       if (rule.endsWith('[]')) return rule
-      if (rule.lastIndexOf('@') >= 0) return rule
+      if (ruleAttrIndex(rule) !== -1) return rule
       let el = null
       try {
         el = pageRoot.querySelector(rule)

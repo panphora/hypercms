@@ -4,8 +4,9 @@
 //
 // TWO clients provide this and they disagree on names. hyperclayjs owns
 // window.hyperclay; clayjs owns window.clay and renamed things on the way past
-// (onPrepareForSave -> addDocumentTransform, consent -> confirm) while leaving RichClay and
-// both upload helpers off its namespace entirely. So this is a capability table
+// (onPrepareForSave -> addDocumentTransform, consent -> confirm). clay.RichClay exists,
+// but quickcrop and uploadFileBasic have no clay equivalent at all, so image crop and
+// file upload silently degrade under clayjs. So this is a capability table
 // rather than a namespace pointer: `window.clay ?? window.hyperclay` would resolve
 // to clay, find no onPrepareForSave, and silently stop stripping the CMS's own
 // chrome out of every save.
@@ -32,16 +33,17 @@ export function platform(name, win) {
   return read(scope.clay, scope.hyperclay) || null
 }
 
-// Both spellings of the same signal. clayjs dispatches its own name and mirrors the
-// legacy one; it will stop mirroring when it drops the window.hyperclay shim, and
-// hyperclayjs only ever dispatches the legacy one. Listening for both is what makes
-// this survive that change without a flag day.
+// Both spellings of the same signal. Each client fires exactly one name: clayjs
+// its own, hyperclayjs the legacy one. Listening for both is what lets one build
+// of hypercms ride either client. The name-keyed guard below stays regardless, so
+// a listener on both names still can't double-fire if a client ever dispatches
+// the pair again.
 export const MUTATION_READY = ['clay:mutation-ready', 'hyperclay:mutation-ready']
 export const LIVESYNC_APPLIED = ['clay:sync-applied', 'hyperclay:livesync-applied']
 
 // Subscribe to every spelling of one signal, delivering the handler ONCE per
-// occurrence. clayjs dispatches the pair back to back in the same tick, so a plain
-// listener on each name fires the handler twice for one event: two form
+// occurrence. No client dispatches the pair today, but one that did would make a
+// plain listener on each name fire the handler twice for one event: two form
 // re-extracts, or two open() calls.
 //
 // The first name to arrive claims the tick, and only a DIFFERENT name is suppressed

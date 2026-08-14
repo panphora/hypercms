@@ -1,4 +1,5 @@
 import domAdapter from 'hyper-html-api/dom'
+import { ruleAttrIndex } from 'hyper-html-api/engine'
 
 const PREFIX = '[hypercms]'
 
@@ -76,11 +77,12 @@ function find(ctx, selector, opts, path) {
 
 // Mirrors the engine's scalar parsing: a trailing [] strips, "." and a leading
 // @ read the context node itself so they can never fail to resolve, and
-// otherwise the selector is the part before the LAST @.
+// otherwise the selector is the part before the separator @ (the last one that
+// is not inside brackets or quotes, so a mailto address stays in the selector).
 function selectorOf(rule) {
   if (rule === '.' || rule.startsWith('@')) return null
   if (rule.endsWith('[]')) return rule.slice(0, -2) || null
-  const at = rule.lastIndexOf('@')
+  const at = ruleAttrIndex(rule)
   return (at === -1 ? rule : rule.slice(0, at)) || null
 }
 
