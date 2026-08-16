@@ -28,14 +28,19 @@ export function fileNameFromUrl(url) {
 
 export function buildForm({ pageRules, formRules: _formRules, data, doc }) {
   const fragment = doc.createDocumentFragment()
-  const root = buildNode(pageRules, [], data, doc)
+  const root = buildNode(pageRules, [], data, doc, pageRules)
   if (root) fragment.appendChild(root)
   return fragment
 }
 
-export function buildItem({ shape, itemShape, pathArr, data, doc, itemKey }) {
+// pageRules rides alongside doc so a scalar bound to its own context element
+// ("." / "@attr") can resolve the row that carries its named control; doc alone
+// cannot answer that, because the row is only knowable from the enclosing array
+// rule. deriveFormRules resolves it from the same pair, which is what keeps the
+// built form and the derived rules in lockstep.
+export function buildItem({ shape, itemShape, pathArr, data, doc, itemKey, pageRules }) {
   if (shape === 'object-array-item') {
-    return buildObjectArrayItem(itemShape, pathArr, data, doc)
+    return buildObjectArrayItem(itemShape, pathArr, data, doc, pageRules)
   }
   if (shape === 'scalar-array-item') {
     return buildScalarArrayItem(pathArr, data, doc, itemKey || null)
@@ -43,23 +48,23 @@ export function buildItem({ shape, itemShape, pathArr, data, doc, itemKey }) {
   throw new Error(`hypercms: buildItem called with unknown shape "${shape}"`)
 }
 
-function buildNode(rule, pathArr, data, doc) {
+function buildNode(rule, pathArr, data, doc, pageRules) {
   const kind = shapeKindOf(rule)
-  if (kind === 'scalar') return buildScalar(rule, pathArr, data, doc)
-  if (kind === 'object') return buildObject(rule, pathArr, data, doc)
-  if (kind === 'object-array') return buildObjectArray(rule, pathArr, data, doc)
+  if (kind === 'scalar') return buildScalar(rule, pathArr, data, doc, pageRules)
+  if (kind === 'object') return buildObject(rule, pathArr, data, doc, pageRules)
+  if (kind === 'object-array') return buildObjectArray(rule, pathArr, data, doc, pageRules)
   if (kind === 'scalar-array') return buildScalarArray(rule, pathArr, data, doc)
   return null
 }
 
-function buildScalar(rule, pathArr, data, doc) {
+function buildScalar(rule, pathArr, data, doc, pageRules) {
   // Opt-in components select a richer template off the bound rule (explicit
   // data-hcms-component, then @prop inference); plain scalars stay @scalar.
   // A path-bound template override still wins inside resolveTemplate.
-  const componentKey = componentForScalarRule(rule, doc, pathArr)
+  const componentKey = componentForScalarRule(rule, doc, pathArr, pageRules)
   const tpl = resolveTemplate(pathArr, componentKey, doc)
   if (!tpl) throw new Error(`hypercms: missing template for scalar at "${pathArr.join('.')}"`)
-  const declaredKey = declaredComponentKey(rule, doc)
+  const declaredKey = declaredComponentKey(rule, doc, pathArr, pageRules)
   // A value-guard fell back to text: say so, or "where did my number input /
   // checkbox go" has no answer.
   if (declaredKey === '@number' && componentKey === '@scalar') {
@@ -81,10 +86,10 @@ function buildScalar(rule, pathArr, data, doc) {
   // corrupt that UI.
   const winnerKey = tpl.getAttribute?.('data-hcms-tpl')
   if ((componentKey === '@select' || componentKey === '@radio') && winnerKey === componentKey) {
-    populateOptions(node, rule, pathArr, data, doc, componentKey)
+    populateOptions(node, rule, pathArr, data, doc, componentKey, pageRules)
   }
   if (componentKey === '@image' && winnerKey === '@image') {
-    const crop = readCropOverride(rule, doc)
+    const crop = readCropOverride(rule, doc, pathArr, pageRules)
     if (crop != null && !node.hasAttribute('data-hcms-crop')) node.setAttribute('data-hcms-crop', crop)
   }
   // Stamp leaf input(s) FIRST so the container's data-hcms-field doesn't
@@ -119,8 +124,8 @@ function noteShadowedComponent(tpl, declaredKey, pathArr) {
 // page value is prepended when it isn't in the list, so opening the editor
 // never silently changes data. Radio inputs get a per-field name derived from
 // the path so sibling fields (and array items) never cross-group.
-function populateOptions(node, rule, pathArr, data, doc, componentKey) {
-  const provided = readOptionsOverride(rule, doc)
+function populateOptions(node, rule, pathArr, data, doc, componentKey, pageRules) {
+  const provided = readOptionsOverride(rule, doc, pathArr, pageRules)
   const values = provided ? [...provided] : []
   const current = data == null ? '' : String(data)
   if (current !== '' && !values.includes(current)) values.unshift(current)
@@ -192,7 +197,7 @@ function syncFileLeafText(node) {
   if (a) a.textContent = fileNameFromUrl(a.getAttribute('href'))
 }
 
-function buildObject(rule, pathArr, data, doc) {
+function buildObject(rule, pathArr, data, doc, pageRules) {
   const tpl = resolveTemplate(pathArr, '@object', doc)
   if (!tpl) throw new Error(`hypercms: missing template for object at "${pathArr.join('.')}"`)
   const node = cloneTemplate(tpl, doc)
@@ -209,13 +214,13 @@ function buildObject(rule, pathArr, data, doc) {
   const slot = requireSlot(node, '.hcms-object-fields', tpl, pathArr)
   for (const [k, child] of Object.entries(rule)) {
     const childData = data == null ? null : data[k]
-    const childNode = buildNode(child, [...pathArr, k], childData, doc)
+    const childNode = buildNode(child, [...pathArr, k], childData, doc, pageRules)
     if (childNode) slot.appendChild(childNode)
   }
   return node
 }
 
-function buildObjectArray(rule, pathArr, data, doc) {
+function buildObjectArray(rule, pathArr, data, doc, pageRules) {
   const tpl = resolveTemplate(pathArr, '@object-array', doc)
   if (!tpl) throw new Error(`hypercms: missing template for object-array at "${pathArr.join('.')}"`)
   const node = cloneTemplate(tpl, doc)
@@ -229,14 +234,14 @@ function buildObjectArray(rule, pathArr, data, doc) {
   const [, itemShape] = rule
   const items = Array.isArray(data) ? data : []
   items.forEach((itemData, i) => {
-    const itemNode = buildObjectArrayItem(itemShape, [...pathArr, i], itemData, doc)
+    const itemNode = buildObjectArrayItem(itemShape, [...pathArr, i], itemData, doc, pageRules)
     if (itemNode) slot.appendChild(itemNode)
   })
   applyConstraintVisibility(node)
   return node
 }
 
-function buildObjectArrayItem(itemShape, pathArr, data, doc) {
+function buildObjectArrayItem(itemShape, pathArr, data, doc, pageRules) {
   const tpl = resolveItemTemplate(pathArr, 'object-array-item', doc)
   if (!tpl) throw new Error(`hypercms: missing item template for "${pathArr.join('.')}"`)
   const node = cloneTemplate(tpl, doc)
@@ -256,7 +261,7 @@ function buildObjectArrayItem(itemShape, pathArr, data, doc) {
   if (itemShape && typeof itemShape === 'object' && !Array.isArray(itemShape)) {
     for (const [k, child] of Object.entries(itemShape)) {
       const childData = data == null ? null : data[k]
-      const childNode = buildNode(child, [...pathArr, k], childData, doc)
+      const childNode = buildNode(child, [...pathArr, k], childData, doc, pageRules)
       if (childNode) slot.appendChild(childNode)
     }
   }

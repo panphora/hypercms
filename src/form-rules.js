@@ -112,7 +112,7 @@ export function deriveFormRules(pageRules, doc) {
     // leaf tag, so an @image field reads img@src and an @file field reads
     // a@href, while a plain scalar still respects a global @scalar override
     // (e.g. a <textarea>) instead of assuming <input>.
-    const shapeEl = findShapeFieldEl(componentForScalarRule(rule, doc, pathArr), fieldKey)
+    const shapeEl = findShapeFieldEl(componentForScalarRule(rule, doc, pathArr, pageRules), fieldKey)
     if (shapeEl) return fieldSelectorFor(shapeEl, fieldKey)
     return `input[data-hcms-field="${cssEscape(fieldKey)}"]@value`
   }

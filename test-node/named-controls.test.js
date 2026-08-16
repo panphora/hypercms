@@ -669,3 +669,106 @@ test('restampAllSiblings: inline-template radios keep their author-set names', (
   const checked = Array.from(radios).filter((r) => r.checked).map((r) => r.value)
   assert.deepEqual(checked, ['blue'], 'checked state intact')
 })
+
+// --- 10. context leaves: a control declared on the LIST ROW itself ----------
+// A field bound to an attribute on the row ("@data-status") has no selector of
+// its own, so the element carrying its data-hcms-component is the row. Before
+// this worked, the canonical "state is content" board — each card holding its
+// own status — could only ever render a free-text box.
+
+const ROW_STATUS_RULES = { items: ['#items .row', { name: '.n', status: '@data-status' }] }
+const ROW_STATUS_DATA = { items: [{ name: 'Alpha', status: 'todo' }, { name: 'Beta', status: 'doing' }] }
+
+function rowStatusDoc(attrs = 'data-hcms-component="select" data-hcms-options="todo doing done"') {
+  return setupDoc(`
+    <ul id="items">
+      <li class="row" ${attrs} data-status="todo"><span class="n">Alpha</span></li>
+      <li class="row" ${attrs} data-status="doing"><span class="n">Beta</span></li>
+    </ul>`)
+}
+
+test('componentForScalarRule: a context-@ leaf reads its control off the enclosing row', () => {
+  const doc = rowStatusDoc()
+  assert.equal(
+    componentForScalarRule('@data-status', doc, ['items', '*', 'status'], ROW_STATUS_RULES),
+    '@select'
+  )
+  assert.deepEqual(readOptionsOverride('@data-status', doc, ['items', '*', 'status'], ROW_STATUS_RULES), [
+    'todo',
+    'doing',
+    'done',
+  ])
+})
+
+test('componentForScalarRule: a lone "." leaf reads its control off the enclosing row', () => {
+  const doc = setupDoc(`
+    <ul id="items">
+      <li class="row" data-hcms-component="select" data-hcms-options="todo doing">todo</li>
+    </ul>`)
+  const rules = { items: ['#items .row', '.'] }
+  assert.equal(componentForScalarRule('.', doc, ['items', '*'], rules), '@select')
+})
+
+test('componentForScalarRule: a context leaf with NO enclosing array stays @scalar', () => {
+  const doc = setupDoc(`<div data-hcms-component="select" data-hcms-options="a b"></div>`)
+  assert.equal(componentForScalarRule('@data-status', doc, ['status'], { status: '@data-status' }), '@scalar')
+  assert.equal(componentForScalarRule('@data-status', doc, [], null), '@scalar')
+  assert.equal(componentForScalarRule('.', doc, ['whole'], { whole: '.' }), '@scalar')
+})
+
+test('buildForm: a row-bound status renders a real <select> per row, with the row value selected', () => {
+  const doc = rowStatusDoc()
+  prepare(doc, ROW_STATUS_RULES)
+  const frag = buildForm({ pageRules: ROW_STATUS_RULES, formRules: null, data: ROW_STATUS_DATA, doc })
+  const mount = doc.createElement('div')
+  mount.appendChild(frag)
+  const selects = mount.querySelectorAll('select[data-hcms-field="status"]')
+  assert.equal(selects.length, 2, 'one select per row')
+  assert.deepEqual(
+    Array.from(selects[0].options).map((o) => o.value),
+    ['todo', 'doing', 'done']
+  )
+  assert.equal(selects[0].value, 'todo')
+  assert.equal(selects[1].value, 'doing')
+})
+
+test('deriveFormRules stays in lockstep with buildForm for a row-bound control', () => {
+  const doc = rowStatusDoc()
+  prepare(doc, ROW_STATUS_RULES)
+  const frag = buildForm({ pageRules: ROW_STATUS_RULES, formRules: null, data: ROW_STATUS_DATA, doc })
+  const mount = doc.createElement('div')
+  mount.appendChild(frag)
+  doc.body.appendChild(mount)
+  const formRules = deriveFormRules(ROW_STATUS_RULES, doc)
+  assert.match(formRules.items[1].status, /^select\[data-hcms-field="status"\]@value$/)
+  const extracted = engine.extract(mount, formRules)
+  assert.equal(
+    JSON.stringify(extracted),
+    JSON.stringify(ROW_STATUS_DATA),
+    'derived selectors read back exactly what the form rendered'
+  )
+})
+
+test('injectComponents injects the template a row-bound control selects', () => {
+  const doc = rowStatusDoc()
+  assert.equal(findTemplate(doc, '@select'), null)
+  injectComponents(doc, ROW_STATUS_RULES)
+  assert.ok(findTemplate(doc, '@select'), '@select template injected for the row-level control')
+})
+
+test('a row-bound number control still falls back to text when a row value is not numeric', () => {
+  const doc = setupDoc(`
+    <ul id="items">
+      <li class="row" data-hcms-component="number" data-qty="5"></li>
+      <li class="row" data-hcms-component="number" data-qty="TBD"></li>
+    </ul>`)
+  const rules = { items: ['#items .row', '@data-qty'] }
+  assert.equal(componentForScalarRule('@data-qty', doc, ['items', '*'], rules), '@scalar')
+
+  const ok = setupDoc(`
+    <ul id="items">
+      <li class="row" data-hcms-component="number" data-qty="5"></li>
+      <li class="row" data-hcms-component="number" data-qty="9"></li>
+    </ul>`)
+  assert.equal(componentForScalarRule('@data-qty', ok, ['items', '*'], rules), '@number')
+})

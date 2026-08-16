@@ -367,6 +367,7 @@ export function onAdd(arrayPath, ctx) {
     // Component arrays (chips) record their item-template key at build time so
     // added items keep the same chrome.
     itemKey: arrayEl.getAttribute('data-hcms-item-tpl') || null,
+    pageRules,
   })
   slot.appendChild(itemNode)
   enhanceFields(itemNode, ctx.doc)

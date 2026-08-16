@@ -269,10 +269,11 @@ const ON_DEMAND_COMPONENT_KEYS = new Set([
   '@chips-item',
 ])
 
-export function componentForScalarRule(rule, doc, pathArr) {
+export function componentForScalarRule(rule, doc, pathArr, pageRules) {
   if (typeof rule !== 'string') return '@scalar'
   const at = ruleAttrIndex(rule)
-  const override = readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-component')
+  const host = hostSelectorOf(rule, at, pathArr, pageRules)
+  const override = readElementAttr(host, doc, 'data-hcms-component')
   if (override && SCALAR_COMPONENT_BY_NAME[override]) {
     const key = SCALAR_COMPONENT_BY_NAME[override]
     // Value guards check exactly the elements the engine binds: under an array
@@ -280,13 +281,13 @@ export function componentForScalarRule(rule, doc, pathArr) {
     // plain scalar binds only the FIRST match — a decorative second element
     // sharing the selector must not veto the control.
     const multi = Array.isArray(pathArr) && pathArr.some((s) => s === '*' || typeof s === 'number')
-    if (key === '@number' && !currentScalarValues(rule, at, doc, multi).every(numberInputCanHold)) {
+    if (key === '@number' && !currentScalarValues(rule, at, doc, multi, host).every(numberInputCanHold)) {
       return '@scalar'
     }
     if (
       (key === '@checkbox' || key === '@toggle') &&
       (at < 0 || rule.slice(at + 1) !== 'checked') &&
-      !currentScalarValues(rule, at, doc, multi).every(checkboxCanHold)
+      !currentScalarValues(rule, at, doc, multi, host).every(checkboxCanHold)
     ) {
       return '@scalar'
     }
@@ -303,10 +304,10 @@ export function componentForScalarRule(rule, doc, pathArr) {
 // rule, or null (absent / unknown name / value-guard fallback). Lets the
 // builder tell "author asked for this" apart from suffix inference when
 // logging shadowing notices.
-export function declaredComponentKey(rule, doc) {
+export function declaredComponentKey(rule, doc, pathArr, pageRules) {
   if (typeof rule !== 'string') return null
   const at = ruleAttrIndex(rule)
-  const name = readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-component')
+  const name = readElementAttr(hostSelectorOf(rule, at, pathArr, pageRules), doc, 'data-hcms-component')
   return (name && SCALAR_COMPONENT_BY_NAME[name]) || null
 }
 
@@ -336,9 +337,8 @@ function checkboxCanHold(value) {
 // skips: cms-template seeds and the shell are never extracted, so their
 // values don't get a vote. `multi` mirrors the engine's binding: all matches
 // under an array (one element per item), only the first match otherwise.
-function currentScalarValues(rule, at, doc, multi) {
+function currentScalarValues(rule, at, doc, multi, selector) {
   if (!doc || !doc.querySelectorAll) return []
-  const selector = scalarSelectorOf(rule, at)
   if (!selector || selector === '.') return []
   let els = null
   try {
@@ -413,10 +413,10 @@ export function winningScalarArrayComponent(rule, pathArr, doc) {
 // Option list for @select/@radio: data-hcms-options="low medium high" on the
 // same page element as data-hcms-component. Space-separated value tokens (the
 // data-rules-name idiom); labels derive via humanize() like every other label.
-export function readOptionsOverride(rule, doc) {
+export function readOptionsOverride(rule, doc, pathArr, pageRules) {
   if (typeof rule !== 'string') return null
   const at = ruleAttrIndex(rule)
-  const raw = readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-options')
+  const raw = readElementAttr(hostSelectorOf(rule, at, pathArr, pageRules), doc, 'data-hcms-options')
   if (raw == null) return null
   const tokens = raw.trim().split(/\s+/).filter(Boolean)
   return tokens.length ? tokens : null
@@ -425,14 +425,59 @@ export function readOptionsOverride(rule, doc) {
 // Crop opt-in for @image: data-hcms-crop="1:1" | "16:9" | "free" on the page
 // element. The form-builder copies it onto the built field so the upload path
 // reads it without a second page lookup.
-export function readCropOverride(rule, doc) {
+export function readCropOverride(rule, doc, pathArr, pageRules) {
   if (typeof rule !== 'string') return null
   const at = ruleAttrIndex(rule)
-  return readElementAttr(scalarSelectorOf(rule, at), doc, 'data-hcms-crop')
+  return readElementAttr(hostSelectorOf(rule, at, pathArr, pageRules), doc, 'data-hcms-crop')
 }
 
 function scalarSelectorOf(rule, at) {
   return at >= 0 ? rule.slice(0, at) : rule
+}
+
+// The page element that carries this rule's authoring attributes
+// (data-hcms-component / -options / -crop), and whose values the guards read.
+//
+// A rule that binds its own context element — a lone "." or a leading "@attr" —
+// has no selector of its own: scalarSelectorOf yields "" or ".". Inside a list
+// that context element IS the row, so the element to read is the row, and the
+// row selector is the enclosing array's item selector. That is the "state is
+// content" case (data-status on the card), and without this it can never carry
+// a named control. Outside any list the context is the document root, so there
+// is still no element to read and we return "" — readElementAttr and
+// currentScalarValues both treat that as "nothing declared", exactly as before.
+//
+// The component is chosen per RULE, not per row, so any ONE matching row
+// answers the question; readElementAttr's querySelector taking the first match
+// is correct rather than a shortcut.
+function hostSelectorOf(rule, at, pathArr, pageRules) {
+  const own = scalarSelectorOf(rule, at)
+  if (own && own !== '.') return own
+  return enclosingArraySelector(pageRules, pathArr)
+}
+
+// The descendant-joined item selectors of every array rule crossed on the way
+// to pathArr, or "" when the path crosses none (or does not resolve). Mirrors
+// the scope chain hyperclay's resolveControl builds for the same path, so the
+// generator stamps the attribute on exactly the elements read back here.
+function enclosingArraySelector(pageRules, pathArr) {
+  if (pageRules == null || !Array.isArray(pathArr)) return ''
+  const scope = []
+  let node = pageRules
+  for (const seg of pathArr) {
+    if (node == null || typeof node === 'string') break
+    if (Array.isArray(node)) {
+      if (typeof node[0] !== 'string') return ''
+      if (seg !== '*' && typeof seg !== 'number') return ''
+      scope.push(node[0])
+      node = node[1]
+      continue
+    }
+    if (typeof node !== 'object') return ''
+    if (!Object.prototype.hasOwnProperty.call(node, seg)) return ''
+    node = node[seg]
+  }
+  return scope.join(' ')
 }
 
 // The only branch that reads the page DOM during selection.
@@ -453,12 +498,16 @@ function readElementAttr(selector, doc, attrName) {
 // same rule shapes as buildTemplateMap; idempotent and author-template-safe.
 export function injectComponents(doc, pageRules) {
   if (!doc || pageRules == null) return
-  walk(pageRules)
+  walk(pageRules, [])
 
-  function walk(rule) {
+  // The path is carried so componentForScalarRule can resolve a context leaf
+  // ("." / "@attr") against its enclosing row, the same way the builder does.
+  // Without it a row-level named control resolves to @scalar here, its template
+  // is never injected, and buildScalar then throws on the missing template.
+  function walk(rule, pathArr) {
     const kind = shapeKindOf(rule)
     if (kind === 'scalar') {
-      const key = componentForScalarRule(rule, doc)
+      const key = componentForScalarRule(rule, doc, pathArr, pageRules)
       if (ON_DEMAND_COMPONENT_KEYS.has(key)) injectComponentTemplate(doc, key)
       return
     }
@@ -471,15 +520,16 @@ export function injectComponents(doc, pageRules) {
       return
     }
     if (kind === 'object') {
-      for (const child of Object.values(rule)) walk(child)
+      for (const [k, child] of Object.entries(rule)) walk(child, [...pathArr, k])
       return
     }
     if (kind === 'object-array') {
       const itemShape = rule[1]
+      const itemPath = [...pathArr, '*']
       if (itemShape && typeof itemShape === 'object' && !Array.isArray(itemShape)) {
-        for (const child of Object.values(itemShape)) walk(child)
+        for (const [k, child] of Object.entries(itemShape)) walk(child, [...itemPath, k])
       } else {
-        walk(itemShape)
+        walk(itemShape, itemPath)
       }
     }
   }
