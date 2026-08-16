@@ -1,5 +1,16 @@
 # hypercms changelog
 
+## [0.7.2] - 2026-08-16
+
+### Changed
+- Sync ecosystem dependencies to latest versions
+- Sync package-lock with published dependency versions
+
+### Fixed
+- Resolve context-@ leaf controls from their enclosing row
+
+
+
 ## [0.7.1] - 2026-08-14
 
 ### Added
