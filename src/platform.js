@@ -4,12 +4,12 @@
 //
 // TWO clients provide this and they disagree on names. hyperclayjs owns
 // window.hyperclay; clayjs owns window.clay and renamed things on the way past
-// (onPrepareForSave -> addDocumentTransform, consent -> confirm). clay.RichClay exists,
-// but quickcrop and uploadFileBasic have no clay equivalent at all, so image crop and
-// file upload silently degrade under clayjs. So this is a capability table
-// rather than a namespace pointer: `window.clay ?? window.hyperclay` would resolve
-// to clay, find no onPrepareForSave, and silently stop stripping the CMS's own
-// chrome out of every save.
+// (onPrepareForSave -> addDocumentTransform, consent -> confirm). clay.RichClay and
+// clay.quickcrop exist; uploadFileBasic has no clay equivalent, so a clayjs page
+// keeps the cropped image as an inline data: URL instead of uploading it. So this
+// is a capability table rather than a namespace pointer: `window.clay ??
+// window.hyperclay` would resolve to clay, find no onPrepareForSave, and silently
+// stop stripping the CMS's own chrome out of every save.
 //
 // Reads happen per call, never cached. A client can install a capability after
 // hypercms evaluates — that is the whole reason whenReady() below exists.
