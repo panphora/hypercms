@@ -1462,6 +1462,41 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
   color: var(--mirk-placeholder-color);
 }
 
+/* ---------- UPLOADING (spec §9) ----------
+   One attribute, [data-hcms-uploading], set on the field for as long as the host
+   has the bytes, plus --hcms-upload-progress carrying the percent. No markup of
+   its own: the templates keep their exact shape, so a half-finished upload cannot
+   leave an orphan node behind in the form. The at-upload-time picture is painted
+   on the frame as a background, never assigned to the bound <img>, because that
+   img IS the field's value and a commit landing mid-upload would write a
+   two-megabyte data URL straight into the live page. */
+.hcms-upload[data-hcms-uploading] .mirk-image__frame {
+  background-size: cover;
+  background-position: center;
+}
+/* The empty state hides the thumb, so an upload into an empty field would have
+   nowhere to show. Uploading reveals it, preview or not. */
+.hcms-upload--image[data-hcms-uploading] .mirk-image__thumb { display: inline-block; }
+.hcms-upload--image[data-hcms-uploading] .mirk-image__upload { display: none; }
+/* No × mid-flight: clearing writes the leaf empty, which says nothing about the
+   request still running and reads as a cancel that is not one. */
+.hcms-upload[data-hcms-uploading] .hcms-upload-clear { display: none; }
+
+.hcms-upload[data-hcms-uploading] .mirk-image__frame::after,
+.hcms-upload--file[data-hcms-uploading] .mirk-file::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: var(--hcms-upload-progress, 0%);
+  background: var(--mirk-bevel-fg);
+  transition: width 120ms linear;
+}
+/* The @file row has no frame to hang the bar on, so it becomes the positioning
+   context itself. */
+.hcms-upload--file[data-hcms-uploading] .mirk-file { position: relative; }
+
 /* clear-× (vendored-inert; data-hcms-action, never .mirk-*__remove). Bare × for
    @file, a pinned corner badge for @image — mirroring .hcms-remove / --card. */
 .hcms-upload-clear {
@@ -1521,6 +1556,13 @@ body.hcms-open.hcms-overlay { overflow: hidden; }
 .hcms-error { margin-top: 6px; }
 .hcms-shell-error[hidden],
 .hcms-error[hidden] { display: none; }
+
+/* A note, not a refusal: the file WAS stored, in the page, and this says why it
+   is not on the host. Same slot, so there is one place a field ever speaks. */
+.hcms-error--info {
+  color: var(--mirk-mark-fg);
+  border-color: var(--mirk-input-border);
+}
 
 /* ---------- SAVE (sits at the end of the scrolling form, not pinned) ---------- */
 .hcms-shell-footer {

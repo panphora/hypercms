@@ -339,6 +339,10 @@ export function close() {
   // host uploader) bails instead of mutating the page / firing onChange after
   // teardown. Mirrors the state.ctx !== ctx guards on the undo/livesync paths.
   ctx.closed = true
+  // An upload still in flight is torn down like any other subscription. The
+  // ctx.closed check above already stops it writing; this stops it running.
+  for (const controller of ctx.uploads || []) { try { controller.abort() } catch {} }
+  ctx.uploads?.clear()
   const previouslyFocused = ctx.previouslyFocused
   ctx.dispatch('hcms:close', null)
   toggleCloseParam()

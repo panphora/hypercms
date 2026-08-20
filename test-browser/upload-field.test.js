@@ -81,14 +81,40 @@ describe('hypercms upload widgets', () => {
     expect(getComputedStyle(thumb).display).to.not.equal('none')
   })
 
-  it('falls back to a local object-URL preview when no host uploader is present', async () => {
+  it('shows the in-flight chrome on an empty field, then takes it away', async () => {
+    // CSS-only assertion, which is why it lives here: the empty state hides the
+    // thumb, so an upload into a field with no picture yet would have nowhere to
+    // show its progress. [data-hcms-uploading] is what reveals it.
+    let done
+    formRoot = await setup(() => new Promise((resolve) => { done = resolve }))
+    const field = formRoot.querySelector('.hcms-upload--image')
+    const thumb = field.querySelector('.mirk-image__thumb')
+    const upBtn = field.querySelector('.mirk-image__upload')
+    await waitFor(() => getComputedStyle(thumb).display === 'none')
+
+    pick(pickerFor(formRoot, 'hero'), 'cover.png', 'image/png')
+    await waitFor(() => field.hasAttribute('data-hcms-uploading'))
+    expect(getComputedStyle(thumb).display).to.not.equal('none')
+    expect(getComputedStyle(upBtn).display).to.equal('none')
+    expect(getComputedStyle(field.querySelector('.hcms-upload-clear')).display).to.equal('none')
+
+    done({ uploads: [{ url: '/u/cover.png' }] })
+    const img = formRoot.querySelector('img[data-hcms-field="hero"]')
+    await waitFor(() => img.getAttribute('src') === '/u/cover.png')
+    expect(field.hasAttribute('data-hcms-uploading')).to.equal(false)
+    expect(getComputedStyle(field.querySelector('.hcms-upload-clear')).display).to.not.equal('none')
+  })
+
+  it('embeds the file as a data: URL when no host uploader is present', async () => {
+    // Deliberately NOT a blob: URL. An object URL dies with the page that made
+    // it, so the committed picture looked right until the person reloaded.
     formRoot = await setup(undefined)
     const img = formRoot.querySelector('img[data-hcms-field="hero"]')
     pick(pickerFor(formRoot, 'hero'), 'cover.png', 'image/png')
 
-    await waitFor(() => (img.getAttribute('src') || '').startsWith('blob:'))
-    expect(img.getAttribute('src').startsWith('blob:')).to.equal(true)
-    expect(page.querySelector('img.hero').getAttribute('src').startsWith('blob:')).to.equal(true)
+    await waitFor(() => (img.getAttribute('src') || '').startsWith('data:'))
+    expect(img.getAttribute('src')).to.match(/^data:image\/png;base64,/)
+    expect(page.querySelector('img.hero').getAttribute('src')).to.match(/^data:image\/png;base64,/)
   })
 
   it('uploads a file, setting a@href plus the visible filename', async () => {

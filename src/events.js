@@ -190,7 +190,12 @@ async function maybeCrop(file, fieldEl) {
   const crop = platform('quickcrop')
   if (typeof crop !== 'function') return { file }
   try {
-    const r = await crop(file, { aspect: parseCropAspect(attr), ...CROP_OUTPUT })
+    // QuickCrop's `auto` modal adapter looks only at window.themodal. clayjs
+    // attaches its dialog as clay.modal and deliberately sets no global, so a
+    // clayjs page would silently get QuickCrop's own plain dialog. Naming it here
+    // keeps QuickCrop free of client knowledge and clayjs free of the global.
+    const modal = (typeof window !== 'undefined' && (window.clay?.modal ?? window.themodal)) || 'auto'
+    const r = await crop(file, { aspect: parseCropAspect(attr), modal, ...CROP_OUTPUT })
     if (r === null) return null
     return { file: blobToFile(r.blob, file.name), dataURL: r.dataURL }
   } catch (err) {
@@ -212,8 +217,8 @@ export function parseCropAspect(value) {
   return w / h
 }
 
-// quickcrop returns a nameless Blob; uploadFileBasic rejects raw Blobs and the
-// server keys content-type off the filename extension, so wrap it as a File
+// quickcrop returns a nameless Blob; the legacy uploader rejects raw Blobs and a
+// host keys content-type off the filename extension, so wrap it as a File
 // whose extension matches the encoded mime. Exported for tests.
 export function blobToFile(blob, originalName) {
   const ext = blob.type === 'image/webp' ? '.webp' : blob.type === 'image/jpeg' ? '.jpg' : '.png'
@@ -225,11 +230,25 @@ export function blobToFile(blob, originalName) {
   }
 }
 
-// A file was picked in an @file/@image widget. Optionally crop, upload via the
-// host's uploadFileBasic (or fall back to a local object-URL preview), write the
-// resulting URL into the bound img.src / a.href leaf, then commit once. The leaf
-// attribute change is an observed page mutation, so undo gets a clean step with
-// no commitWithUndo. Async; failures surface inline and reset the picker.
+// A file was picked in an @file/@image widget. Optionally crop, ask the host to
+// store the file, write the resulting URL into the bound img.src / a.href leaf,
+// then commit once. The leaf attribute change is an observed page mutation, so
+// undo gets a clean step with no commitWithUndo. Async; failures surface inline
+// and reset the picker.
+//
+// The upload either stores the file or it does not, and those are not the same
+// as success and failure. Three outcomes, deliberately spelled out:
+//
+//   stored             write the served URL. The page carries a reference.
+//   cannot store here  embed the bytes. A document open from a plain file server
+//                      or a desktop app has nowhere to put a file, and embedding
+//                      is the RIGHT answer there, not a consolation prize.
+//   failed             write nothing. Embedding a file the host refused for size
+//                      or type is the disease this capability exists to cure: it
+//                      is how a 2 MB photo ends up in the document, in every
+//                      future save, and in every stored version.
+const EMBED_CODES = new Set(['unsupported', 'payment-required'])
+
 export async function onUploadChange(inputEl, ctx) {
   const file = inputEl.files && inputEl.files[0]
   if (!file) return
@@ -246,37 +265,110 @@ export async function onUploadChange(inputEl, ctx) {
   const fileLike = cropped.file
   const previewDataUrl = cropped.dataURL || null
 
-  const upload = platform('uploadFileBasic')
-  let url = null
-  if (typeof upload === 'function') {
-    try {
-      const res = await upload(fileLike)
-      // uploadFileBasic resolves the full envelope { uploads:[{name,nodeId,url}], … };
-      // the served URL is uploads[0].url, NOT res.url.
-      url = res && res.uploads && res.uploads[0] && res.uploads[0].url
-    } catch (err) {
-      if (ctx.closed) { resetPicker(inputEl); return }
-      showFieldUploadError(fieldEl, (err && err.message) || 'Upload failed')
-      ctx.dispatch?.('hcms:error', { error: err, path: pathStr })
-      resetPicker(inputEl)
-      return
-    }
+  const upload = platform('upload')
+  if (typeof upload !== 'function') {
+    // No client at all: a bare HTML file with the CMS dropped in. Same outcome as
+    // a host that answers `unsupported`, and silent for the same reason.
+    return finishUpload(inputEl, fieldEl, ctx, pathStr, await embedUrl(fileLike, previewDataUrl, fieldEl), fileLike)
   }
+
+  // The crop, shown immediately on the thumb's own chrome and NOT on the bound
+  // leaf. Writing a two-megabyte data URL to the leaf makes it the field's value,
+  // and any commit() landing while the upload is in flight would project it
+  // straight into the live page.
+  showFieldUploadPreview(fieldEl, previewDataUrl)
+  setUploadProgress(fieldEl, 0)
+
+  const controller = beginUpload(ctx)
+  let res
+  try {
+    res = await upload(fileLike, {
+      signal: controller?.signal,
+      onProgress: ({ percent }) => setUploadProgress(fieldEl, percent),
+    })
+  } finally {
+    endUpload(ctx, controller)
+    clearUploadProgress(fieldEl)
+  }
+
   // The editor may have been closed while the upload was in flight; bail before
   // writing the (now detached) form leaf or committing to the live page.
   if (ctx.closed) { resetPicker(inputEl); return }
-  if (!url) {
-    // No host uploader (or it returned nothing): local preview only, which the
-    // commit persists into the page as a blob:/data: URL — non-persistent, by
-    // design (documented), so the widget still works in a bare page / demo.
-    url = previewDataUrl || makeLocalPreviewUrl(fileLike)
-  }
-  if (!url) { resetPicker(inputEl); return }
+  if (res.code === 'aborted') { resetPicker(inputEl); return }
 
+  if (res.ok) {
+    return finishUpload(inputEl, fieldEl, ctx, pathStr, res.uploads[0].url, fileLike)
+  }
+
+  if (!EMBED_CODES.has(res.code)) {
+    showFieldUploadError(fieldEl, res.msg || 'Upload failed')
+    ctx.dispatch?.('hcms:error', { error: new Error(res.msg || 'Upload failed'), code: res.code, path: pathStr })
+    resetPicker(inputEl)
+    return
+  }
+
+  // Embedded, and only `payment-required` says so. A person editing a file on
+  // their own desktop does not need to be told their file is a file; a person on
+  // a host that WOULD store it, for money, is being told why it did not.
+  const note = res.code === 'payment-required'
+    ? 'This file is stored in the page. Add a paid plan to upload files.'
+    : null
+  return finishUpload(inputEl, fieldEl, ctx, pathStr, await embedUrl(fileLike, previewDataUrl, fieldEl), fileLike, note)
+}
+
+// Write the URL into the leaf and commit once. `url` empty (no FileReader, an
+// unreadable file) means there is nothing to write, and writing '' would clear a
+// picture the person already had.
+//
+// The note goes on AFTER the commit, never before: a successful commit calls
+// setError(ctx, null), which clears every inline slot in the form. Writing the
+// note first leaves the person with an embedded file and no explanation of why.
+function finishUpload(inputEl, fieldEl, ctx, pathStr, url, fileLike, note = null) {
+  if (ctx.closed) { resetPicker(inputEl); return }
+  showFieldUploadPreview(fieldEl, null)
   showFieldUploadError(fieldEl, null)
+  if (!url) { resetPicker(inputEl); return }
   writeUploadLeaf(fieldEl, url, fileLike.name)
   commit(extractFormData(ctx), { path: pathStr, structural: false }, ctx)
+  if (note) showFieldUploadError(fieldEl, note, 'info')
   resetPicker(inputEl)
+}
+
+// The crop when there was one, otherwise the file's own bytes. Always a data:
+// URL and never blob:, so both paths degrade identically: a blob: URL is dead the
+// moment the page reloads, so the no-crop path used to commit a picture that
+// looked right until the person came back to it.
+async function embedUrl(fileLike, previewDataUrl, fieldEl) {
+  return previewDataUrl || (await fileToDataUrl(fileLike, fieldEl))
+}
+
+// The FileReader comes from the field's own realm, never from globalThis: a form
+// mounted into another document reads a File belonging to THAT window, and a
+// reader from a different realm rejects it.
+function fileToDataUrl(file, fieldEl) {
+  const Reader = fieldEl?.ownerDocument?.defaultView?.FileReader || globalThis.FileReader
+  if (!Reader) return Promise.resolve('')
+  return new Promise((resolve) => {
+    const reader = new Reader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+    reader.onerror = () => resolve('')
+    try { reader.readAsDataURL(file) } catch { resolve('') }
+  })
+}
+
+// In-flight uploads hang off the ctx, so close() tears them down the same way it
+// tears down the observer and the undo subscription. Without this the request
+// keeps running after the editor is gone: harmless to the page, because every
+// write is behind a ctx.closed check, but it holds the connection and the bytes.
+function beginUpload(ctx) {
+  if (typeof AbortController !== 'function') return null
+  const controller = new AbortController()
+  ;(ctx.uploads || (ctx.uploads = new Set())).add(controller)
+  return controller
+}
+
+function endUpload(ctx, controller) {
+  if (controller) ctx.uploads?.delete(controller)
 }
 
 // The × on an upload widget. Clears the bound leaf to empty and commits, so the
@@ -319,15 +411,37 @@ function resetPicker(inputEl) {
   try { inputEl.value = '' } catch { /* some inputs reject programmatic clear */ }
 }
 
-function makeLocalPreviewUrl(file) {
-  const U = (typeof URL !== 'undefined' && URL.createObjectURL) ? URL : null
-  if (!U) return ''
-  try { return U.createObjectURL(file) } catch { return '' }
+// The at-upload-time picture, painted on the frame rather than assigned to the
+// leaf, because the leaf IS the field's value. CSS reveals the thumb while
+// [data-hcms-uploading] is set, so the preview shows even on a field that is
+// still empty.
+function showFieldUploadPreview(fieldEl, dataUrl) {
+  const frame = fieldEl.querySelector ? fieldEl.querySelector('.mirk-image__frame') : null
+  if (!frame) return
+  if (dataUrl) frame.style.backgroundImage = `url("${dataUrl.replace(/"/g, '%22')}")`
+  else frame.style.removeProperty('background-image')
 }
 
-function showFieldUploadError(fieldEl, message) {
+// Progress where the person is looking. The percent drives a CSS custom property
+// rather than any markup of its own, so the templates keep their exact shape and
+// a half-finished upload cannot leave an orphan node behind in the form.
+function setUploadProgress(fieldEl, percent) {
+  const pct = Math.max(0, Math.min(100, Number(percent) || 0))
+  fieldEl.setAttribute('data-hcms-uploading', '')
+  fieldEl.style?.setProperty?.('--hcms-upload-progress', `${pct}%`)
+}
+
+function clearUploadProgress(fieldEl) {
+  fieldEl.removeAttribute('data-hcms-uploading')
+  fieldEl.style?.removeProperty?.('--hcms-upload-progress')
+}
+
+// `kind` distinguishes a refusal from a note: 'info' is the file that WAS stored,
+// in the page, and the slot says why rather than shouting about a failure.
+function showFieldUploadError(fieldEl, message, kind = 'error') {
   const slot = fieldEl.querySelector ? fieldEl.querySelector(':scope > .hcms-error') : null
   if (!slot) return
+  slot.classList.toggle('hcms-error--info', !!message && kind === 'info')
   if (message) {
     slot.textContent = message
     slot.hidden = false

@@ -129,19 +129,144 @@ test('closing the editor mid-upload aborts: no page mutation, no onChange after 
   reset(dom)
 })
 
-test('onUploadChange: no uploader + no createObjectURL → no throw, no commit', async () => {
-  // jsdom has no URL.createObjectURL, so the local-preview fallback yields no
-  // URL; the handler must bail cleanly rather than throwing. (The real preview
-  // path is covered in the browser tier.)
+test('onUploadChange: no client at all → embeds the file as a data: URL', async () => {
+  // A bare HTML file with the CMS dropped in. There is nowhere to put a file, so
+  // embedding is the right answer, and it must be data: rather than blob:, which
+  // is dead the moment the page reloads.
   const { dom, content, formRoot } = setup(undefined)
   delete globalThis.window.hyperclay.uploadFileBasic
   const input = fileInput(formRoot, 'hero')
   setFiles(input, [new window.File(['x'], 'cover.png', { type: 'image/png' })])
   input.dispatchEvent(new window.Event('change', { bubbles: true }))
-  await new Promise((r) => setTimeout(r, 10))
-  assert.equal(content.querySelector('img.hero').getAttribute('src') || '', '', 'nothing committed without a URL')
+
+  const img = content.querySelector('img.hero')
+  await flush(() => (img.getAttribute('src') || '').startsWith('data:'))
+  assert.match(img.getAttribute('src'), /^data:image\/png;base64,/, 'embedded as a data: URL')
 
   close(); reset(dom)
+})
+
+test('onUploadChange: a refused upload writes NOTHING and says why', async () => {
+  // The whole point of the capability: a file the host refused for size must not
+  // land in the document as a data: URL. That is the disease, not the fallback.
+  const { dom, content, formRoot } = setup(() => {
+    const err = new Error('That file is larger than this host accepts')
+    err.status = 413
+    err.response = JSON.stringify({ code: 'too-large', msg: 'That file is larger than this host accepts' })
+    return Promise.reject(err)
+  })
+  content.querySelector('img.hero').setAttribute('src', '/orig.png')
+  const fieldEl = formRoot.querySelector('[data-hcms-path="hero"]')
+  const slot = fieldEl.querySelector(':scope > .hcms-error')
+
+  const input = fileInput(formRoot, 'hero')
+  setFiles(input, [new window.File(['x'], 'huge.png', { type: 'image/png' })])
+  input.dispatchEvent(new window.Event('change', { bubbles: true }))
+
+  await flush(() => slot.hidden === false)
+  assert.equal(slot.hidden, false, 'the refusal is shown')
+  assert.match(slot.textContent, /larger than this host accepts/)
+  assert.equal(slot.classList.contains('hcms-error--info'), false, 'a refusal is not an informational note')
+  assert.equal(content.querySelector('img.hero').getAttribute('src'), '/orig.png', 'the page keeps the picture it had')
+
+  close(); reset(dom)
+})
+
+test('onUploadChange: payment-required embeds AND explains', async () => {
+  const { dom, content, formRoot } = setup(() => {
+    const err = new Error('Uploads need a paid plan')
+    err.status = 402
+    err.response = JSON.stringify({ code: 'payment-required', msg: 'Uploads need a paid plan' })
+    return Promise.reject(err)
+  })
+  const fieldEl = formRoot.querySelector('[data-hcms-path="hero"]')
+  const slot = fieldEl.querySelector(':scope > .hcms-error')
+
+  const input = fileInput(formRoot, 'hero')
+  setFiles(input, [new window.File(['x'], 'cover.png', { type: 'image/png' })])
+  input.dispatchEvent(new window.Event('change', { bubbles: true }))
+
+  const img = content.querySelector('img.hero')
+  await flush(() => (img.getAttribute('src') || '').startsWith('data:'))
+  assert.match(img.getAttribute('src'), /^data:image\/png;base64,/, 'the file still lands, in the page')
+  assert.equal(slot.hidden, false, 'and the reason is on screen')
+  assert.match(slot.textContent, /stored in the page/)
+  assert.equal(slot.classList.contains('hcms-error--info'), true, 'shown as a note, not a failure')
+
+  close(); reset(dom)
+})
+
+test('onUploadChange: an unannounced host embeds silently', async () => {
+  // clay.upload answers `unsupported` rather than rejecting: the host does not
+  // store files, which is not a failure and gets no error slot.
+  const { dom, content, formRoot } = setup(undefined)
+  delete globalThis.window.hyperclay.uploadFileBasic
+  globalThis.window.clay = {
+    upload: async () => ({ ok: false, msg: 'This host does not store uploaded files', msgType: 'skipped', code: 'unsupported', uploads: [] }),
+  }
+  const fieldEl = formRoot.querySelector('[data-hcms-path="hero"]')
+  const slot = fieldEl.querySelector(':scope > .hcms-error')
+
+  const input = fileInput(formRoot, 'hero')
+  setFiles(input, [new window.File(['x'], 'cover.png', { type: 'image/png' })])
+  input.dispatchEvent(new window.Event('change', { bubbles: true }))
+
+  const img = content.querySelector('img.hero')
+  await flush(() => (img.getAttribute('src') || '').startsWith('data:'))
+  assert.equal(slot.hidden, true, 'nothing to tell the person')
+
+  delete globalThis.window.clay
+  close(); reset(dom)
+})
+
+test('onUploadChange: progress drives the field attribute, and it is cleared after', async () => {
+  let report
+  let done
+  const { dom, formRoot } = setup((f, opts) => new Promise((resolve) => {
+    report = (percent) => opts.onProgress(percent)
+    done = () => resolve({ uploads: [{ name: f.name, url: '/u/cover.png' }] })
+  }))
+  const fieldEl = formRoot.querySelector('[data-hcms-path="hero"]')
+  const input = fileInput(formRoot, 'hero')
+  setFiles(input, [new window.File(['x'], 'cover.png', { type: 'image/png' })])
+  input.dispatchEvent(new window.Event('change', { bubbles: true }))
+
+  await flush(() => typeof report === 'function')
+  report(40)
+  assert.equal(fieldEl.hasAttribute('data-hcms-uploading'), true, 'the field is marked in flight')
+  assert.equal(fieldEl.style.getPropertyValue('--hcms-upload-progress'), '40%', 'percent reaches the chrome')
+
+  done()
+  const img = formRoot.querySelector('img[data-hcms-field="hero"]')
+  await flush(() => img.getAttribute('src') === '/u/cover.png')
+  assert.equal(fieldEl.hasAttribute('data-hcms-uploading'), false, 'cleared when the upload settles')
+
+  close(); reset(dom)
+})
+
+test('closing the editor aborts the in-flight upload', async () => {
+  // Against clay.upload, which takes a signal. The legacy uploader has no
+  // cancellation at all, so there the same close() only discards the result;
+  // that outcome is covered by the mid-upload test above.
+  let sawAbort = false
+  const { dom, formRoot } = setup(undefined)
+  delete globalThis.window.hyperclay.uploadFileBasic
+  globalThis.window.clay = {
+    upload: (f, opts) => new Promise((resolve) => {
+      opts.signal?.addEventListener('abort', () => { sawAbort = true })
+      setTimeout(() => resolve({ ok: true, uploads: [{ url: '/u/late.png' }] }), 50)
+    }),
+  }
+  const input = fileInput(formRoot, 'hero')
+  setFiles(input, [new window.File(['x'], 'late.png', { type: 'image/png' })])
+  input.dispatchEvent(new window.Event('change', { bubbles: true }))
+  await flush(() => formRoot.querySelector('[data-hcms-path="hero"]').hasAttribute('data-hcms-uploading'))
+
+  close()
+  assert.equal(sawAbort, true, 'the request is torn down, not just ignored')
+
+  delete globalThis.window.clay
+  reset(dom)
 })
 
 test('onUploadChange: a fresh pick clears a stale inline error before running', async () => {

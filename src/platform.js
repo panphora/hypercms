@@ -4,12 +4,11 @@
 //
 // TWO clients provide this and they disagree on names. hyperclayjs owns
 // window.hyperclay; clayjs owns window.clay and renamed things on the way past
-// (onPrepareForSave -> addDocumentTransform, consent -> confirm). clay.RichClay and
-// clay.quickcrop exist; uploadFileBasic has no clay equivalent, so a clayjs page
-// keeps the cropped image as an inline data: URL instead of uploading it. So this
-// is a capability table rather than a namespace pointer: `window.clay ??
-// window.hyperclay` would resolve to clay, find no onPrepareForSave, and silently
-// stop stripping the CMS's own chrome out of every save.
+// (onPrepareForSave -> addDocumentTransform, consent -> confirm, uploadFileBasic ->
+// upload). So this is a capability table rather than a namespace pointer:
+// `window.clay ?? window.hyperclay` would resolve to clay, find no
+// onPrepareForSave, and silently stop stripping the CMS's own chrome out of every
+// save.
 //
 // Reads happen per call, never cached. A client can install a capability after
 // hypercms evaluates — that is the whole reason whenReady() below exists.
@@ -20,7 +19,59 @@ const CAPABILITIES = {
   consent:          (clay, hyperclay) => clay?.confirm ?? hyperclay?.consent,
   RichClay:         (clay, hyperclay) => clay?.RichClay ?? hyperclay?.RichClay,
   quickcrop:        (clay, hyperclay) => clay?.quickcrop ?? hyperclay?.quickcrop,
-  uploadFileBasic:  (clay, hyperclay) => clay?.uploadFileBasic ?? hyperclay?.uploadFileBasic,
+  upload:           (clay, hyperclay) =>
+    clay?.upload ?? (hyperclay?.uploadFileBasic ? adaptLegacyUpload(hyperclay.uploadFileBasic) : null),
+}
+
+// The one capability where the two clients differ in SHAPE and not just in name,
+// so it is normalized here rather than at the call site. clay.upload answers one
+// envelope for every outcome and never rejects; uploadFileBasic resolves on
+// success and rejects on failure. A pick handler that had to know which client it
+// was riding would grow two of every branch, and the branch that matters most is
+// the one a rejection reads wrong: "this host does not store files" is not a
+// failure, and a caller that catches it as one stops when it should have embedded.
+//
+// The legacy client has no cancellation, so `signal` is honored on the near side
+// only: an upload already in flight runs to completion, and its result is
+// discarded rather than written. That is the same outcome the caller's own
+// ctx.closed check produces, one branch earlier.
+const LEGACY_STATUS_CODES = {
+  402: 'payment-required',
+  413: 'too-large',
+  415: 'unsupported-type',
+  401: 'unauthorized',
+  403: 'forbidden',
+  404: 'not-found',
+}
+
+const aborted = () => ({ ok: false, msg: 'Upload cancelled', msgType: 'skipped', code: 'aborted', uploads: [] })
+
+function adaptLegacyUpload(uploadFileBasic) {
+  return async function upload(file, { onProgress, signal } = {}) {
+    if (signal?.aborted) return aborted()
+    try {
+      // uploadFileBasic reports a bare percent; clay reports {loaded,total,percent}.
+      // Callers draw from `percent`, which is the only field both can supply.
+      const res = await uploadFileBasic(file, {
+        onProgress: (percent) => { onProgress?.({ loaded: null, total: null, percent }) },
+      })
+      if (signal?.aborted) return aborted()
+      const uploads = (res && res.uploads) || []
+      if (typeof uploads[0]?.url !== 'string') {
+        return { ok: false, msg: 'The host accepted the file but did not say where it put it', msgType: 'error', code: 'bad-response', uploads: [] }
+      }
+      return { ok: true, msg: res.msg || 'Uploaded', msgType: res.msgType || 'success', code: res.code || null, uploads }
+    } catch (err) {
+      if (signal?.aborted) return aborted()
+      // The rejection carries the HTTP status and the raw body, so the host's own
+      // code survives the round trip and the caller branches on the reason rather
+      // than pattern-matching a message.
+      let body = {}
+      try { body = JSON.parse(err?.response || '{}') } catch { body = {} }
+      const code = body.code || LEGACY_STATUS_CODES[err?.status] || 'error'
+      return { ok: false, msg: (err && err.message) || 'Upload failed', msgType: 'error', code, uploads: [] }
+    }
+  }
 }
 
 // Pass `win` when the caller already holds a realm (a doc.defaultView from a form

@@ -176,7 +176,11 @@ Use it for: tags, keywords, badge lists — short repeated values where a full r
 
 Selected automatically for `@src` rules; forced anywhere else with `data-hcms-component="image"` on the page element — e.g. a logo URL stored in a `data-icon` attribute, where the suffix can't be inferred.
 
-An "Upload image" button (`accept="image/*"`) sends the file through the host uploader (`window.hyperclay.uploadFileBasic` in a hyperclay app) and writes the served URL into the page's `img src`; the field shows a thumbnail with an × that clears it. Standalone (no host uploader) the widget still works with a temporary `blob:` preview — deliberately non-persistent. Upload errors render inline in the field and fire `hcms:error`; closing the editor mid-upload aborts cleanly.
+An "Upload image" button (`accept="image/*"`) sends the file to the host (`clay.upload`, or `window.hyperclay.uploadFileBasic` on an older client) and writes the served URL into the page's `img src`; the field shows a thumbnail with an × that clears it, and a progress bar while the bytes are in flight.
+
+A host that does not store files is not a failure. Standalone, or on any host that has not announced the upload capability, the file is embedded in the page as a `data:` URL instead, which is the right answer when nobody is serving the file. A host that *would* store it but not for this account (`payment-required`) also embeds, and says so in the field. A file the host actively refused, for size or type, writes nothing at all: embedding that one is what puts a two-megabyte photo in every future save.
+
+Upload errors render inline in the field and fire `hcms:error`; closing the editor mid-upload aborts the request.
 
 **Crop on upload:** add `data-hcms-crop` to the page element and the picked image routes through [quickcrop](https://github.com/panphora/quickcrop) (`window.hyperclay.quickcrop`, bundled in hyperclayjs's `smooth-sailing`/`everything` presets) before uploading. Values: `"1:1"`, `"16:9"` (any `W:H`), or `"free"` for an unconstrained crop. Cancelling the crop aborts the upload. Output is webp, longest edge capped at 2048px. Without quickcrop on the page the file uploads uncropped — the attribute never blocks.
 
