@@ -1,5 +1,10 @@
 # hypercms changelog
 
+## [Unreleased]
+
+### Changed
+- License: relicensed to MIT-0 (MIT No Attribution). Same rights, attribution no longer required.
+
 ## [0.8.0] - 2026-08-19
 
 ### Added

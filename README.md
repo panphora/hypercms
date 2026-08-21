@@ -388,4 +388,5 @@ Tests run against jsdom. Test helpers stub `window.hyperclay.Mutation` so the ha
 
 ## License
 
-0BSD.
+MIT-0 (MIT No Attribution): use it, remix it, ship it, no attribution needed.
+The vendored src/vendor/mirk.vendor.js is our own mirk-interface library, also MIT-0.

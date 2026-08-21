@@ -13,7 +13,7 @@
   "bugs": {
     "url": "https://github.com/panphora/hypercms/issues"
   },
-  "license": "0BSD",
+  "license": "MIT-0",
   "author": "David Miranda",
   "type": "module",
   "main": "src/hypercms.js",
