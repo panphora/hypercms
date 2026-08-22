@@ -1,5 +1,13 @@
 # hypercms changelog
 
+## [0.8.1] - 2026-08-21
+
+### Changed
+- Synced package-lock.json with published dependency versions
+- Updated hypercms
+
+
+
 ## [Unreleased]
 
 ### Changed
