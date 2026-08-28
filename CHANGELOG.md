@@ -1,5 +1,16 @@
 # hypercms changelog
 
+## [0.9.0] - 2026-08-28
+
+### Fixed
+- Editing a field no longer rebuilds the row from a clone of the first row, so anything the row's markup carried that the rules do not describe survives an edit. Lists whose rows have one or two fields were affected on every keystroke.
+- Removing or reordering a row now moves the row you acted on even when two rows read identically. The form supplies the page node each row came from, which the data alone cannot express.
+- Reordering rows whose fields read identically now moves them. Such a reorder produces no change in the extracted data, so the unchanged-data guard used to skip it before the page was ever touched. That guard now applies to plain edits only, since a structural operation is never a no-op even when the data matches.
+
+### Changed
+- Requires `hyper-html-api` 0.7.0 or later, for the list hooks the above depends on. The hooks are optional in the engine, so an older engine would leave row identity silently inactive rather than failing.
+
+
 ## [0.8.1] - 2026-08-21
 
 ### Changed

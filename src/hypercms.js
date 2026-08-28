@@ -21,6 +21,7 @@ import { mountShell, setShellStyles, markStylesBundled } from './shell.js'
 import { refreshForm, installObserver } from './refresh.js'
 import { warnUnmatchedTemplates } from './diagnostics.js'
 import { findUnresolved, applyUnresolvedState } from './unresolved.js'
+import { rowIdentitySeeder } from './row-identity.js'
 import { enhanceFields, upgradeRichTextRules } from './enhance.js'
 import { maybeInjectToggle } from './toggle.js'
 import { platform, onPlatformEvent, MUTATION_READY, LIVESYNC_APPLIED } from './platform.js'
@@ -118,7 +119,12 @@ export function open(opts = {}) {
   // Runs before the first extract so a rule with invalid CSS names its field
   // instead of throwing a bare SyntaxError out of querySelectorAll.
   const unresolved = findUnresolved(pageRoot, pageRules)
-  const data = coerceBooleans(engine.extract(pageRoot, pageRules, { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }), pageRules)
+  // Bind each form row to the page row it stands for while the two are still
+  // known to correspond, which is now: the form below is built from exactly this
+  // read. Without it the first structural operation of a session has no identity
+  // to go on and falls back to content matching.
+  const seeder = rowIdentitySeeder()
+  const data = coerceBooleans(engine.extract(pageRoot, pageRules, { skip: '[data-hcms-shell]', templateAttr: 'cms-template', ...seeder.hooks }), pageRules)
 
   // Suppress undo around mountShell: it toggles chrome-only classes on
   // document.body (hcms-open, etc.) which would otherwise land as undoable
@@ -180,6 +186,7 @@ export function open(opts = {}) {
   try {
   const fragment = buildForm({ pageRules, formRules, data, doc })
   shell.formRoot.appendChild(fragment)
+  seeder.seed(shell.formRoot)
   enhanceFields(shell.formRoot, doc)
   applyUnresolvedState(ctx)
 

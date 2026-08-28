@@ -7,6 +7,7 @@ import { coerceBooleans, applyErrorState } from './events.js'
 import { findUnresolved, applyUnresolvedState } from './unresolved.js'
 import { enhanceFields, upgradeRichTextRules } from './enhance.js'
 import { platform } from './platform.js'
+import { rowIdentitySeeder } from './row-identity.js'
 
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 
@@ -29,8 +30,13 @@ export function refreshForm(ctx, { ignoreActiveValue } = {}) {
   // Before the extract below, for the same readable-failure reason as open().
   ctx.unresolved = findUnresolved(ctx.pageRoot, ctx.pageRules)
 
+  // The morph below can rebuild a form row, which drops its binding to the page
+  // row it stood for. Read the pairing off this extract and re-establish it once
+  // the morph has settled, so the first operation after a refresh is not left
+  // guessing.
+  const seeder = rowIdentitySeeder()
   const newData = coerceBooleans(
-    engine.extract(ctx.pageRoot, ctx.pageRules, ENGINE_OPTS),
+    engine.extract(ctx.pageRoot, ctx.pageRules, { ...ENGINE_OPTS, ...seeder.hooks }),
     ctx.pageRules
   )
   const fragment = buildForm({
@@ -40,6 +46,7 @@ export function refreshForm(ctx, { ignoreActiveValue } = {}) {
     doc: ctx.doc,
   })
   morphForm(ctx.formRoot, fragment, { ignoreActiveValue })
+  seeder.seed(ctx.formRoot)
   // The morph can rebuild field nodes, dropping autosize heights and richclay
   // instances (instances are per-element); re-enhance whatever is new.
   enhanceFields(ctx.formRoot, ctx.doc)

@@ -590,13 +590,21 @@ export function onRemove(itemEl, ctx) {
 
 export function commit(newData, info, ctx) {
   const fingerprint = stableStringify(newData)
-  if (fingerprint === ctx.lastFingerprint) return { ok: true, skipped: true }
+  // Only a plain edit can be skipped on an unchanged fingerprint. A structural
+  // operation is never a no-op even when the data is identical: reordering two
+  // rows whose ruled fields read the same produces the same JSON, and the page
+  // nodes still have to move. Skipping it here meant the form supplied identity
+  // the engine never got to use.
+  if (!info.structural && fingerprint === ctx.lastFingerprint) {
+    return { ok: true, skipped: true }
+  }
 
   const result = applyWithRollback(ctx.pageRoot, ctx.pageRules, newData, {
     observerHandle: ctx.observerHandle,
     shellRoot: ctx.shellRoot,
     structural: !!info.structural,
     structuralPath: info.path || null,
+    formRoot: ctx.formRoot,
   })
   if (result.ok) {
     ctx.lastFingerprint = fingerprint

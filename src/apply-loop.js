@@ -1,5 +1,6 @@
 import { engine } from 'hyper-html-api'
 import { fromString as pathFromString, getRuleAtPath } from './path.js'
+import { rowIdentityHooks } from './row-identity.js'
 
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 
@@ -14,12 +15,17 @@ const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 // rollback restores only the failing subtree; listeners and state elsewhere
 // on the page survive.
 export function applyWithRollback(pageRoot, pageRules, newData, options = {}) {
-  const { observerHandle, shellRoot, structural, structuralPath } = options
+  const { observerHandle, shellRoot, structural, structuralPath, formRoot } = options
+  // The form's own row elements are the only stable handle across an apply, so
+  // when we have the form we let it say which page row each item is. Without it
+  // the engine matches by content, which is exact except between two rows that
+  // read identically.
+  const engineOpts = formRoot ? { ...ENGINE_OPTS, ...rowIdentityHooks(formRoot) } : ENGINE_OPTS
   observerHandle?.pause?.()
   try {
     if (!structural) {
       try {
-        engine.apply(pageRoot, pageRules, newData, ENGINE_OPTS)
+        engine.apply(pageRoot, pageRules, newData, engineOpts)
         return { ok: true }
       } catch (err) {
         return { ok: false, error: err }
@@ -33,7 +39,7 @@ export function applyWithRollback(pageRoot, pageRules, newData, options = {}) {
     const subtreeSnapshot = target ? captureChildren(target) : null
     const pageSnapshot = target ? null : captureNonShellSnapshot(pageRoot, shellRoot)
     try {
-      engine.apply(pageRoot, pageRules, newData, ENGINE_OPTS)
+      engine.apply(pageRoot, pageRules, newData, engineOpts)
       return { ok: true }
     } catch (err) {
       if (subtreeSnapshot) {
