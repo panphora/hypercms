@@ -1,5 +1,19 @@
 # hypercms changelog
 
+## [0.10.0] - 2026-08-28
+
+### Added
+- Tests covering row identity
+
+### Changed
+- Synced ecosystem dependencies to their latest versions
+- Updated hypercms
+
+### Fixed
+- Prevented stale dependencies from being used in vendor builds
+
+
+
 ## [0.9.0] - 2026-08-28
 
 ### Fixed
