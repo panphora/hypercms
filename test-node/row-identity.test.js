@@ -4,6 +4,7 @@ import { JSDOM } from 'jsdom'
 import { loadPage } from './_helpers.js'
 import { open, close, isOpen, api } from '../src/hypercms.js'
 import { applyWithRollback } from '../src/apply-loop.js'
+import { rowIdentityHooks, boundNodeFor } from '../src/row-identity.js'
 
 // Two rows reading the same text are the same row as far as the data is
 // concerned, so removing or reordering one of them is ambiguous to the engine's
@@ -359,6 +360,84 @@ test('row identity: removing the first of two identical PRODUCTS keeps the secon
     assert.deepEqual(variantIds(0), ['b0', 'b1'], 'it kept its own variant nodes, not a rebuild')
   } finally {
     close()
+    dom.window.close()
+  }
+})
+
+// refreshForm's OWN seed, which the "survives a form refresh" test above does not
+// cover: with the page unchanged, hyper-morph reuses every form card, so the
+// bindings open() established are still on those exact elements and the refresh
+// seed only rewrites what is already correct. Catching it needs the page to
+// change underneath the session, which is the whole reason refreshForm exists.
+test('row identity: a refresh after the PAGE changed re-seeds the new row', () => {
+  if (isOpen()) close()
+  const dom = page(row(0, 'Same') + row(1, 'Same'))
+  open()
+  try {
+    const list = document.getElementById('list')
+    const extra = document.createElement('div')
+    extra.className = 'product'
+    extra.setAttribute('data-orig', '2')
+    extra.innerHTML = '<span class="n">Same</span>'
+    list.appendChild(extra)
+
+    api.refresh()
+    api.removeItem('products.0')
+
+    assert.deepEqual(pageOrder(), ['1', '2'], 'removed node 0 and kept the other two in order')
+  } finally {
+    close()
+    dom.window.close()
+  }
+})
+
+// The two count guards, pinned directly. Driving a mismatch through the shipped
+// CMS is not reachable (every commit passes extractFormData, and restamping
+// keeps the form consistent), so these call the exported hooks against a form
+// built to disagree with the item list. Without the guards the first N form rows
+// get locked to items they may have nothing to do with.
+function fakeForm(nRows, key = 'products') {
+  const root = document.createElement('div')
+  const container = document.createElement('div')
+  container.setAttribute('data-hcms-path', key)
+  const slot = document.createElement('div')
+  slot.className = 'hcms-array-items'
+  for (let i = 0; i < nRows; i++) {
+    const card = document.createElement('div')
+    card.setAttribute('data-hcms-card', '')
+    slot.appendChild(card)
+  }
+  container.appendChild(slot)
+  root.appendChild(container)
+  return root
+}
+
+test('row identity: identifyRows declines when the form and the data disagree on length', () => {
+  const dom = page(row(0, 'a') + row(1, 'b'))
+  try {
+    const hooks = rowIdentityHooks(fakeForm(3))
+    assert.equal(hooks.identifyRows(['products'], [{}, {}]), null, '3 form rows, 2 items')
+    assert.equal(hooks.identifyRows(['products'], [{}, {}, {}, {}]), null, '3 form rows, 4 items')
+    assert.ok(Array.isArray(hooks.identifyRows(['products'], [{}, {}, {}])), 'equal lengths answer')
+  } finally {
+    dom.window.close()
+  }
+})
+
+test('row identity: onRowsApplied declines to bind when the counts disagree', () => {
+  const dom = page(row(0, 'a') + row(1, 'b'))
+  try {
+    const form = fakeForm(3)
+    const rows = Array.from(form.querySelectorAll('[data-hcms-card]'))
+    const pageNodes = Array.from(document.querySelectorAll('.product'))
+    const hooks = rowIdentityHooks(form)
+
+    hooks.onRowsApplied(['products'], pageNodes)          // 3 form rows, 2 nodes
+    assert.deepEqual(rows.map(boundNodeFor), [null, null, null], 'nothing was bound')
+
+    hooks.onRowsApplied(['products'], [...pageNodes, pageNodes[0]])  // 3 and 3
+    assert.deepEqual(rows.map(boundNodeFor).map(Boolean), [true, true, true], 'equal counts bind')
+  } finally {
     dom.window.close()
   }
 })

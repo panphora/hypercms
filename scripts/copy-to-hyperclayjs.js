@@ -4,6 +4,8 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
+import { assertDepsInRange } from './assert-deps-in-range.js'
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.join(__dirname, '..')
 
@@ -31,6 +33,8 @@ if (!fs.existsSync(distFile)) {
   console.error('Error: dist/hypercms.min.js not found. Run "npm run build" first.')
   process.exit(1)
 }
+
+assertDepsInRange(rootDir, { silent: isCheck })
 
 const minified = fs.readFileSync(distFile, 'utf8').trim()
 const expected = minified + '\n' + WRAPPER_CODE
