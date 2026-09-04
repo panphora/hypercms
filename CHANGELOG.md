@@ -1,5 +1,27 @@
 # hypercms changelog
 
+## [Unreleased]
+
+### Changed
+- The floating edit button now takes the page's font and ink, and paints itself on
+  an opaque surface picked for contrast against that ink, so it reads correctly on
+  a dark hero, a dark footer, or a page whose text colour fights its own background.
+- The button can be restyled with ordinary CSS: any `#hcms-toggle` rule of yours outranks
+  ours. Its placement, stacking and surface are pinned against hostile page resets, so those
+  go through `--hcms-toggle-bg`, `--hcms-toggle-offset` and `--hcms-toggle-z` instead;
+  `position` is always `fixed`.
+
+### Fixed
+- On a screen narrower than 800px the button was positioned off the left edge while
+  the CMS was open, because it shifted by the docked sidebar's width even though the
+  sidebar was full-viewport there.
+- The button's accessible name was frozen at "Toggle content editor" while it read
+  "Edit content" or "Close editor", so speech input could not activate it and screen
+  readers never heard it change state.
+- The button no longer loses its position or its surface to a page that resets
+  everything with `!important`, and no longer fails to appear on a page that already
+  uses the id `hcms-toggle`.
+
 ## [0.10.0] - 2026-08-28
 
 ### Added

@@ -195,15 +195,21 @@ test('integration: richText:false keeps a markup scalar as a plain textarea', ()
   dom.window.close()
 })
 
-test('integration: open warns on double-open', () => {
+test('integration: reopening the same view is a silent no-op, not a remount', () => {
   const dom = loadPage(FIXTURE)
   const orig = console.warn
   let warned = false
-  console.warn = (msg) => { if (/already open/.test(msg)) warned = true }
+  console.warn = (msg) => { if (/already open/.test(String(msg))) warned = true }
   open()
+  const firstShell = dom.window.document.querySelector('[data-hcms-shell]')
   open()
   console.warn = orig
-  assert.equal(warned, true)
+  assert.equal(warned, false, 'no warning on reopening the view that is already up')
+  assert.equal(
+    dom.window.document.querySelector('[data-hcms-shell]'),
+    firstShell,
+    'the shell is the same element: nothing was torn down and rebuilt'
+  )
   close()
   dom.window.close()
 })

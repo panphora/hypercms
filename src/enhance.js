@@ -9,7 +9,7 @@
 // whose element holds only text are left untouched. Hosts opt out with
 // cms.open({ richText: false }).
 
-import { platform } from './platform.js'
+import { resolveRichClay } from './richclay-bridge.js'
 import { ruleAttrIndex } from 'hyper-html-api/engine'
 
 export function upgradeRichTextRules(rules, pageRoot) {
@@ -62,10 +62,7 @@ export function enhanceFields(root, doc) {
   root.querySelectorAll('textarea[data-hcms-field]').forEach(autosizeTextarea)
 
   const win = (doc && doc.defaultView) || (typeof window !== 'undefined' ? window : null)
-  const RichClay =
-    (win && win.richclay && win.richclay.RichClay) ||
-    platform('RichClay', win) ||
-    (win && typeof win.RichClay === 'function' ? win.RichClay : null)
+  const RichClay = resolveRichClay(win)
   if (!RichClay) return
 
   root.querySelectorAll('[contenteditable][data-hcms-field]').forEach((el) => {

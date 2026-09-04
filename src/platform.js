@@ -16,6 +16,11 @@ const CAPABILITIES = {
   Mutation:         (clay, hyperclay) => clay?.Mutation ?? hyperclay?.Mutation,
   undo:             (clay, hyperclay) => clay?.undo ?? hyperclay?.undo,
   onPrepareForSave: (clay, hyperclay) => clay?.addDocumentTransform ?? hyperclay?.onPrepareForSave,
+  // Distinct from onPrepareForSave above, and the difference is the whole point:
+  // onPrepareForSave is save-only, so a hook there runs AFTER live sync has
+  // already broadcast the document. onSnapshot runs on every snapshot, save and
+  // sync alike, which is the only place a cleanup can sit and be seen by both.
+  onSnapshot:       (clay, hyperclay) => clay?.onSnapshot ?? hyperclay?.onSnapshot,
   consent:          (clay, hyperclay) => clay?.confirm ?? hyperclay?.consent,
   RichClay:         (clay, hyperclay) => clay?.RichClay ?? hyperclay?.RichClay,
   quickcrop:        (clay, hyperclay) => clay?.quickcrop ?? hyperclay?.quickcrop,

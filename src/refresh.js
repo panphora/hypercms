@@ -65,9 +65,15 @@ export function installObserver({ debounce = 100, onRefresh }) {
     throw new Error('hypercms: a mutation hub is required (clay.Mutation or hyperclay.Mutation). Load clayjs or hyperclayjs, or just the mutation utility, before initializing hypercms.')
   }
   let paused = 0
-  const unsub = M.onAnyChange({ debounce }, () => {
+  // The hub hands every subscriber the batch of changes it collected
+  // ({ type: 'add' | 'remove' | 'attribute', element, parent, attribute,
+  // oldValue, newValue }, see clayjs/src/lib/mutation.js). Discarding them was
+  // fine while the only view was the sidebar, which refreshes wholesale. A view
+  // that edits the page in place needs to know whether a batch is its own doing,
+  // so pass them on and let the view decide.
+  const unsub = M.onAnyChange({ debounce }, (changes) => {
     if (paused > 0) return
-    onRefresh()
+    onRefresh(changes)
   })
   return {
     unsubscribe: typeof unsub === 'function' ? unsub : () => {},

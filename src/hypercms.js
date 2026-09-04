@@ -2,29 +2,30 @@ import { engine } from 'hyper-html-api'
 import * as pathUtil from './path.js'
 import { scaffold } from './scaffold.js'
 import { morphForm } from './morph.js'
-import { injectDefaults, injectComponents } from './templates.js'
-import { deriveFormRules } from './form-rules.js'
-import { buildForm } from './form-builder.js'
 import {
-  bindEvents,
   commit,
   commitWithUndo,
-  suppressUndo,
   onAdd as evOnAdd,
   onRemove as evOnRemove,
   extractFormData,
-  stableStringify,
   restampAllSiblings,
-  coerceBooleans,
 } from './events.js'
-import { mountShell, setShellStyles, markStylesBundled } from './shell.js'
-import { refreshForm, installObserver } from './refresh.js'
-import { warnUnmatchedTemplates } from './diagnostics.js'
-import { findUnresolved, applyUnresolvedState } from './unresolved.js'
-import { rowIdentitySeeder } from './row-identity.js'
-import { enhanceFields, upgradeRichTextRules } from './enhance.js'
+import { setShellStyles, markStylesBundled } from './shell.js'
+import { createSidebarView } from './views/sidebar.js'
+import { createInlineView } from './views/inline.js'
+import {
+  state,
+  createSession,
+  startSession,
+  teardownSession,
+  nextSearchAfterClose,
+  shouldAutoOpenFromSearch,
+} from './session.js'
 import { maybeInjectToggle } from './toggle.js'
-import { platform, onPlatformEvent, MUTATION_READY, LIVESYNC_APPLIED } from './platform.js'
+import { platform, onPlatformEvent, MUTATION_READY } from './platform.js'
+import { cleanRichClayFromSnapshot } from './richclay-bridge.js'
+
+export { nextSearchAfterClose, shouldAutoOpenFromSearch }
 
 export function installStyles(text) {
   setShellStyles(text)
@@ -32,38 +33,6 @@ export function installStyles(text) {
 
 export function markBundledStyles(doc) {
   markStylesBundled(doc)
-}
-
-const state = {
-  isOpen: false,
-  ctx: null,
-  shell: null,
-  opts: null,
-}
-
-// Re-sync the form to the page after a change hypercms did NOT originate.
-// `reason` selects whether the field the user is currently typing in snaps:
-//   'undo' / 'redo' — the user's own deliberate action, so the focused field
-//                     SHOULD snap to the reverted value (ignoreActiveValue:false).
-//   'livesync'      — someone else's / the framework's change, so the user's
-//                     in-progress focused field must NOT be yanked away
-//                     (ignoreActiveValue:true). morphForm re-extracts every
-//                     other field to the new page value, killing the stale-form
-//                     clobber, while leaving the active field alone until blur.
-// Both reasons route through this one handler so there is a single place to
-// maintain the form-resync behavior.
-function resyncForm(ctx, reason) {
-  // open() may have moved on (closed, or reopened with a new ctx) between an
-  // async morph completing and this firing.
-  if (state.ctx !== ctx) return
-  const ignoreActiveValue = reason === 'livesync'
-  if (reason === 'livesync') {
-    // A full-document morph can wipe the shell's <head> stylesheet and the
-    // <body> chrome classes (both live outside the save-ignore shell subtree).
-    // Re-assert them before re-extracting.
-    state.shell?.restoreChrome?.()
-  }
-  refreshForm(ctx, { ignoreActiveValue })
 }
 
 // Strip hypercms's own body chrome from the SAVE clone so it never reaches disk
@@ -84,299 +53,114 @@ function installSavePrepareHook() {
   prepareHookInstalled = true
 }
 
+// Clean up after the richclay instances hypercms itself creates on page
+// elements. Installed once at first open, alongside the save-prepare hook above,
+// and for the same reason: the host client may not be loaded yet at module
+// evaluation. onSnapshot rather than onPrepareForSave, because this has to run
+// for live sync too — a hook on the save-only path fires after the editor's
+// leftovers have already been broadcast to every other browser.
+let snapshotHookInstalled = false
+function installSnapshotHook() {
+  if (snapshotHookInstalled) return
+  const onSnapshot = platform('onSnapshot')
+  if (typeof onSnapshot !== 'function') return
+  onSnapshot((clonedDocEl) => {
+    cleanRichClayFromSnapshot(clonedDocEl, typeof window !== 'undefined' ? window : null)
+  })
+  snapshotHookInstalled = true
+}
+
+// The views a session can be rendered through. A name that is not in here is a
+// caller error, never a fallback: silently opening a sidebar when someone asked
+// for the inline editor would read as the inline editor being broken.
+const VIEWS = {
+  sidebar: createSidebarView,
+  inline: createInlineView,
+}
+
 export function open(opts = {}) {
-  if (state.isOpen) {
-    console.warn('cms.open() called while already open; ignoring')
-    return
+  // Everything that can be rejected is rejected before anything is destroyed. A
+  // bad view name or a missing page must not leave a caller with the session
+  // they had already torn down.
+  const viewName = opts.view || 'sidebar'
+  const makeView = VIEWS[viewName]
+  if (!makeView) {
+    throw new Error(`hypercms: unknown view "${viewName}" (expected ${Object.keys(VIEWS).join(' or ')})`)
   }
-  installSavePrepareHook()
   const pageRoot = opts.pageRoot || (typeof document !== 'undefined' ? document.body : null)
   if (!pageRoot) throw new Error('hypercms: no pageRoot available')
   const doc = pageRoot.ownerDocument || (typeof document !== 'undefined' ? document : null)
   if (!doc) throw new Error('hypercms: no document available')
 
-  // Resolve rules via the union: an explicit rules object, a token string, or
-  // the default token "cms". findRules is document-scoped, so a head-mounted
-  // rules tag is found even though pageRoot defaults to <body>.
-  const source = opts.rules !== undefined ? opts.rules : 'cms'
-  const found = engine.findRules(doc, source)
-  if (!found) {
-    const what = typeof source === 'string' ? `data-rules-name~="${source}"` : 'the provided rules object'
-    throw new Error(`hypercms: no rules found for ${what}`)
-  }
-  // Rich-text upgrade (default on): bare scalar rules whose page element
-  // contains child elements are rebound through @innerHTML so links and
-  // inline formatting survive the round-trip, and their form fields render
-  // the @richtext component. Opt out with cms.open({ richText: false }).
-  const richText = opts.richText !== false
-  const pageRules = richText ? upgradeRichTextRules(found.rules, pageRoot) : found.rules
-  const rulesTagNode = found.tagNode
-
-  injectDefaults(doc)
-  injectComponents(doc, pageRules)
-  warnUnmatchedTemplates(doc, pageRules)
-  const formRules = deriveFormRules(pageRules, doc)
-  // Runs before the first extract so a rule with invalid CSS names its field
-  // instead of throwing a bare SyntaxError out of querySelectorAll.
-  const unresolved = findUnresolved(pageRoot, pageRules)
-  // Bind each form row to the page row it stands for while the two are still
-  // known to correspond, which is now: the form below is built from exactly this
-  // read. Without it the first structural operation of a session has no identity
-  // to go on and falls back to content matching.
-  const seeder = rowIdentitySeeder()
-  const data = coerceBooleans(engine.extract(pageRoot, pageRules, { skip: '[data-hcms-shell]', templateAttr: 'cms-template', ...seeder.hooks }), pageRules)
-
-  // Suppress undo around mountShell: it toggles chrome-only classes on
-  // document.body (hcms-open, etc.) which would otherwise land as undoable
-  // page edits. The shell subtree itself is already filtered via save-ignore.
-  const shell = suppressUndo(() => mountShell({
-    mountTo: opts.mountTo || doc.body,
-    side: opts.side || 'right',
-    overlay: !!opts.overlay,
-    showSaveButton: !!opts.showSaveButton,
-    title: opts.title,
-    eyebrow: opts.eyebrow,
-    theme: opts.theme,
-    doc,
-  }))
-
-  const ctx = {
-    doc,
-    pageRoot,
-    pageRules,
-    formRules,
-    rulesTagNode,
-    rulesSource: source,
-    richText,
-    formRoot: shell.formRoot,
-    shellRoot: shell.root,
-    errorEl: shell.errorEl,
-    noticeEl: shell.noticeEl,
-    unresolved,
-    lastTwinSignature: null,
-    lastFingerprint: null,
-    lastData: null,
-    observerHandle: null,
-    undoUnsub: null,
-    livesyncUnsub: null,
-    onChange: opts.onChange,
-    onError: opts.onError,
-    confirmRemove: opts.confirmRemove,
-    previouslyFocused: doc.activeElement,
-    dispatch(name, detail) {
-      const Ctor = (doc.defaultView && doc.defaultView.CustomEvent) || (typeof CustomEvent !== 'undefined' ? CustomEvent : null)
-      if (!Ctor) return
-      const ev = new Ctor(name, { bubbles: true, cancelable: name === 'hcms:change', detail })
-      shell.root.dispatchEvent(ev)
-    },
-    onCloseRequested() {
-      close()
-    },
-  }
-  ctx.updateFingerprint = () => {
-    ctx.lastFingerprint = stableStringify(extractFormData(ctx))
+  // Reopening the view that is already up is a silent no-op, not a warning: a
+  // host wiring a button to open({ view }) should be able to call it without
+  // first asking what is open. Switching views tears the old one down WITHOUT
+  // the close-only side effects — no hcms:close URL rewrite, no focus restore —
+  // because a switch is one continuous session from the person's side, not a
+  // close followed by an open.
+  let carriedFocus = null
+  if (state.isOpen) {
+    if (state.ctx.view.name === viewName) return
+    carriedFocus = state.ctx.previouslyFocused
+    teardownSession(state.ctx, { restoreFocus: false, updateUrl: false })
   }
 
-  // Everything past the shell mount touches the live DOM, the module-level state,
-  // and external subscriptions (observer, undo, livesync). A throw in here — most
+  installSavePrepareHook()
+  installSnapshotHook()
+
+  const view = makeView({ doc, pageRoot, opts })
+  const ctx = createSession({ view, doc, pageRoot, opts, onCloseRequested: () => close() })
+  // Where focus was before the FIRST open, carried across the switch. Closing
+  // the second view should return the person where they started, not to
+  // whatever held focus after the first view was pulled out from under them.
+  if (carriedFocus) ctx.previouslyFocused = carriedFocus
+
+  // Everything past here touches the live DOM, the module-level state, and
+  // external subscriptions (observer, undo, livesync). A throw in here — most
   // notably installObserver when window.hyperclay.Mutation isn't loaded — would
-  // otherwise strand the mounted shell in the DOM with no way to close it (close()
+  // otherwise strand the mounted view in the DOM with no way to close it (close()
   // early-returns while state.isOpen is false). Tear down whatever was wired,
-  // exactly as close() does, then rethrow so host misuse still fails loudly.
+  // without the close-only side effects (no hcms:close, no URL rewrite, no focus
+  // restore), then rethrow so host misuse still fails loudly.
   try {
-  const fragment = buildForm({ pageRules, formRules, data, doc })
-  shell.formRoot.appendChild(fragment)
-  seeder.seed(shell.formRoot)
-  enhanceFields(shell.formRoot, doc)
-  applyUnresolvedState(ctx)
+    view.mount(ctx.initialData)
+    startSession(ctx)
+    view.focusOnOpen()
 
-  bindEvents(ctx)
-  ctx.updateFingerprint()
+    state.isOpen = true
+    state.ctx = ctx
+    state.opts = opts
 
-  ctx.observerHandle = installObserver({
-    onRefresh: () => refreshForm(ctx),
-  })
-
-  // Undo/redo is a deliberate local action (unlike livesync or in-flight typing),
-  // so the focused form field SHOULD snap to the reverted value. The observer above
-  // is source-blind, so subscribe to the undo scope and force a non-ignoring refresh.
-  // Fires synchronously before the debounced observer refresh, which then no-ops on
-  // the active field. Guarded so it degrades to today's behavior when undo isn't loaded.
-  const u = platform('undo')
-  if (u && typeof u.on === 'function') {
-    const onRevert = () => {
-      if (state.ctx !== ctx) return
-      resyncForm(ctx, 'undo')
-      // A reverted change the consumer persists through onChange (e.g. the
-      // collection dashboard PUTs the record, not the page) would otherwise lag
-      // the undo: refreshForm re-syncs the form but never fires onChange, and a
-      // commit() here would be fingerprint-skipped (refreshForm already updated
-      // it). Extract the reverted state from the PAGE (the source of truth after
-      // an undo/redo; the form can lag a morph) and fire onChange directly, but
-      // only when it actually changed — guards spurious PUTs on undo/redo of
-      // unrelated edits elsewhere on the page.
-      const data = coerceBooleans(
-        engine.extract(ctx.pageRoot, ctx.pageRules, { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }),
-        ctx.pageRules
-      )
-      if (stableStringify(data) !== stableStringify(ctx.lastData)) {
-        ctx.lastData = data
-        ctx.onChange?.(data, { path: '', structural: false })
-      }
-    }
-    u.on('undo', onRevert)
-    u.on('redo', onRevert)
-    ctx.undoUnsub = () => { u.off('undo', onRevert); u.off('redo', onRevert) }
-  }
-
-  // Live-sync / version-restore / any framework-applied full-document morph runs
-  // inside window.hyperclay.Mutation.pause(), which the source-blind observer
-  // above is deaf to — so without this the form stays stale after a remote edit
-  // and the next local commit re-applies the stale data, clobbering the remote
-  // change. Subscribe to the morph-applied signal live-sync emits and re-extract
-  // with ignoreActiveValue:true (preserve the user's in-progress field). Same
-  // document live-sync dispatches on; unsubscribed in close().
-  const onLivesync = () => resyncForm(ctx, 'livesync')
-  ctx.livesyncUnsub = onPlatformEvent(doc, LIVESYNC_APPLIED, onLivesync)
-
-  // Wire global sortable callback to current ctx (replaced by close()).
-  globalCommitTarget.ctx = ctx
-  installGlobalSortableCommit(doc)
-
-  // Move focus into the shell — survives close+restore via previouslyFocused.
-  focusFirstIn(shell.root)
-
-  state.isOpen = true
-  state.ctx = ctx
-  state.shell = shell
-  state.opts = opts
-
-  ctx.dispatch('hcms:open', { pageRoot })
+    ctx.dispatch('hcms:open', { pageRoot })
   } catch (err) {
-    ctx.observerHandle?.unsubscribe?.()
-    ctx.undoUnsub?.()
-    ctx.livesyncUnsub?.()
-    ctx.detachEvents?.()
-    if (globalCommitTarget.ctx === ctx) globalCommitTarget.ctx = null
-    suppressUndo(() => shell.destroy())
-    state.isOpen = false
-    state.ctx = null
-    state.shell = null
-    state.opts = null
+    // A failed switch already destroyed the view that was up, so nothing is
+    // mounted and nothing can be reopened; the least bad outcome is handing
+    // focus back where it started. On a first open focus never moved, so
+    // restoring it there would be a no-op either way.
+    teardownSession(ctx, { dispatch: false, restoreFocus: !!carriedFocus, updateUrl: false })
     throw err
   }
 }
 
-function focusFirstIn(root) {
-  const sel = 'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
-  const target = root.querySelector(sel)
-  if (target && typeof target.focus === 'function') target.focus()
-}
-
-const globalCommitTarget = { ctx: null }
-
-function installGlobalSortableCommit(doc) {
-  const win = doc.defaultView || (typeof globalThis !== 'undefined' ? globalThis : null)
-  if (!win) return
-  const hypercmsCommitFn = function hypercmsCommitGlobal() {
-    const ctx = globalCommitTarget.ctx
-    if (!ctx) return
-    restampAllSiblings(ctx.formRoot)
-    // Route through commitWithUndo so a drag-reorder lands as a labeled
-    // 'Reorder' commit (not a generic idle 'Edit') and a failed apply's
-    // mutate+rollback is never recorded as a no-op commit. No-op pass-through
-    // when undo isn't loaded.
-    return commitWithUndo('Reorder', () =>
-      commit(extractFormData(ctx), { path: '', structural: true }, ctx)
-    )
-  }
-  if (typeof win.hypercmsCommit !== 'function') win.hypercmsCommit = hypercmsCommitFn
-  // Also mirror to globalThis so non-window contexts (Node tests, workers)
-  // can resolve the bare name from `new Function('hypercmsCommit()')`.
-  if (typeof globalThis !== 'undefined' && typeof globalThis.hypercmsCommit !== 'function') {
-    globalThis.hypercmsCommit = hypercmsCommitFn
-  }
-}
-
-// The query param that drives ?cms=true auto-open. Closing the CMS rewrites it
-// to cms=false (param kept) so a refresh/share of the post-close URL does not
-// auto-reopen.
-const AUTO_OPEN_PARAM = 'cms'
-
-// Pure: given a location.search string, return the search string after a close.
-// Only rewrites when cms=true is present; every other param + ordering is
-// preserved, and a search without cms (or already cms=false) is returned
-// unchanged so we never inject the param into a page that never carried it.
-export function nextSearchAfterClose(search) {
-  const str = typeof search === 'string' ? search : ''
-  const qIndex = str.indexOf('?')
-  const query = qIndex === -1 ? str : str.slice(qIndex + 1)
-  if (!query) return str
-  const params = new URLSearchParams(query)
-  if (params.get(AUTO_OPEN_PARAM) !== 'true') return str
-  params.set(AUTO_OPEN_PARAM, 'false')
-  return '?' + params.toString()
-}
-
-// Pure: should the CMS auto-open for this location.search? Exactly 'true'.
-export function shouldAutoOpenFromSearch(search) {
-  const str = typeof search === 'string' ? search : ''
-  const qIndex = str.indexOf('?')
-  const query = qIndex === -1 ? str : str.slice(qIndex + 1)
-  if (!query) return false
-  return new URLSearchParams(query).get(AUTO_OPEN_PARAM) === 'true'
-}
-
-// Rewrite ?cms=true → ?cms=false via history.replaceState (no reload, hash and
-// every other param preserved). No-op when the param isn't present or the
-// History API is unavailable.
-function toggleCloseParam() {
-  if (typeof window === 'undefined' || !window.location || !window.history) return
-  if (typeof window.history.replaceState !== 'function') return
-  const current = window.location.search
-  const next = nextSearchAfterClose(current)
-  if (next === current) return
-  window.history.replaceState(window.history.state, '', next + window.location.hash)
-}
-
 export function close() {
   if (!state.isOpen) return
-  const { ctx, shell } = state
-  // Mark this ctx dead so any in-flight async work (e.g. an upload awaiting the
-  // host uploader) bails instead of mutating the page / firing onChange after
-  // teardown. Mirrors the state.ctx !== ctx guards on the undo/livesync paths.
-  ctx.closed = true
-  // An upload still in flight is torn down like any other subscription. The
-  // ctx.closed check above already stops it writing; this stops it running.
-  for (const controller of ctx.uploads || []) { try { controller.abort() } catch {} }
-  ctx.uploads?.clear()
-  const previouslyFocused = ctx.previouslyFocused
-  ctx.dispatch('hcms:close', null)
-  toggleCloseParam()
-  ctx.observerHandle?.unsubscribe?.()
-  ctx.undoUnsub?.()
-  ctx.livesyncUnsub?.()
-  ctx.detachEvents?.()
-  // destroy() removes the chrome-only body classes; suppress so the inverse
-  // class removal doesn't enter the undo stack either.
-  suppressUndo(() => shell.destroy())
-  state.isOpen = false
-  state.ctx = null
-  state.shell = null
-  state.opts = null
-  globalCommitTarget.ctx = null
-  if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
-    try { previouslyFocused.focus() } catch (_) {}
-  }
+  teardownSession(state.ctx)
 }
 
 export function refresh() {
   if (!state.isOpen) return
-  refreshForm(state.ctx)
+  state.ctx.view.refresh('api')
 }
 
 export function isOpen() {
   return state.isOpen
+}
+
+// Which view owns the active session. Nothing may infer this from
+// body.hcms-open, which describes only the sidebar's page shift and says nothing
+// about an inline session.
+export function currentView() {
+  return state.isOpen && state.ctx ? state.ctx.view.name : null
 }
 
 export const api = {
@@ -496,8 +280,9 @@ function writeFieldValue(el, value, formRoot, path) {
 // ?cms=true auto-open. When the page URL carries cms=true at load, open the CMS
 // for everyone (no gating — this is a feature showcase; a non-admin's edits stay
 // DOM-local and the host save path shows its view-mode notice). open() is
-// idempotent-safe (it warns + returns if already open), so a host that also calls
-// open() never double-mounts. No special opts — host defaults apply.
+// idempotent-safe (it returns quietly if the same view is already open), so a
+// host that also calls open() never double-mounts. No special opts — host
+// defaults apply.
 //
 // Patience matters here: this runs at module load from the dist IIFE, which a
 // host typically loads BEFORE installing window.hyperclay.Mutation (the Mutation
@@ -615,6 +400,7 @@ const cms = {
   refresh,
   api,
   get isOpen() { return state.isOpen },
+  currentView,
   // Power-user exports (mostly for testing + advanced integration)
   path: pathUtil,
   scaffold,

@@ -375,6 +375,39 @@ Common errors thrown by the engine:
 
 In hyperclayjs apps, drag works out of the box (hypercms's object-array templates carry the `[sortable]` custom-attribute, which hyperclayjs upgrades). For standalone use, install `sortablejs` and either upgrade the `[sortable]` attribute yourself or replace the template with your own reorder UX. Add/remove still work without sortable.
 
+## The floating toggle
+
+In edit mode, on a page that has a cms rules tag, hypercms injects a floating
+"Edit content" button in the bottom-right corner. It is runtime-only chrome: it
+carries `no-save`, `snapshot-remove` and `save-ignore`, so it never reaches the
+saved file and never marks the page dirty.
+
+It takes the page's font, ink and letterforms by inheritance. The pill's surface
+is opaque and neutral, picked between two values by whichever reads better
+against the page's own ink, because the button floats over a backdrop it cannot
+see and a translucent surface is unreadable on a dark hero or footer.
+
+Restyle it with plain CSS. Our cosmetic rules are selected by
+`[data-hcms-toggle-host]`, so any `#hcms-toggle { ... }` rule of yours outranks
+them:
+
+    #hcms-toggle .hcms-toggle__main { border-radius: 6px; box-shadow: none; }
+
+Five properties are not reachable that way. `position`, `right`, `bottom`,
+`z-index` and `background` are pinned inline with `!important`, so that a host
+page's `* { ... !important }` reset cannot leave the button unpositioned or
+transparent. `position` is always `fixed`. The other four read a custom
+property first, and that is how you change them:
+
+| property | default | what it does |
+|---|---|---|
+| `--hcms-toggle-color` | the page's ink | label and focus ring; a plain `#hcms-toggle` rule reaches these too |
+| `--hcms-toggle-bg` | the picked surface | the pill's surface; setting it turns off the automatic pick |
+| `--hcms-toggle-offset` | `16px` | distance from the corner; it adds to the sidebar shift rather than replacing it |
+| `--hcms-toggle-z` | `2147482900` | raise it if a chat widget or cookie banner covers the button |
+
+    :root { --hcms-toggle-offset: 76px; }   /* clear a chat widget */
+
 ## Build, develop, test
 
 ```sh
