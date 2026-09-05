@@ -1671,3 +1671,22 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
   box-shadow: 0 16px 40px -22px rgba(43, 36, 27, 0.55);
 }
 .hcms-inline-pop[hidden] { display: none; }
+
+.hcms-inline-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  will-change: transform;
+}
+.hcms-inline-handle[hidden] { display: none; }
+.hcms-inline-count {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  border: 1px solid var(--mirk-input-border);
+  background: var(--mirk-bg);
+  color: var(--mirk-fg);
+  align-self: center;
+}
+.hcms-inline-count[hidden] { display: none; }

@@ -20,12 +20,15 @@ import { enhanceFields, upgradeRichTextRules } from '../enhance.js'
 import { applyUnresolvedState } from '../unresolved.js'
 import { refreshForm } from '../refresh.js'
 import { reensureStyles } from '../shell.js'
+import { resolveTargets } from '../targets.js'
+import { createInlineLayer } from './inline-layer.js'
 
 const HOST_TAG = 'hypercms-inline'
 
 export function createInlineView({ doc, pageRoot, opts = {} }) {
   const richText = opts.richText !== false
   let host = null
+  let layer = null
 
   return {
     name: 'inline',
@@ -35,6 +38,12 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     formRoot: null,
     errorEl: null,
     noticeEl: null,
+    countEl: null,
+
+    // Where activating a handle goes. B2b-3 fills this in; until then a click
+    // on a handle resolves to nothing, which is the whole of "the handles are
+    // drawn but inert".
+    onActivate: null,
 
     // Today the same upgrade the sidebar performs. The inline view needs a wider
     // one — every text projection it binds rich text to has to round-trip
@@ -51,6 +60,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       this.formRoot = host.formRoot
       this.errorEl = host.errorEl
       this.noticeEl = host.noticeEl
+      this.countEl = host.countEl
 
       const fragment = buildForm({
         pageRules: ctx.pageRules,
@@ -64,6 +74,28 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       applyUnresolvedState(ctx)
 
       bindEvents(ctx)
+
+      layer = createInlineLayer({
+        doc,
+        layerEl: host.layerEl,
+        onActivate: (target, handle) => this.onActivate?.(target, handle),
+      })
+      this.syncTargets()
+    },
+
+    // Re-resolve every editable thing on the page and hand the current set to
+    // the layer. Runs on mount and on every refresh, because a refresh can add
+    // or remove rows and can rebind the rules (refresh.js re-runs prepareRules).
+    syncTargets() {
+      if (!layer) return
+      const ctx = this.ctx
+      const { targets } = resolveTargets(ctx.pageRoot, ctx.pageRules)
+      layer.setTargets(targets)
+      const n = layer.count
+      if (this.countEl) {
+        this.countEl.textContent = `${n} editable ${n === 1 ? 'area' : 'areas'}`
+        this.countEl.hidden = n === 0
+      }
     },
 
     // `changes` is the mutation batch behind an 'observer' refresh. The inline
@@ -76,13 +108,16 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         // restore: unlike the sidebar it does not shift the page.
         reensureStyles(doc)
         refreshForm(this.ctx, { ignoreActiveValue: true })
+        this.syncTargets()
         return
       }
       if (reason === 'undo') {
         refreshForm(this.ctx, { ignoreActiveValue: false })
+        this.syncTargets()
         return
       }
       refreshForm(this.ctx)
+      this.syncTargets()
     },
 
     // Deliberately NOT a page field. Focusing one would scroll the page and
@@ -95,6 +130,8 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     },
 
     destroy() {
+      layer?.destroy()
+      layer = null
       host?.destroy()
       host = null
     },
@@ -147,6 +184,7 @@ function mountInlineHost(doc, theme) {
 
   root.innerHTML = `
     <div class="hcms-inline-bar">
+      <div class="hcms-inline-count" hidden></div>
       <div class="hcms-inline-notice" role="status" hidden></div>
       <div class="hcms-inline-error" role="alert" hidden></div>
     </div>
@@ -161,6 +199,8 @@ function mountInlineHost(doc, theme) {
     formRoot: root.querySelector('[data-hcms-form-root]'),
     noticeEl: root.querySelector('.hcms-inline-notice'),
     errorEl: root.querySelector('.hcms-inline-error'),
+    countEl: root.querySelector('.hcms-inline-count'),
+    layerEl: root.querySelector('.hcms-inline-layer'),
     destroy() { root.remove() },
   }
 }

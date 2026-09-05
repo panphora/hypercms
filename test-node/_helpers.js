@@ -17,7 +17,7 @@ const FORCE_REFRESH = [
 ]
 
 export function loadPage(html) {
-  const dom = new JSDOM(html, { url: 'http://localhost/' })
+  const dom = new JSDOM(html, { url: 'http://localhost/', pretendToBeVisual: true })
   globalThis.window = dom.window
   globalThis.document = dom.window.document
   for (const k of FORCE_REFRESH) {
