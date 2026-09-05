@@ -140,3 +140,28 @@ test('resolveTargets: an invalid CSS selector yields no target rather than throw
   assert.deepEqual(out.targets.map((t) => t.path.join('.')), ['title'])
   dom.window.close()
 })
+
+// A tuple list is scalar or not by the SHAPE it projects, never by which
+// spelling the author reached for. ['li.tag', '@innerHTML'] is the same one
+// value per row that 'li.tag[]' is.
+test('resolveTargets: a tuple list reports scalar from its shape', () => {
+  const dom = makeDom(`
+    <ul class="tags"><li class="tag">a</li><li class="tag">b</li></ul>
+    <ul class="rows"><li class="row"><span class="label">a</span></li></ul>
+  `)
+  const body = dom.window.document.body
+  const { lists: scalar } = resolveTargets(body, { tags: ['li.tag', '@innerHTML'] })
+  assert.deepEqual(scalar.map((l) => l.scalar), [true])
+  const { lists: object } = resolveTargets(body, { rows: ['li.row', { label: '.label' }] })
+  assert.deepEqual(object.map((l) => l.scalar), [false])
+  dom.window.close()
+})
+
+// A CTA's label is a text projection, but Chrome puts no caret in a
+// contenteditable <button>, so binding rich text to one leaves it uneditable.
+test('resolveTargets: a bare rule on a button resolves to a handle, not a caret', () => {
+  const dom = makeDom('<button class="cta">Buy now</button>')
+  const { targets } = resolveTargets(dom.window.document.body, { cta: 'button.cta' })
+  assert.deepEqual(shape(targets), [{ path: ['cta'], kind: 'handle', icon: 'pencil' }])
+  dom.window.close()
+})

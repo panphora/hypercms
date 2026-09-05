@@ -22,7 +22,7 @@ import {
   shouldAutoOpenFromSearch,
 } from './session.js'
 import { maybeInjectToggle } from './toggle.js'
-import { platform, onPlatformEvent, MUTATION_READY } from './platform.js'
+import { platform, onPlatformEvent, MUTATION_READY, PLATFORM_READY } from './platform.js'
 import { cleanRichClayFromSnapshot } from './richclay-bridge.js'
 
 export { nextSearchAfterClose, shouldAutoOpenFromSearch }
@@ -70,6 +70,24 @@ function installSnapshotHook() {
   snapshotHookInstalled = true
 }
 
+// Both hooks read a capability that can arrive after hypercms does, and both
+// return without recording success when it is missing. Retry on the clients'
+// readiness pair and disarm once both are in, so a page that lost the import
+// race still gets its clone cleanup.
+let offPlatformReady = null
+function armHookRetry() {
+  if (offPlatformReady || typeof document === 'undefined') return
+  const retry = () => {
+    installSavePrepareHook()
+    installSnapshotHook()
+    if (prepareHookInstalled && snapshotHookInstalled) {
+      offPlatformReady?.()
+      offPlatformReady = null
+    }
+  }
+  offPlatformReady = onPlatformEvent(document, PLATFORM_READY, retry)
+}
+
 // The views a session can be rendered through. A name that is not in here is a
 // caller error, never a fallback: silently opening a sidebar when someone asked
 // for the inline editor would read as the inline editor being broken.
@@ -82,7 +100,9 @@ export function open(opts = {}) {
   // Everything that can be rejected is rejected before anything is destroyed. A
   // bad view name or a missing page must not leave a caller with the session
   // they had already torn down.
-  const viewName = opts.view || 'sidebar'
+  // A bare open() means "make sure the editor is up", not "put it in the
+  // sidebar". Defaulting to sidebar turned every such call into a view switch.
+  const viewName = opts.view || (state.isOpen ? state.ctx.view.name : 'sidebar')
   const makeView = VIEWS[viewName]
   if (!makeView) {
     throw new Error(`hypercms: unknown view "${viewName}" (expected ${Object.keys(VIEWS).join(' or ')})`)
@@ -108,14 +128,17 @@ export function open(opts = {}) {
   // because a switch is one continuous session from the person's side, not a
   // close followed by an open.
   let carriedFocus = null
+  let previous = null
   if (state.isOpen) {
     if (state.ctx.view.name === viewName) return
     carriedFocus = state.ctx.previouslyFocused
-    teardownSession(state.ctx, { restoreFocus: false, updateUrl: false })
+    previous = state.ctx.view.name
+    teardownSession(state.ctx, { restoreFocus: false, updateUrl: false, reason: 'switch' })
   }
 
   installSavePrepareHook()
   installSnapshotHook()
+  if (!prepareHookInstalled || !snapshotHookInstalled) armHookRetry()
 
   const view = makeView({ doc, pageRoot, opts: effective })
   const ctx = createSession({ view, doc, pageRoot, opts: effective, onCloseRequested: () => close() })
@@ -140,7 +163,7 @@ export function open(opts = {}) {
     state.ctx = ctx
     state.opts = effective
 
-    ctx.dispatch('hcms:open', { pageRoot })
+    ctx.dispatch('hcms:open', { pageRoot, previous })
   } catch (err) {
     // A failed switch already destroyed the view that was up, so nothing is
     // mounted and nothing can be reopened; the least bad outcome is handing

@@ -44,6 +44,7 @@ const NATIVE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
 const NON_TEXT_TAGS = new Set([
   'IMG', 'INPUT', 'TEXTAREA', 'SELECT', 'OPTION', 'BR', 'HR', 'VIDEO', 'AUDIO',
   'IFRAME', 'EMBED', 'OBJECT', 'CANVAS', 'SOURCE', 'TRACK', 'AREA', 'COL', 'PARAM',
+  'BUTTON',
 ])
 
 export function resolveTargets(root, rules) {
@@ -82,7 +83,7 @@ function walk(ctx, rule, path, targets, lists) {
     if (typeof selector !== 'string' || !selector) return
     const items = find(ctx, selector)
     items.forEach((el, i) => walk(el, shape, [...path, i], targets, lists))
-    lists.push(makeList(ctx, path, selector, items, false))
+    lists.push(makeList(ctx, path, selector, items, typeof shape === 'string'))
     return
   }
 

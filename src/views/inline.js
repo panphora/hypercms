@@ -46,7 +46,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
 
     mount(initialData) {
       const ctx = this.ctx
-      host = mountInlineHost(doc)
+      host = mountInlineHost(doc, opts.theme)
       this.root = host.root
       this.formRoot = host.formRoot
       this.errorEl = host.errorEl
@@ -101,13 +101,21 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
   }
 }
 
-function mountInlineHost(doc) {
+function mountInlineHost(doc, theme) {
   // reensureStyles is idempotent: it returns immediately when the stylesheet is
   // already in the document and installs it when it is not, so it doubles as the
   // "ensure" the sidebar's private ensureStyles provides.
   reensureStyles(doc)
 
   const root = doc.createElement(HOST_TAG)
+
+  // Same theme contract as the sidebar: pixel-quiet is the baked-in look and an
+  // optional theme pins light/dark. hcms-shell is what the tokens and every
+  // mirk widget rule are scoped to, so without it the popover's fields render
+  // as browser defaults; hcms-inline is what keeps the docked-panel geometry
+  // off, since that is now scoped to .hcms-panel.
+  const themeClass = theme === 'dark' ? ' dark' : theme === 'light' ? ' light' : ''
+  root.className = 'hcms-shell pixel-quiet hcms-inline' + themeClass
 
   // The engine skip selector. Every read and write in hypercms passes
   // { skip: '[data-hcms-shell]' }, so this one attribute is what keeps the

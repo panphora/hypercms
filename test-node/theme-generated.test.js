@@ -84,6 +84,24 @@ test('the notice keeps its line breaks', () => {
   assert.match(css, /\.hcms-shell-notice\s*\{[^}]*white-space:\s*pre-line/)
 })
 
+test('the docked-panel geometry is scoped to .hcms-panel, so a second shell is not a panel', () => {
+  const css = stripComments(readTheme())
+  assert.match(css, /\.hcms-shell\.pixel-quiet\.hcms-panel\s*\{[^}]*position:\s*fixed/)
+  // The inline view is a .hcms-shell too. An unqualified geometry rule would
+  // drop a 380px docked box over the page the moment it mounts.
+  assert.doesNotMatch(css, /\.hcms-shell\.pixel-quiet\s*\{[^}]*position:\s*fixed/)
+})
+
+test('the inline host inherits the tokens and the widgets, never the panel box', () => {
+  const css = stripComments(readTheme())
+  // Both of these keep the plain .hcms-shell.pixel-quiet selector on purpose:
+  // it is what the inline host reads its tokens and its controls through.
+  assert.match(css, /\.hcms-shell\.pixel-quiet\s*\{[^}]*--mirk-canvas/)
+  assert.match(css, /\.hcms-shell\.pixel-quiet \.mirk-input\b/)
+  assert.match(css, /\.hcms-shell\.pixel-quiet\.hcms-inline\s*\{[^}]*pointer-events:\s*none/)
+  assert.match(css, /\.hcms-inline-pop\b/)
+})
+
 test('vendored mirk runtime is guarded for non-browser realms', () => {
   const js = fs.readFileSync(vendorPath, 'utf8')
   assert.match(js, /typeof window !== "undefined"/)

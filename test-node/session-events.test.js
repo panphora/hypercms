@@ -89,3 +89,32 @@ test('a dispatch survives the view root being torn out of the document', () => {
   assert.equal(seen.length, 1, 'the event landed on the page, not in the detached tree')
   reset(dom)
 })
+
+// A null detail made a view switch indistinguishable from a real close, so a
+// listener that tore down its own chrome on hcms:close tore it down mid-switch.
+test('hcms:close names the reason, and hcms:open names the view it replaced', () => {
+  if (isOpen()) close()
+  const dom = loadPage(FIXTURE)
+  const closes = []
+  const opens = []
+  document.body.addEventListener('hcms:close', (e) => closes.push(e.detail))
+  document.body.addEventListener('hcms:open', (e) => opens.push(e.detail))
+
+  open()
+  assert.equal(opens[0].previous, null, 'a first open replaced nothing')
+  close()
+  assert.equal(closes[0].reason, 'close')
+
+  open()
+  open({ view: 'inline' })
+  try {
+    assert.equal(closes[1].reason, 'switch')
+    assert.equal(closes[1].view, 'sidebar', 'the teardown still names the view it tore down')
+    assert.equal(opens[2].previous, 'sidebar')
+    assert.equal(opens[2].view, 'inline')
+  } finally {
+    close()
+  }
+  assert.equal(closes[2].reason, 'close')
+  reset(dom)
+})

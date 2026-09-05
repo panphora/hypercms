@@ -97,6 +97,13 @@ export function platform(name, win) {
 export const MUTATION_READY = ['clay:mutation-ready', 'hyperclay:mutation-ready']
 export const LIVESYNC_APPLIED = ['clay:sync-applied', 'hyperclay:livesync-applied']
 
+// The readiness pair both clients publish once their public surface is
+// assembled. clayjs fires clay:ready from its loader; hyperclayjs fires
+// hyperclay:ready from exportToWindow. This is the handshake richclay uses for
+// the same race, and it is the only reliable retry signal for a hook whose
+// capability arrives later than hypercms does.
+export const PLATFORM_READY = ['clay:ready', 'hyperclay:ready']
+
 // Subscribe to every spelling of one signal, delivering the handler ONCE per
 // occurrence. No client dispatches the pair today, but one that did would make a
 // plain listener on each name fire the handler twice for one event: two form

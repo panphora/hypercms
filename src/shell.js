@@ -52,7 +52,7 @@ export function mountShell({
   // (otherwise the panel follows the OS via prefers-color-scheme).
   const themeClass = theme === 'dark' ? ' dark' : theme === 'light' ? ' light' : ''
   root.className =
-    'hcms-shell pixel-quiet hcms-side-' + side + (overlay ? ' hcms-overlay' : '') + themeClass
+    'hcms-shell pixel-quiet hcms-panel hcms-side-' + side + (overlay ? ' hcms-overlay' : '') + themeClass
   const titleHtml = escapeHtml(title)
   const eyebrowHtml = escapeHtml(eyebrow)
   // Pixel Quiet shell: a scroll-away header + in-flow Save inside .hcms-shell-body,

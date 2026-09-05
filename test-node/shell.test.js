@@ -119,3 +119,11 @@ test('mountShell: save button shown when showSaveButton: true', () => {
   assert.equal(root.querySelector('.hcms-shell-footer').hidden, false)
   destroy()
 })
+
+test('mountShell: the panel root carries hcms-panel, which the docked geometry is scoped to', () => {
+  const doc = setupDom()
+  const { root, destroy } = mountShell({ mountTo: doc.body, doc })
+  assert.ok(root.classList.contains('hcms-shell'), 'still the themed shell')
+  assert.ok(root.classList.contains('hcms-panel'), 'and the panel the fixed geometry belongs to')
+  destroy()
+})

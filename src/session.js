@@ -199,7 +199,7 @@ function resyncForm(ctx, reason) {
 // The one teardown. close(), the failed-open path inside open(), and (later) a
 // view switch all route through it; the options say only which of the three
 // close-specific side effects apply.
-export function teardownSession(ctx, { dispatch = true, restoreFocus = true, updateUrl = true } = {}) {
+export function teardownSession(ctx, { dispatch = true, restoreFocus = true, updateUrl = true, reason = 'close' } = {}) {
   if (!ctx || ctx.closed) return
   // Mark this ctx dead so any in-flight async work (e.g. an upload awaiting the
   // host uploader) bails instead of mutating the page / firing onChange after
@@ -210,7 +210,7 @@ export function teardownSession(ctx, { dispatch = true, restoreFocus = true, upd
   for (const controller of ctx.uploads || []) { try { controller.abort() } catch {} }
   ctx.uploads?.clear()
   const previouslyFocused = ctx.previouslyFocused
-  if (dispatch) ctx.dispatch('hcms:close', null)
+  if (dispatch) ctx.dispatch('hcms:close', { reason })
   if (updateUrl) toggleCloseParam()
   ctx.observerHandle?.unsubscribe?.()
   ctx.undoUnsub?.()

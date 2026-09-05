@@ -25,7 +25,7 @@ const FIXTURE = `<!DOCTYPE html><html><head></head><body>
   </ul>
 </body></html>`
 
-const SIDEBAR = '.hcms-shell'
+const SIDEBAR = '.hcms-panel'
 const INLINE = 'hypercms-inline'
 
 test('inline: open({ view: "inline" }) mounts a host carrying every never-persist marker', () => {
@@ -210,5 +210,52 @@ test('inline: a failed mount leaves nothing open and nothing mounted, and rethro
   assert.equal(isOpen(), false)
   assert.equal(currentView(), null)
   assert.equal(dom.window.document.querySelector(INLINE), null, 'no orphan host remains')
+  reset(dom)
+})
+
+// Without hcms-shell the popover's fields fall back to browser defaults, since
+// every token and every mirk widget rule is scoped to it. Without hcms-inline
+// the host picks up the docked panel geometry.
+test('inline: the host joins the theme as a shell that is not a panel', () => {
+  if (isOpen()) close()
+  const dom = loadPage(FIXTURE)
+  open({ view: 'inline' })
+  try {
+    const host = dom.window.document.querySelector(INLINE)
+    assert.equal(host.className, 'hcms-shell pixel-quiet hcms-inline')
+    assert.equal(host.classList.contains('hcms-panel'), false)
+  } finally {
+    close()
+  }
+  reset(dom)
+})
+
+test('inline: the theme option pins the host light or dark, same as the sidebar', () => {
+  if (isOpen()) close()
+  const dom = loadPage(FIXTURE)
+  open({ view: 'inline', theme: 'dark' })
+  try {
+    assert.equal(dom.window.document.querySelector(INLINE).className, 'hcms-shell pixel-quiet hcms-inline dark')
+  } finally {
+    close()
+  }
+  reset(dom)
+})
+
+// A host calling open() to make sure the editor is up is not asking for the
+// sidebar, and must not drag an inline session into one.
+test('inline: a bare open() keeps the view that is already up', () => {
+  if (isOpen()) close()
+  const dom = loadPage(FIXTURE)
+  open({ view: 'inline' })
+  const host = dom.window.document.querySelector(INLINE)
+  open()
+  try {
+    assert.equal(currentView(), 'inline')
+    assert.equal(dom.window.document.querySelector(INLINE), host, 'the same host, never remounted')
+    assert.equal(dom.window.document.querySelector(SIDEBAR), null, 'no sidebar appeared')
+  } finally {
+    close()
+  }
   reset(dom)
 })

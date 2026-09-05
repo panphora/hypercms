@@ -112,7 +112,7 @@
    position: fixed makes the shell a containing block so the absolute
    minibar anchors to it; flex column so the body owns the scroll.
    ============================================================ */
-.hcms-shell.pixel-quiet {
+.hcms-shell.pixel-quiet.hcms-panel {
   box-sizing: border-box;
   position: fixed;
   top: 0;
@@ -128,7 +128,7 @@
   border-left: 1px solid var(--mirk-input-border);
   box-shadow: -16px 0 48px -28px rgba(43, 36, 27, 0.45);
 }
-.hcms-shell.pixel-quiet.dark {
+.hcms-shell.pixel-quiet.hcms-panel.dark {
   box-shadow: -16px 0 48px -28px rgba(0, 0, 0, 0.6);
 }
 
@@ -597,3 +597,66 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
   cursor: pointer;
 }
 .hcms-sr-only[hidden] { display: none; }
+
+/* ============================================================
+   INLINE VIEW GEOMETRY — not a panel. A transparent full-viewport
+   host whose children are the only interactive surfaces, so the page
+   underneath stays fully usable while the editor is open.
+   ============================================================ */
+.hcms-shell.pixel-quiet.hcms-inline {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  /* The host must never intercept a click meant for the page. Each child
+     re-enables pointer events for itself. */
+  pointer-events: none;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  color: var(--mirk-fg);
+}
+.hcms-inline > *,
+.hcms-inline-layer > * { pointer-events: auto; }
+.hcms-inline-layer { position: absolute; inset: 0; pointer-events: none; }
+
+.hcms-inline-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hcms-inline-notice,
+.hcms-inline-error {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.4;
+  border: 1px solid var(--mirk-input-border);
+  background: var(--mirk-bg);
+  color: var(--mirk-fg);
+  box-shadow: 0 12px 32px -20px rgba(43, 36, 27, 0.5);
+}
+.hcms-inline-notice { white-space: pre-line; }
+.hcms-inline-error { border-color: var(--mirk-destructive); color: var(--mirk-destructive); }
+.hcms-inline-notice[hidden],
+.hcms-inline-error[hidden] { display: none; }
+
+.hcms-inline-pop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--mirk-input-border);
+  background: var(--mirk-bg);
+  color: var(--mirk-fg);
+  box-shadow: 0 16px 40px -22px rgba(43, 36, 27, 0.55);
+}
+.hcms-inline-pop[hidden] { display: none; }
