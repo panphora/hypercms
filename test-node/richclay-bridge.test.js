@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
-import { cleanRichClayFromSnapshot, markBound, BOUND_ATTR } from '../src/richclay-bridge.js'
+import { cleanRichClayFromSnapshot, markBound, BOUND_ATTR, RC_OWNED_ATTR } from '../src/richclay-bridge.js'
 
 // richclay is not a dependency of hypercms, and a test that reached into the
 // sibling repo by relative path would break for anyone who installs this
@@ -131,5 +131,60 @@ test('the bound marker survives cloneNode, which is what the whole design rests 
   markBound(live)
   const copy = clone.cloneNode(true)
   assert.equal(copy.querySelector('.title').hasAttribute(BOUND_ATTR), true)
+  dom.window.close()
+})
+
+// --- review round 3 ------------------------------------------------------------
+
+// richclay 0.4.0, which is what clayjs and hyperclayjs both vendor. Grepped
+// against both vendor files: no data-richclay-runtime-marker anywhere in either
+// bundle, and no removeAttribute('data-richclay') anywhere either. So its strip
+// takes the runtime state off and leaves the mount selector in the file, which
+// is the case the fake above cannot show because it models 0.5.0.
+class VendoredRichClay {
+  static stripFromClone(docEl) {
+    docEl.querySelectorAll(RICHCLAY_SELECTOR).forEach((region) => {
+      if (region.getAttribute('data-richclay-active') !== 'true') return
+      region.removeAttribute('contenteditable')
+      region.removeAttribute('data-richclay-active')
+      region.removeAttribute('data-richclay-runtime-contenteditable')
+    })
+  }
+}
+
+const OURS_HEADING =
+  '<h1 data-richclay data-richclay-active="true" data-richclay-runtime-contenteditable="true" contenteditable="true" data-hcms-bound="rich" data-hcms-owns-richclay="true">Title</h1>'
+
+const AUTHORED_BOUND_HEADING =
+  '<h2 data-richclay data-richclay-active="true" data-richclay-runtime-contenteditable="true" contenteditable="true" data-hcms-bound="rich">Authored and bound</h2>'
+
+test('G2: on the vendored strip, hypercms removes the data-richclay its own bind put there', () => {
+  const { dom, clone } = makeClone(OURS_HEADING)
+  cleanRichClayFromSnapshot(clone, { richclay: { RichClay: VendoredRichClay } })
+  // data-richclay is richclay's mount selector: left in the file it turns every
+  // heading anyone clicked into a permanent richclay region.
+  assert.equal(clone.querySelector('h1').outerHTML, '<h1>Title</h1>')
+  dom.window.close()
+})
+
+test("G2b: an author's own data-richclay survives, on the vendored strip, even where hypercms bound", () => {
+  const { dom, clone } = makeClone(AUTHORED_BOUND_HEADING)
+  cleanRichClayFromSnapshot(clone, { richclay: { RichClay: VendoredRichClay } })
+  const h2 = clone.querySelector('h2')
+  // No ownership flag, so hypercms did not put this opt-in here and binding the
+  // element is not a reason to take it out of the author's file.
+  assert.equal(h2.hasAttribute('data-richclay'), true)
+  assert.equal(h2.hasAttribute('contenteditable'), false)
+  assert.equal(h2.hasAttribute(BOUND_ATTR), false)
+  assert.equal(h2.hasAttribute(RC_OWNED_ATTR), false)
+  dom.window.close()
+})
+
+test('markBound writes the ownership flag only when the bind is what mounted richclay', () => {
+  const { dom, clone } = makeClone('<h1 class="ours">A</h1><h2 class="theirs" data-richclay>B</h2>')
+  markBound(clone.querySelector('.ours'), true, true)
+  markBound(clone.querySelector('.theirs'), true, false)
+  assert.equal(clone.querySelector('.ours').getAttribute(RC_OWNED_ATTR), 'true')
+  assert.equal(clone.querySelector('.theirs').hasAttribute(RC_OWNED_ATTR), false)
   dom.window.close()
 })

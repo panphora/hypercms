@@ -21,6 +21,15 @@ import { platform } from './platform.js'
 // can no longer answer whether the author wrote markup in this element.
 export const BOUND_ATTR = 'data-hcms-bound'
 
+// Written beside the marker when hypercms's own construct call is what put
+// data-richclay on the element. richclay 0.5.0 tracks the same provenance in
+// data-richclay-runtime-marker and strips the attribute for us, but clayjs and
+// hyperclayjs both vendor 0.4.0, which has no marker and leaves it in the file.
+// data-richclay is richclay's mount selector, so left there it turns every
+// heading anyone clicked into a permanent richclay region. hypercms knew the
+// answer before it touched the element; it does not need to ask.
+export const RC_OWNED_ATTR = 'data-hcms-owns-richclay'
+
 export function resolveRichClay(win) {
   return (
     (win && win.richclay && win.richclay.RichClay) ||
@@ -29,10 +38,10 @@ export function resolveRichClay(win) {
   )
 }
 
-export function markBound(el, heldMarkup) {
-  if (el && typeof el.setAttribute === 'function') {
-    el.setAttribute(BOUND_ATTR, heldMarkup ? 'rich' : 'plain')
-  }
+export function markBound(el, heldMarkup, richClayIsOurs) {
+  if (!el || typeof el.setAttribute !== 'function') return
+  el.setAttribute(BOUND_ATTR, heldMarkup ? 'rich' : 'plain')
+  if (richClayIsOurs) el.setAttribute(RC_OWNED_ATTR, 'true')
 }
 
 // ⚠ THE ORDER IS LOAD-BEARING. richclay's strip iterates
@@ -58,11 +67,13 @@ export function cleanRichClayFromSnapshot(cloneDocEl, win) {
     }
   }
   for (const el of bound) {
-    // Only the CMS's own marker. Whether data-richclay comes off is richclay's
-    // call, not ours: removeRuntimeState drops it exactly when
-    // data-richclay-runtime-marker says richclay invented it, and leaves an
-    // author's own opt-in byte for byte. Removing it here as well took that
-    // attribute out of the file for any element hypercms bound.
+    // Whether data-richclay comes off is decided by who put it there, not by
+    // which richclay is loaded. On 0.5.0 stripFromClone has already removed it
+    // and this is a no-op; on the 0.4.0 copies clayjs and hyperclayjs vendor,
+    // this is the only thing that removes it. An author's own opt-in never
+    // carries the marker, so it is never touched.
+    if (el.getAttribute(RC_OWNED_ATTR) === 'true') el.removeAttribute('data-richclay')
+    el.removeAttribute(RC_OWNED_ATTR)
     el.removeAttribute(BOUND_ATTR)
   }
 }
@@ -89,5 +100,7 @@ export function stripOrphanEditorState(el, win) {
     el.removeAttribute('contenteditable')
     el.removeAttribute('no-undo')
   }
+  if (el.getAttribute(RC_OWNED_ATTR) === 'true') el.removeAttribute('data-richclay')
+  el.removeAttribute(RC_OWNED_ATTR)
   el.removeAttribute(BOUND_ATTR)
 }

@@ -595,9 +595,9 @@ test('inline: the session binds array rows through @innerHTML, which the sidebar
 // after a click that typed nothing. The stub above deliberately does not do
 // this, or every other test in this file would be asserting Squire's behaviour
 // instead of hypercms's. These two are the ones about it.
-function bootNormalizing() {
+function bootNormalizing(html = TEXT) {
   if (isOpen()) close()
-  const dom = loadPage(TEXT)
+  const dom = loadPage(html)
   const richclay = installRichClay(dom.window)
   const Base = dom.window.richclay.RichClay
   class Normalizing extends Base {
@@ -1075,6 +1075,14 @@ const TAGS = page(
   <ul class="tags"><li>alpha</li><li>beta</li></ul>`
 )
 
+// A scalar list, so requestRemove finds no object-array shape, raises no
+// consent modal and removes synchronously — which is what puts two clicks
+// inside one refresh window.
+const SCALAR_ROWS = page(
+  `{ "tags": "ul.tags li[]" }`,
+  `<ul class="tags"><li>One</li><li>Two</li><li>Three</li></ul>`
+)
+
 // A list with no rows and no [cms-template] seed: the engine has nothing to
 // clone, so an add raises EmptyListInsert and the apply rolls back.
 const EMPTY_LIST = page(
@@ -1150,6 +1158,26 @@ test('F2: a binding follows its row through a move instead of writing into the r
   reset(t.dom)
 })
 
+test('F2: a keystroke straight after a move commits to the moved row\'s new path, with no refresh in between', () => {
+  const t = boot(ROWS)
+  try {
+    const ctx = state.ctx
+    const rowTwo = t.doc.querySelectorAll('.product')[1]
+    const second = t.doc.querySelectorAll('.product .name')[1]
+    click(t, second)
+
+    // No refresh: the commit has already moved the page and the form, and this
+    // is the window the debounced refresh has not covered yet.
+    ctx.view.listAction({ action: 'move-up', list: listNamed(ctx, 'products'), index: 1, row: rowTwo })
+    type(t, second, 'Two edited before refresh')
+
+    assert.deepEqual(names(), ['Two edited before refresh', 'One', 'Three'])
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
 test('F2: a rule that upgrades to @innerHTML mid-session rebuilds the editor under it', () => {
   const t = boot(PLAIN_TITLE)
   try {
@@ -1205,6 +1233,100 @@ test('F2b: clicking a plain paragraph does not turn its rule into a rich-text on
   reset(t.dom)
 })
 
+// The rules themselves move a field onto a different element, which is what a
+// live-sync rules change and an author edit to the tag both look like from here.
+const RETARGET_TEXT = page(
+  `{ "title": ".old" }`,
+  `<div class="old">Old</div>
+  <div class="new">New</div>`
+)
+
+const RETARGET_HANDLE = page(
+  `{ "sku": ".old@data-sku" }`,
+  `<span class="old" data-sku="A1">A1</span>
+  <span class="new" data-sku="B2">B2</span>`
+)
+
+test('F2: an element the rules stopped naming is unbound, and typing into it no longer reaches the field', () => {
+  const t = boot(RETARGET_TEXT)
+  try {
+    const old = t.doc.querySelector('.old')
+    const fresh = t.doc.querySelector('.new')
+    click(t, old)
+    assert.equal(old.getAttribute('contenteditable'), 'true', 'the click bound it')
+
+    rulesTag(t).textContent = '{ "title": ".new" }'
+    refresh()
+
+    assert.equal(old.hasAttribute('contenteditable'), false, 'the session on it ended')
+    assert.equal(old.hasAttribute('data-hcms-bound'), false, 'and the marker came off')
+
+    type(t, old, 'Typed into the element nothing reads')
+
+    assert.equal(api.getData().title, 'New', 'the field is whatever the rule now points at')
+    assert.equal(fresh.textContent, 'New', 'and nothing was written into it')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('F2: an open popover over an element the rules stopped naming closes', () => {
+  const t = boot(RETARGET_HANDLE)
+  try {
+    const ctx = state.ctx
+    ctx.view.activate(targetNamed(ctx, 'sku'))
+    assert.equal(activePath(t), 'sku', 'the popover opened over the old element')
+
+    rulesTag(t).textContent = '{ "sku": ".new@data-sku" }'
+    refresh()
+
+    assert.equal(ctx.view.popEl.hidden, true, 'the popover closed rather than keep editing a field that is gone')
+    assert.equal(activePath(t), undefined)
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// An array rule has one projection shared by every row, so the marker cannot be
+// the clicked element's own children: the plain row would report plain and the
+// rule would follow it down the moment the row that proved it rich is gone.
+test('F2b: a plain row under a shared rich array rule marks rich, and cannot downgrade the rule', () => {
+  const t = boot(TEXT)
+  try {
+    const plain = t.doc.querySelectorAll('.product .product-name')[1]
+    assert.equal(plain.children.length, 0, 'the author wrote no markup in this row')
+    assert.equal(
+      state.ctx.pageRules.products[1].name,
+      '.product-name@innerHTML',
+      'the rule is rich because the OTHER row holds markup'
+    )
+
+    click(t, plain)
+    assert.equal(plain.getAttribute('data-hcms-bound'), 'rich', 'marked from the projection it was bound on')
+
+    // The row that proved the rule rich is gone, so the bound survivor's marker
+    // is the only evidence upgradeInlineTextRules has left to read.
+    t.doc.querySelectorAll('.product')[0].remove()
+    refresh()
+
+    assert.equal(
+      state.ctx.pageRules.products[1].name,
+      '.product-name@innerHTML',
+      'the rule the survivor is still bound on stayed rich'
+    )
+    assert.deepEqual(
+      editorFor(t, plain).options.toolbar,
+      ['bold', 'italic', 'link', 'undo', 'redo'],
+      'and the toolbar did not disappear from under them'
+    )
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
 test('F2: an open popover follows its row through a move', () => {
   const t = boot(ROWS_SKU)
   try {
@@ -1238,6 +1360,25 @@ test('F3: a second click on a stale row strip acts on its row, not on its old in
     ctx.view.listAction({ action: 'move-up', list, index: 1, row: rowTwo })
 
     assert.deepEqual(names(), ['Two', 'One', 'Three'], 'the second click was a no-op on an already-first row')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('F3: two remove clicks on one stale strip remove that row, not the row that took its number', () => {
+  const t = boot(SCALAR_ROWS)
+  try {
+    const ctx = state.ctx
+    const rowTwo = t.doc.querySelectorAll('ul.tags li')[1]
+    // The strip holds the numbering it was drawn with, and the refresh trails
+    // the first click, so both clicks carry index 1 and the same row element.
+    const list = listNamed(ctx, 'tags')
+
+    ctx.view.listAction({ action: 'remove', list, index: 1, row: rowTwo })
+    ctx.view.listAction({ action: 'remove', list, index: 1, row: rowTwo })
+
+    assert.deepEqual(api.getData().tags, ['One', 'Three'], 'the second click had no row to act on')
   } finally {
     close()
   }
@@ -1452,7 +1593,7 @@ test('F11: a row the engine cloned off a bound one does not stay editable', () =
   try {
     const first = t.doc.querySelector('.product .name')
     click(t, first)
-    assert.equal(first.getAttribute('data-hcms-bound'), 'plain')
+    assert.equal(first.getAttribute('data-hcms-bound'), 'rich')
 
     // listDiff clones oldNodes[0] to grow a list (diff.js:67), which is the row
     // the editor is bound inside.
@@ -1531,6 +1672,322 @@ test('F11: a richclay that offers stripElement is the one that does the cleanup'
     assert.equal(clone.hasAttribute('data-hcms-bound'), false)
   } finally {
     close()
+  }
+  reset(t.dom)
+})
+
+// ---- review round 3 ----------------------------------------------------------
+
+// The one thing the real Squire does that bootNormalizing above does not: its
+// rewrite lands AFTER construct returns, in a later task, and it fires no input
+// event. Measured in Chrome on demo/inline.html, that is why a restore keyed on
+// the markup construct produced never ran.
+function bootLateNormalizing(html = TEXT) {
+  if (isOpen()) close()
+  const dom = loadPage(html)
+  const richclay = installRichClay(dom.window)
+  const Base = dom.window.richclay.RichClay
+  class LateNormalizing extends Base {
+    constructor(el, options) {
+      super(el, options)
+      if (this.unsupported) return
+      queueMicrotask(() => {
+        el.innerHTML = `<div>${el.innerHTML.replace(/<(\/?)em>/g, '<$1i>')}</div>`
+      })
+    }
+  }
+  dom.window.richclay = { RichClay: LateNormalizing }
+  open({ view: 'inline' })
+  return { dom, win: dom.window, doc: dom.window.document, richclay }
+}
+
+test('G1: a normalisation that lands after construct is still put back by an untouched close', async () => {
+  const t = bootLateNormalizing()
+  try {
+    const title = t.doc.querySelector('.title')
+    const authored = title.innerHTML
+    assert.equal(authored, 'Hello <em>you</em>', "the fixture is the author's markup")
+
+    click(t, title)
+    assert.equal(title.innerHTML, authored, 'construct returned before the editor rewrote anything')
+
+    await Promise.resolve()
+    assert.equal(
+      title.innerHTML,
+      '<div>Hello <i>you</i></div>',
+      'and the rewrite arrived later, with no input event behind it'
+    )
+
+    close()
+
+    assert.equal(
+      title.innerHTML,
+      authored,
+      'reading a heading and leaving must not rewrite the document'
+    )
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})
+
+// A scalar array row, deliberately: its rule is the one prepareRules never
+// upgrades, so the projection cannot change under the morph and reconcileBindings
+// leaves the repair to rebindText. On anything else the projection flips first
+// and reconcileBindings does the rebind, carrying the same facts by its own
+// route.
+test('G3: a plain row rebound after a morph keeps the plain verdict it was bound with', () => {
+  const t = bootNormalizing(TAGS)
+  try {
+    const tag = t.doc.querySelectorAll('ul.tags li')[0]
+    assert.equal(tag.children.length, 0, 'the author wrote no markup in it')
+
+    click(t, tag)
+    assert.equal(tag.getAttribute('data-hcms-bound'), 'plain')
+    assert.equal(tag.children.length, 1, "and the editor's wrapper is now a child of it")
+
+    morphFromPeer(t)
+    livesyncApplied(t)
+
+    // Re-derived from the DOM this reads 'rich', which is B8 arriving through a
+    // morph: the rule upgrades to @innerHTML on the next refresh and a toolbar
+    // appears on a row nobody wrote markup in.
+    assert.equal(tag.getAttribute('data-hcms-bound'), 'plain', 'the rebind inherited the verdict')
+    assert.equal(
+      upgradeInlineTextRules({ tags: 'ul.tags li[]' }, t.doc.body).tags,
+      'ul.tags li[]',
+      'so the rule is left alone'
+    )
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('G4: an adopted editor survives a live-sync rebind and is still never torn down', () => {
+  if (isOpen()) close()
+  const dom = loadPage(SYNCED)
+  const richclay = installRichClay(dom.window)
+  const Base = dom.window.richclay.RichClay
+  const byElement = new Map()
+  class Adopting extends Base {
+    constructor(el, options) {
+      const existing = byElement.get(el)
+      if (existing) return existing
+      super(el, options)
+      byElement.set(el, this)
+    }
+  }
+  dom.window.richclay = { RichClay: Adopting }
+  const t = { dom, win: dom.window, doc: dom.window.document, richclay }
+
+  const title = t.doc.querySelector('.title')
+  const authors = new Adopting(title, { inline: true })
+
+  open({ view: 'inline' })
+  try {
+    click(t, title)
+    assert.equal(editorFor(t, title), authors, "hypercms's 'new' editor is the author's")
+
+    morphFromPeer(t)
+    livesyncApplied(t)
+    assert.equal(
+      title.hasAttribute('data-richclay-active'),
+      false,
+      "the morph took richclay's own live-editor flag off, which is what the rebind would read"
+    )
+
+    close()
+
+    assert.equal(authors.destroyed, false, "the author's editor came through the rebind and the close")
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})
+
+// An element the author opted in on, on a page where richclay never activates:
+// view mode, say. richclay hands back THEIR inactive instance.
+const AUTHORED_RC = page(
+  `{ "title": ".title" }`,
+  '<h1 class="title" data-richclay>Hello <em>you</em></h1>'
+)
+
+test("G5: an inactive instance on an element the author opted in on is not destroyed", () => {
+  if (isOpen()) close()
+  const dom = loadPage(AUTHORED_RC)
+  const richclay = installRichClay(dom.window)
+  const Base = dom.window.richclay.RichClay
+  class Inert extends Base {
+    constructor(el, options) {
+      super(el, options)
+      this.active = false
+    }
+  }
+  dom.window.richclay = { RichClay: Inert }
+  const t = { dom, win: dom.window, doc: dom.window.document, richclay }
+
+  open({ view: 'inline' })
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+
+    const editor = editorFor(t, title)
+    assert.equal(editor.active, false, 'richclay handed back an instance that never activated')
+    assert.equal(editor.destroyed, false, 'and it is the author\'s, so hypercms left it alone')
+    assert.equal(title.hasAttribute('data-hcms-bound'), false, 'nothing was bound')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('G6: an undo elsewhere leaves an edit in progress on the stack', () => {
+  const t = boot(TEXT)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    const lede = t.doc.querySelector('.lede')
+
+    click(t, title)
+    type(t, title, 'Hello <em>world</em>')
+    blur(t, title)
+    assert.equal(undo.records.length, 1)
+
+    click(t, lede)
+    type(t, lede, 'still typing')
+
+    // The undo reverts the heading. It never reached the paragraph, so what is
+    // in the paragraph is still exactly what this person typed.
+    undo.undo()
+    assert.equal(title.innerHTML, 'Hello <em>you</em>', 'the undo reverted the heading')
+    assert.equal(lede.textContent, 'still typing', 'and left the paragraph alone')
+
+    blur(t, lede)
+
+    assert.equal(undo.records.length, 1, 'the pending edit still records at its own boundary')
+    assert.equal(undo.records[0].target, lede)
+    assert.equal(undo.records[0].newValue, 'still typing')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('L5: a second edit after an undo undoes back to the original, not to the first edit', () => {
+  const t = boot(TEXT)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    const original = title.innerHTML
+
+    click(t, title)
+    type(t, title, 'Hello <em>A</em>')
+    blur(t, title)
+
+    undo.undo()
+    assert.equal(title.innerHTML, original, 'the first edit is undone')
+    assert.equal(title.getAttribute('data-hcms-bound'), 'rich', 'and the binding came through intact')
+
+    type(t, title, 'Hello <em>B</em>')
+    blur(t, title)
+
+    undo.undo()
+
+    // A stale baseline here records B against A, so the second undo lands on an
+    // edit this person already took back.
+    assert.equal(title.innerHTML, original, 'the second undo lands on the author\'s markup')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('G2: the ownership flag never reaches the page after the session ends', () => {
+  const t = boot(TEXT)
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    assert.equal(title.getAttribute('data-hcms-owns-richclay'), 'true', 'hypercms mounted this one')
+
+    close()
+
+    // The snapshot hook only unmarks the CLONE, and it only visits elements that
+    // still carry the bound marker. Left on the page this flag reaches the file.
+    assert.equal(title.hasAttribute('data-hcms-owns-richclay'), false)
+    assert.equal(title.hasAttribute('data-hcms-bound'), false)
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})
+
+// richclay 0.4.0, the copy clayjs and hyperclayjs both vendor. Neither bundle
+// contains data-richclay-runtime-marker or removeAttribute('data-richclay')
+// anywhere, so destroy() takes the runtime state off and leaves the mount
+// selector on the live element. Dropping the marker is the whole difference:
+// the strip above removes data-richclay only when the marker says richclay
+// invented it, so with no marker nothing removes it.
+function bootVendored(html = TEXT) {
+  if (isOpen()) close()
+  const dom = loadPage(html)
+  const richclay = installRichClay(dom.window)
+  const Base = dom.window.richclay.RichClay
+  class Vendored extends Base {
+    constructor(el, options) {
+      super(el, options)
+      el.removeAttribute('data-richclay-runtime-marker')
+    }
+  }
+  dom.window.richclay = { RichClay: Vendored }
+  open({ view: 'inline' })
+  return { dom, win: dom.window, doc: dom.window.document, richclay }
+}
+
+test('G2c: on the vendored richclay, the mount selector never reaches the page after the session ends', () => {
+  const t = bootVendored(TEXT)
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    assert.equal(title.hasAttribute('data-richclay'), true, 'the bind mounted richclay here')
+
+    close()
+
+    assert.equal(
+      editorFor(t, title).destroyed,
+      true,
+      'destroy() ran and left the mount selector behind, which is the 0.4.0 shape'
+    )
+    // data-richclay is richclay's mount selector: left on the live element the
+    // next save carries it into the file and the heading is editable forever.
+    assert.equal(title.hasAttribute('data-richclay'), false)
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})
+
+test("G2d: on the vendored richclay, an author's own mount selector survives the session", () => {
+  const t = bootVendored(AUTHORED_RC)
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    assert.equal(title.hasAttribute('data-hcms-owns-richclay'), false, 'hypercms did not mount this one')
+
+    close()
+
+    assert.equal(editorFor(t, title).destroyed, true)
+    // The attribute is the author's opt-in, so binding the element is not a
+    // reason to take it out of their page.
+    assert.equal(title.hasAttribute('data-richclay'), true)
+  } finally {
+    if (isOpen()) close()
   }
   reset(t.dom)
 })
