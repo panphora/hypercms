@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<!--
+  Inline view fixture, for verifying the real bundle in a real browser.
+
+  The script paths are absolute from the hyper workspace root, because the page
+  loads clayjs and richclay from their own repos rather than a copy. Serve the
+  workspace, not this repo:
+
+      npx http-server ~/Documents/GitHub/hyper -p 5694 -c-1
+      open http://localhost:5694/hypercms/demo/inline.html
+
+  Run `npm run build` in hypercms first, or dist/hypercms.min.js will be stale.
+  Loads clay.js WITHOUT the cms plugin on purpose: that plugin pulls in clayjs's
+  own vendored copy of hypercms, which is not the build under test.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>hypercms — inline view fixture</title>
+<link rel="stylesheet" href="/richclay/richclay.css">
+<style>
+  body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #1f2532; background: #F6F7F9; }
+  section { border: 1px solid #d8dde6; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; background: #fff; }
+  h2 { margin: 0 0 .6rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #475064; }
+  .hero { display: block; width: 220px; height: 120px; background: #dfe6f2; }
+  ul.tags { list-style: none; padding: 0; display: flex; gap: .5rem; }
+  ul.tags li { padding: .2rem .6rem; background: #e9eef7; border-radius: 1rem; }
+  .product { border: 1px dashed #cfd5e0; padding: .5rem .75rem; margin: .35rem 0; border-radius: 4px; }
+  .scroller { max-height: 120px; overflow: auto; border: 1px solid #cfd5e0; border-radius: 4px; padding: .5rem; }
+  .spacer { height: 90vh; }
+  .tool { font: inherit; padding: .3rem .7rem; border-radius: 4px; border: 1px solid #b9c1d1; background: #f9fafd; cursor: pointer; }
+</style>
+
+<script data-rules-name="cms" data-rules-version="1" type="application/json">
+{
+  "title": "h1.page-title",
+  "tagline": "p.tagline",
+  "hero": "img.hero@src",
+  "homepage": "a.homepage@href",
+  "email": "input.email@value",
+  "tags": "ul.tags li[]",
+  "products": [".product", { "name": ".product-name", "sku": ".product-sku" }]
+}
+</script>
+</head>
+<body>
+
+<h1 class="page-title">A page that edits <em>itself</em></h1>
+<p class="tagline">One rules tag, two views.</p>
+
+<section>
+  <h2>Handle targets</h2>
+  <img class="hero" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='120'%3E%3Crect width='220' height='120' fill='%23dfe6f2'/%3E%3C/svg%3E" alt="hero">
+  <p><a class="homepage" href="https://example.com">Homepage link</a></p>
+</section>
+
+<section>
+  <h2>Native target (already has its own control)</h2>
+  <input class="email" value="hello@example.com" size="34">
+</section>
+
+<section>
+  <h2>Scalar list</h2>
+  <ul class="tags"><li>alpha</li><li>beta</li><li>gamma</li></ul>
+</section>
+
+<section>
+  <h2>Object list</h2>
+  <div class="product"><strong class="product-name">Kettle</strong> — <span class="product-sku">SKU-1</span></div>
+  <div class="product"><strong class="product-name">Toaster</strong> — <span class="product-sku">SKU-2</span></div>
+</section>
+
+<section>
+  <h2>Inside an overflow container (clipping test)</h2>
+  <div class="scroller">
+    <div class="spacer" style="height:60px"></div>
+    <div class="product"><strong class="product-name">Clipped</strong> — <span class="product-sku">SKU-3</span></div>
+    <div class="spacer" style="height:200px"></div>
+  </div>
+</section>
+
+<p>
+  <button class="tool" onclick="hypercms.cms.open({view:'inline'})">open inline</button>
+  <button class="tool" onclick="hypercms.cms.open({view:'sidebar'})">open sidebar</button>
+  <button class="tool" onclick="hypercms.cms.close()">close</button>
+</p>
+
+<div class="spacer"></div>
+<p>Scroll target: the handles above should track this page as it moves.</p>
+
+<!-- hypercms needs a mutation hub; clayjs is the one the platform ships. edit
+     mode is forced so the toggle and the edit-only paths are live on a fixture
+     with no owner cookie. -->
+<script>window.clayEditMode = true</script>
+<script src="/clayjs/public/v1/clay.js?plugins=sortable,undo"></script>
+<script src="/richclay/dist/richclay.min.js"></script>
+<script src="/hypercms/dist/hypercms.min.js"></script>
+<script>
+  window.__hcmsEvents = []
+  document.addEventListener('hcms:change', (e) => window.__hcmsEvents.push(['change', e.detail]))
+  document.addEventListener('hcms:open', (e) => window.__hcmsEvents.push(['open', e.detail]))
+  document.addEventListener('hcms:close', (e) => window.__hcmsEvents.push(['close', e.detail]))
+</script>
+</body>
+</html>

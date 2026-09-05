@@ -885,7 +885,7 @@ function stableStringify(value) {
   })
 }
 
-function cssEscape(value) {
+export function cssEscape(value) {
   if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(value)
   return String(value).replace(/[^a-zA-Z0-9_\-.*]/g, (c) => '\\' + c)
 }

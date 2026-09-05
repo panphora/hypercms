@@ -679,3 +679,21 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
   align-self: center;
 }
 .hcms-inline-count[hidden] { display: none; }
+
+/* One field at a time. Scoped to the inline host: [data-hcms-shell] is on BOTH
+   hosts, so an unscoped rule hides the sidebar's whole form too. */
+.hcms-inline .hcms-form [data-hcms-path] { display: none; }
+.hcms-inline .hcms-form [data-hcms-path].is-hcms-inline-onpath,
+.hcms-inline .hcms-form [data-hcms-path].is-hcms-inline-active { display: block; }
+
+.hcms-inline-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  border: 2px solid var(--mirk-focus-color);
+  border-radius: 4px;
+  box-sizing: border-box;
+  will-change: transform;
+}
+.hcms-inline-highlight[hidden] { display: none; }

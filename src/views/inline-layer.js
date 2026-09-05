@@ -16,9 +16,24 @@ export function createInlineLayer({ doc, layerEl, onActivate }) {
   const win = doc.defaultView
   let entries = []
   let index = new Map()
+  // Every resolved target, keyed by the page element it sits on — not just the
+  // ones that got a handle. The highlight and the page-level click have to
+  // reach a text or a native target too, and neither of those has an entry.
+  let targets = new Map()
   let observer = null
   let frame = 0
   let listening = false
+  let follower = null
+  let highlighted = null
+
+  // ONE reusable outline, moved to whatever is hovered. Marking each target
+  // with an attribute instead would write editor state into an authored
+  // element, which is the class of problem richclay-bridge.js exists to undo.
+  const highlight = doc.createElement('div')
+  highlight.className = 'hcms-inline-highlight'
+  highlight.hidden = true
+  highlight.setAttribute('aria-hidden', 'true')
+  layerEl.appendChild(highlight)
 
   function schedule() {
     if (frame || !win) return
@@ -47,6 +62,18 @@ export function createInlineLayer({ doc, layerEl, onActivate }) {
       const { x, y } = placeHandle({ anchor, handle, viewport })
       entry.handle.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
     }
+    placeHighlight()
+    follower?.()
+  }
+
+  // The highlight carries an explicit width/height, so it never measures itself
+  // and the hidden-before-measuring trap the handles have does not apply.
+  function placeHighlight() {
+    if (!highlighted || highlight.hidden) return
+    const rect = highlighted.getBoundingClientRect()
+    highlight.style.width = `${Math.round(rect.width)}px`
+    highlight.style.height = `${Math.round(rect.height)}px`
+    highlight.style.transform = `translate(${Math.round(rect.left)}px, ${Math.round(rect.top)}px)`
   }
 
   function observe() {
@@ -114,12 +141,16 @@ export function createInlineLayer({ doc, layerEl, onActivate }) {
     for (const entry of entries) entry.handle.remove()
     entries = []
     index = new Map()
+    targets = new Map()
   }
 
   return {
-    setTargets(targets) {
+    setTargets(list) {
       clearEntries()
-      for (const target of targets || []) {
+      for (const target of list || []) {
+        // Indexed whatever its kind, because the highlight and the click reach
+        // every target; the handle below is the part only 'handle' gets.
+        targets.set(target.el, target)
         // Only the 'handle' kind gets one, which is what the kind name says. A
         // text target's affordance is the caret richclay puts in it, and a
         // native target already carries its own control: targets.js is explicit
@@ -138,9 +169,41 @@ export function createInlineLayer({ doc, layerEl, onActivate }) {
     },
     refresh: schedule,
     get count() { return entries.length },
+
+    // The nearest target containing `el`, walking up from it. One Map lookup
+    // per ancestor rather than a scan of the target list per pointer event.
+    elementToTarget(el) {
+      for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+        const target = targets.get(node)
+        if (target) return target
+      }
+      return null
+    },
+
+    showHighlight(el) {
+      if (!el) return
+      highlighted = el
+      highlight.hidden = false
+      placeHighlight()
+    },
+
+    hideHighlight() {
+      highlighted = null
+      highlight.hidden = true
+    },
+
+    // The seam the view uses to ride the same frame-coalesced pass the handles
+    // do, so an open popover tracks a scroll without a second rAF loop.
+    setFollower(fn) {
+      follower = typeof fn === 'function' ? fn : null
+    },
+
     destroy() {
       if (frame && win) win.cancelAnimationFrame(frame)
       frame = 0
+      follower = null
+      highlighted = null
+      highlight.remove()
       unlisten()
       clearEntries()
     },
