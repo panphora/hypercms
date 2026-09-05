@@ -3,8 +3,8 @@
   Inline view fixture, for verifying the real bundle in a real browser.
 
   The script paths are absolute from the hyper workspace root, because the page
-  loads clayjs and richclay from their own repos rather than a copy. Serve the
-  workspace, not this repo:
+  loads clayjs from its own repo rather than a copy. Serve the workspace, not
+  this repo:
 
       npx http-server ~/Documents/GitHub/hyper -p 5694 -c-1
       open http://localhost:5694/hypercms/demo/inline.html
@@ -12,6 +12,13 @@
   Run `npm run build` in hypercms first, or dist/hypercms.min.js will be stale.
   Loads clay.js WITHOUT the cms plugin on purpose: that plugin pulls in clayjs's
   own vendored copy of hypercms, which is not the build under test.
+
+  richclay comes from clayjs's vendored copy, and NEVER load a second standalone
+  richclay beside it. Two runtimes are two classes with two instance caches, and
+  both watch the document: the marker one of them writes makes the other mount a
+  second editor on the same element with its own default options, which renders a
+  toolbar hypercms asked not to have and resets the caret to the start of the
+  text on every click.
 -->
 <html lang="en">
 <head>
@@ -93,7 +100,6 @@
      with no owner cookie. -->
 <script>window.clayEditMode = true</script>
 <script src="/clayjs/public/v1/clay.js?plugins=sortable,undo"></script>
-<script src="/richclay/dist/richclay.min.js"></script>
 <script src="/hypercms/dist/hypercms.min.js"></script>
 <script>
   window.__hcmsEvents = []

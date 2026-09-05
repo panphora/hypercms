@@ -1992,6 +1992,51 @@ test("G2d: on the vendored richclay, an author's own mount selector survives the
   reset(t.dom)
 })
 
+// --- D1: the bind happens on the press, not on the click ---------------------
+
+function pointerdown(t, el) {
+  el.dispatchEvent(new t.win.MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+}
+
+test('D1: a pointerdown on a text target binds it, and the click that follows does not construct a second editor', () => {
+  const t = boot()
+  try {
+    const title = t.doc.querySelector('.title')
+
+    pointerdown(t, title)
+
+    assert.equal(t.richclay.made.length, 1, 'the press built the editor')
+    assert.equal(t.richclay.last.element, title)
+    // The whole point: editable BEFORE mousedown's default action runs, which is
+    // the only moment the browser can put the caret where the person pressed.
+    assert.equal(title.getAttribute('contenteditable'), 'true')
+
+    click(t, title)
+
+    assert.equal(t.richclay.made.length, 1, 'the click that follows reuses the binding')
+    assert.equal(t.richclay.last.destroyed, false)
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('D1b: a pointerdown on a non-text target binds nothing', () => {
+  const t = boot(ROWS_SKU)
+  try {
+    const sku = t.doc.querySelector('.sku')
+
+    pointerdown(t, sku)
+
+    assert.equal(t.richclay.made.length, 0, 'a handle target gets a popover, never an editor')
+    assert.equal(sku.hasAttribute('data-hcms-bound'), false)
+    assert.equal(sku.hasAttribute('contenteditable'), false)
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
 // --- D3: a commit on this path is what stops the restore ---------------------
 
 test('D3: an api.setValue that changes the markup and keeps the same words is not reverted by close', () => {

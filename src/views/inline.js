@@ -357,6 +357,21 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         layer?.setHoveredRow(null)
       }
 
+      // Bind on the press, not on the click. The browser places the caret as the
+      // default action of mousedown, and it can only do that if the element is
+      // already editable by then. Binding on click is one step too late, which is
+      // why the caret used to land at the start of the text however far into it
+      // the person pressed. Nothing here focuses: the browser's own default
+      // action does that, and it is the only thing that knows the press
+      // coordinates.
+      const onPointerDown = (event) => {
+        if (hostRoot.contains(event.target)) return
+        const target = layer && layer.elementToTarget(event.target)
+        if (!target || target.kind !== 'text') return
+        if (bindings.has(target.el)) return
+        bindText(this.ctx, target.el, target.path.join('.'), projectionOf(target))
+      }
+
       const onClick = (event) => {
         // The editor's own chrome. A handle already activates through its own
         // listener, and a click in the popover must not close it.
@@ -366,9 +381,10 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
           this.deactivate()
           return
         }
-        // A text target keeps its default click so the caret lands where the
-        // person pressed. A link inside one is the exception: while the session
-        // is open, following it would navigate away mid-edit.
+        // A text target is already bound and focused by the pointerdown above,
+        // so this only has to leave its default alone. A link inside one is the
+        // exception: while the session is open, following it would navigate away
+        // mid-edit.
         const inLink = typeof event.target.closest === 'function' && event.target.closest('a[href]')
         if (inLink || target.kind !== 'text') event.preventDefault()
         this.activate(target)
@@ -397,6 +413,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
 
       root.addEventListener('pointerover', onPointerOver)
       root.addEventListener('pointerleave', onPointerLeave)
+      root.addEventListener('pointerdown', onPointerDown)
       root.addEventListener('click', onClick)
       hostRoot.addEventListener('keydown', onKeyDown)
       doc.addEventListener('hcms:change', onChanged)
@@ -404,6 +421,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       unbindPage = () => {
         root.removeEventListener('pointerover', onPointerOver)
         root.removeEventListener('pointerleave', onPointerLeave)
+        root.removeEventListener('pointerdown', onPointerDown)
         root.removeEventListener('click', onClick)
         hostRoot.removeEventListener('keydown', onKeyDown)
         doc.removeEventListener('hcms:change', onChanged)
