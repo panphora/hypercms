@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { engine } from 'hyper-html-api'
 import { loadPage, reset } from './_helpers.js'
 import { open, close, isOpen, installStyles, refresh } from '../src/hypercms.js'
 
@@ -105,6 +106,9 @@ const NATIVE = page(
 const HERO = box(40, 100, 200, 120)
 const LINK = box(40, 260, 100, 20)
 const HANDLE = box(0, 0, 24, 24)
+// A three-button strip and a one-button Add, both measured the way a handle is.
+const STRIP = box(0, 0, 90, 28)
+const ADD = box(0, 0, 60, 28)
 // placeHandle has two modes, and this fixture exercises both. The hero is
 // 200x120 against a 24x24 handle, roomy enough that the handle sits on its
 // top-right corner overlapping by the 6px inset. The link is 100x20, shorter
@@ -148,6 +152,11 @@ function boot(html = MIXED) {
   if (el('.grid')) setBox(el('.grid'), GRID)
   if (el('.product-name')) setBox(el('.product-name'), PRODUCT)
   for (const li of doc.querySelectorAll('li.tag')) setBox(li, box(0, 500, 80, 20))
+  // The list anchors: each row gets its own box so a strip that lands on the
+  // wrong row is visible as a wrong transform, and the <ul> gets one so the Add
+  // it carries is placed against something real.
+  doc.querySelectorAll('.product').forEach((row, i) => setBox(row, box(300, 400 + i * 70, 360, 60)))
+  if (el('ul.tags')) setBox(el('ul.tags'), box(0, 480, 300, 60))
 
   open({ view: 'inline' })
 
@@ -155,6 +164,8 @@ function boot(html = MIXED) {
   const layerEl = host.querySelector('.hcms-inline-layer')
   const countEl = host.querySelector('.hcms-inline-count')
   for (const handle of layerEl.querySelectorAll('.hcms-inline-handle')) setBox(handle, HANDLE)
+  for (const strip of layerEl.querySelectorAll('.hcms-inline-row-controls')) setBox(strip, STRIP)
+  for (const add of layerEl.querySelectorAll('.hcms-inline-list-add')) setBox(add, ADD)
 
   return { dom, win, doc, frames, io, host, layerEl, countEl }
 }
@@ -213,9 +224,17 @@ test('inline layer: a handle is hidden until its intersection record says it is 
       assert.equal(h.hidden, true, 'nothing is drawn before the observer has reported')
     }
 
+    // The anchors, never the handles — and since B2b-4 that includes the anchors
+    // the list controls ride: each row of the tags list, then the <ul> the Add
+    // sits on. One observer covers every kind of control the layer draws.
     assert.deepEqual(
       t.io.current.observed,
-      [t.doc.querySelector('.hero'), t.doc.querySelector('.link')],
+      [
+        t.doc.querySelector('.hero'),
+        t.doc.querySelector('.link'),
+        ...t.doc.querySelectorAll('li.tag'),
+        t.doc.querySelector('ul'),
+      ],
       'the observer watches the anchors, not the handles'
     )
 
@@ -984,6 +1003,353 @@ test('inline popover: the popover paints above the handles, not under them', () 
   } finally {
     close()
     installStyles('')
+  }
+  reset(t.dom)
+})
+
+// ---- B2b-4: lists inline -----------------------------------------------------
+
+// One object array of three rows and one scalar array, so the same controls can
+// be shown to work on a card list and on a run of <li>s.
+const LISTS = page(
+  `{
+    "products": [".product", { "name": ".product-name" }],
+    "tags": "li.tag[]"
+  }`,
+  `<div class="grid">
+    <article class="product"><h3 class="product-name">One</h3></article>
+    <article class="product"><h3 class="product-name">Two</h3></article>
+    <article class="product"><h3 class="product-name">Three</h3></article>
+  </div>
+  <ul class="tags"><li class="tag">a</li><li class="tag">b</li></ul>`
+)
+
+// A list emptied down to the hidden seed the engine grows new rows from. It has
+// no rows at all, so nothing but the seed says where a row would go.
+const SEEDED = page(
+  `{ "tags": "li.tag[]" }`,
+  // Deliberately not `ul.tags`, which boot hands a box: an emptied list's
+  // container really does measure zero, and that is the whole reason the Add is
+  // not gated on the anchor floor the rows are.
+  `<ul class="taglist"><li class="tag" cms-template>seed</li></ul>`
+)
+
+function showControls(t) {
+  t.frames.flush()
+  t.io.report(true)
+  t.frames.flush()
+}
+
+function strip(t, path, row) {
+  return t.layerEl.querySelector(
+    `.hcms-inline-row-controls[data-hcms-list="${path}"][data-hcms-row="${row}"]`
+  )
+}
+
+function rowButton(t, path, row, action) {
+  const el = strip(t, path, row)
+  assert.ok(el, `no strip for ${path}.${row}`)
+  const button = el.querySelector(`[data-hcms-list-action="${action}"]`)
+  assert.ok(button, `no ${action} button on ${path}.${row}`)
+  return button
+}
+
+function clickRow(t, path, row, action) {
+  const button = rowButton(t, path, row, action)
+  fire(t, button, 'click')
+  return button
+}
+
+function addButton(t, path) {
+  return t.layerEl.querySelector(`.hcms-inline-list-add[data-hcms-list="${path}"]`)
+}
+
+function pageNames(t) {
+  return [...t.doc.querySelectorAll('.product-name')].map((el) => el.textContent)
+}
+
+function formRows(t, path) {
+  const arrayEl = t.host.querySelector(`[data-hcms-path="${path}"]`)
+  assert.ok(arrayEl, `the form has no array at "${path}"`)
+  const slot = arrayEl.querySelector('.hcms-array-items')
+  assert.ok(slot, `the form array at "${path}" has no items slot`)
+  return [...slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]')]
+}
+
+test('inline lists: ↑ and ↓ move the FORM row, and the page rows follow on the commit', () => {
+  const t = boot(LISTS)
+  try {
+    showControls(t)
+    assert.deepEqual(pageNames(t), ['One', 'Two', 'Three'])
+
+    const before = formRows(t, 'products')
+    assert.deepEqual(
+      before.map((row) => row.getAttribute('data-hcms-path')),
+      ['products.0', 'products.1', 'products.2']
+    )
+
+    clickRow(t, 'products', 1, 'move-up')
+
+    // -1 on the SECOND row: the form row that was at index 1 is now at index 0,
+    // which is both "the form row moved" and "the direction was up".
+    const after = formRows(t, 'products')
+    assert.equal(after[0], before[1], 'the second form row is the one that moved')
+    assert.equal(after[1], before[0], 'and the first row took its place')
+    assert.deepEqual(
+      after.map((row) => row.getAttribute('data-hcms-path')),
+      ['products.0', 'products.1', 'products.2'],
+      'the paths were restamped behind the move'
+    )
+    assert.deepEqual(pageNames(t), ['Two', 'One', 'Three'], 'the commit moved the page rows')
+
+    // The strips are stamped with a row index at build time, so the +1 half of
+    // this runs against a freshly built set rather than a stale one.
+    refresh()
+    clickRow(t, 'products', 0, 'move-down')
+    assert.deepEqual(pageNames(t), ['One', 'Two', 'Three'], '+1 puts it back')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: ✕ routes through requestRemove, so an object array still asks first', async () => {
+  const t = boot(LISTS)
+  try {
+    showControls(t)
+    const asked = []
+    t.win.hyperclay.consent = (message) => {
+      asked.push(message)
+      return Promise.resolve()
+    }
+
+    clickRow(t, 'products', 0, 'remove')
+
+    assert.deepEqual(asked, ['Delete this item?'], 'the consent modal an object array raises')
+    assert.equal(t.doc.querySelectorAll('.product').length, 3, 'nothing goes before they agree')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    assert.equal(t.doc.querySelectorAll('.product').length, 2)
+    assert.deepEqual(pageNames(t), ['Two', 'Three'], 'and it was the row they pressed')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: Add appends through onAdd, and the new row gets its own controls on the next refresh', () => {
+  const t = boot(LISTS)
+  try {
+    showControls(t)
+    assert.equal(strip(t, 'products', 3), null, 'nothing is drawn for a row that does not exist yet')
+
+    fire(t, addButton(t, 'products'), 'click')
+
+    assert.equal(t.doc.querySelectorAll('.product').length, 4, 'the page grew a row')
+    assert.deepEqual(pageNames(t), ['One', 'Two', 'Three', ''], 'appended, at the end')
+
+    // The engine cloned the last row, and a clone does not carry the stubbed
+    // rect its original was given, so the new row would fail the anchor floor
+    // for a reason that exists only in jsdom.
+    setBox(t.doc.querySelectorAll('.product')[3], box(300, 610, 360, 60))
+    refresh()
+
+    assert.ok(strip(t, 'products', 3), 'the new row carries its own strip')
+    assert.equal(
+      rowButton(t, 'products', 3, 'move-down').hidden,
+      true,
+      'the new row is the last one now'
+    )
+    assert.equal(
+      rowButton(t, 'products', 2, 'move-down').hidden,
+      false,
+      'and the row that used to be last can move down'
+    )
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: a list emptied down to its [cms-template] seed still offers Add', () => {
+  const t = boot(SEEDED)
+  try {
+    showControls(t)
+    const rows = () => t.doc.querySelectorAll('li.tag:not([cms-template])')
+    assert.equal(rows().length, 0, 'nothing but the seed')
+    assert.equal(strip(t, 'tags', 0), null, 'and so no row strips')
+
+    // The container came from the seed, which is the only thing on an emptied
+    // list that says where a row goes. Without it this list could never be grown
+    // back from the page at all.
+    const add = addButton(t, 'tags')
+    assert.ok(add, 'the list most in need of an Add is the one with no rows')
+
+    fire(t, add, 'click')
+
+    assert.equal(formRows(t, 'tags').length, 1, 'the form grew a row')
+    assert.equal(rows().length, 1, 'and the commit grew the page from the seed')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: the first row has no ↑ and the last has no ↓', () => {
+  const t = boot(LISTS)
+  try {
+    showControls(t)
+
+    assert.equal(rowButton(t, 'products', 0, 'move-up').hidden, true, 'the first cannot move up')
+    assert.equal(rowButton(t, 'products', 0, 'move-down').hidden, false)
+    assert.equal(rowButton(t, 'products', 1, 'move-up').hidden, false, 'a middle row does both')
+    assert.equal(rowButton(t, 'products', 1, 'move-down').hidden, false)
+    assert.equal(rowButton(t, 'products', 2, 'move-up').hidden, false)
+    assert.equal(rowButton(t, 'products', 2, 'move-down').hidden, true, 'the last cannot move down')
+
+    // Remove is on every row, so "hidden" above is about the move rule and not
+    // about the strip being drawn wrong.
+    for (const row of [0, 1, 2]) {
+      assert.equal(rowButton(t, 'products', row, 'remove').hidden, false)
+    }
+
+    // The same rule on a scalar list of two, where first and last are the only
+    // rows there are.
+    assert.equal(rowButton(t, 'tags', 0, 'move-up').hidden, true)
+    assert.equal(rowButton(t, 'tags', 0, 'move-down').hidden, false)
+    assert.equal(rowButton(t, 'tags', 1, 'move-up').hidden, false)
+    assert.equal(rowButton(t, 'tags', 1, 'move-down').hidden, true)
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: Hide controls puts the strips and the Adds away and leaves the handles alone', () => {
+  const t = boot(MIXED)
+  try {
+    showControls(t)
+    const controls = () => [...t.layerEl.querySelectorAll('.hcms-inline-row-controls, .hcms-inline-list-add')]
+    assert.ok(controls().length >= 3, 'the tags list drew two strips and an Add')
+    for (const el of controls()) assert.equal(el.hidden, false)
+    for (const handle of handles(t.layerEl)) assert.equal(handle.hidden, false)
+
+    const toggle = t.host.querySelector('[data-hcms-controls-toggle]')
+    assert.ok(toggle, 'the session bar carries the toggle')
+    fire(t, toggle, 'click')
+
+    for (const el of controls()) assert.equal(el.hidden, true, 'every list control is away')
+    for (const handle of handles(t.layerEl)) {
+      assert.equal(handle.hidden, false, 'a handle is not a list control and must stay')
+    }
+    assert.equal(toggle.getAttribute('aria-pressed'), 'true')
+    assert.equal(toggle.querySelector('.mirk-button__label').textContent, 'Show controls')
+
+    // A toggle, not a mode: pressing it again brings them back where they were.
+    fire(t, toggle, 'click')
+    t.frames.flush()
+    for (const el of controls()) assert.equal(el.hidden, false)
+    assert.equal(toggle.getAttribute('aria-pressed'), 'false')
+    assert.equal(toggle.querySelector('.mirk-button__label').textContent, 'Hide controls')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: the controls survive a refresh, rebuilt against the page as it now is', () => {
+  const t = boot(LISTS)
+  try {
+    showControls(t)
+    assert.ok(strip(t, 'products', 2), 'three rows, three strips')
+    assert.equal(strip(t, 'products', 3), null)
+
+    // A page-side change the session did not make — a live-sync, or another
+    // script. refreshForm re-syncs the form; the controls have to be rebuilt
+    // with it or the fourth row has no way to be moved or removed at all.
+    const grid = t.doc.querySelector('.grid')
+    const fourth = t.doc.createElement('article')
+    fourth.className = 'product'
+    fourth.innerHTML = '<h3 class="product-name">Four</h3>'
+    grid.appendChild(fourth)
+    setBox(fourth, box(300, 610, 360, 60))
+
+    refresh()
+
+    assert.ok(strip(t, 'products', 3), 'the row that appeared has controls')
+    assert.equal(
+      rowButton(t, 'products', 2, 'move-down').hidden,
+      false,
+      'and the row that was last is no longer the last'
+    )
+
+    // Still wired, not just still drawn.
+    for (const el of t.layerEl.querySelectorAll('.hcms-inline-row-controls')) setBox(el, STRIP)
+    clickRow(t, 'products', 3, 'move-up')
+    assert.deepEqual(pageNames(t), ['One', 'Two', 'Four', 'Three'])
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: the control moves no page node itself — the commit does', () => {
+  const t = boot(LISTS)
+  try {
+    showControls(t)
+    assert.deepEqual(pageNames(t), ['One', 'Two', 'Three'])
+
+    // What the page looked like at the moment the apply began. captureChildren
+    // runs INSIDE applyWithRollback (apply-loop.js:39), after the caller has
+    // already mutated, so a control that moved the page row first would have its
+    // reorder snapshotted as the state to roll back TO.
+    const real = engine.apply
+    const atApply = []
+    engine.apply = (...args) => {
+      atApply.push(pageNames(t))
+      return real(...args)
+    }
+    try {
+      clickRow(t, 'products', 1, 'move-up')
+    } finally {
+      engine.apply = real
+    }
+
+    assert.deepEqual(atApply, [['One', 'Two', 'Three']], 'the page was untouched when the commit began')
+    assert.deepEqual(pageNames(t), ['Two', 'One', 'Three'], 'and the commit is what moved it')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: a failed apply rolls back to the pre-move page, not to a half-moved one', () => {
+  const t = boot(LISTS)
+  try {
+    showControls(t)
+    const failures = []
+    t.doc.addEventListener('hcms:error', (event) => failures.push(event.detail.error.message))
+
+    const real = engine.apply
+    engine.apply = () => { throw new Error('apply refused') }
+    try {
+      clickRow(t, 'products', 1, 'move-up')
+    } finally {
+      engine.apply = real
+    }
+
+    // The apply really was attempted: without this the assertion below would
+    // pass just as happily for a click that did nothing at all.
+    assert.deepEqual(failures, ['apply refused'], 'the failure surfaced')
+    assert.deepEqual(
+      pageNames(t),
+      ['One', 'Two', 'Three'],
+      'the rollback restored the order the page had before the click'
+    )
+  } finally {
+    close()
   }
   reset(t.dom)
 })

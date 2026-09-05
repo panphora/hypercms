@@ -25,6 +25,9 @@ import {
   cssEscape,
   extractFormData,
   findLeafField,
+  onAdd,
+  onMove,
+  requestRemove,
   suppressUndo,
   writeFieldValue,
 } from '../events.js'
@@ -193,10 +196,54 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         layerEl: host.layerEl,
         // The handle and the page click are two doors to one room.
         onActivate: (target, handle) => this.activate(target, handle),
+        onListAction: (op) => this.listAction(op),
       })
       layer.setFollower(() => this.placePopover())
+      host.toggleEl.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        this.toggleControls()
+      })
       this.bindPage()
       this.syncTargets()
+    },
+
+    // Add, remove and reorder, every one of them acting on the FORM row and
+    // letting the commit move the page.
+    //
+    // Moving the page row here instead would corrupt the rollback:
+    // captureChildren runs INSIDE applyWithRollback (apply-loop.js:39), after
+    // the caller has already mutated, so a failed apply would restore the
+    // post-move DOM and the reorder would never come undone. Moving the form row
+    // first means the commit snapshots the page container still in its pre-move
+    // state. Routing through requestRemove rather than onRemove is the same kind
+    // of inheritance: the consent modal an object array raises is that path's,
+    // and reimplementing it here would be a second policy to keep in step.
+    listAction({ action, list, index }) {
+      const ctx = this.ctx
+      const arrayPath = list.path.join('.')
+      const arrayEl = ctx.formRoot.querySelector(`[data-hcms-path="${cssEscape(arrayPath)}"]`)
+      if (!arrayEl) return
+      if (action === 'add') {
+        onAdd(arrayPath, ctx)
+        return
+      }
+      const row = formRowAt(arrayEl, index)
+      if (!row) return
+      if (action === 'remove') {
+        requestRemove(row, ctx)
+        return
+      }
+      onMove(row, action === 'move-up' ? -1 : 1, ctx)
+    },
+
+    toggleControls() {
+      if (!layer || !host) return
+      const hidden = !layer.controlsHidden
+      layer.setControlsHidden(hidden)
+      host.toggleEl.setAttribute('aria-pressed', String(hidden))
+      const label = host.toggleEl.querySelector('.mirk-button__label')
+      if (label) label.textContent = hidden ? 'Show controls' : 'Hide controls'
     },
 
     // Discovery and activation, delegated on the page root rather than bound
@@ -338,8 +385,8 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     syncTargets() {
       if (!layer) return
       const ctx = this.ctx
-      const { targets } = resolveTargets(ctx.pageRoot, ctx.pageRules)
-      layer.setTargets(targets)
+      const { targets, lists } = resolveTargets(ctx.pageRoot, ctx.pageRules)
+      layer.setTargets(targets, lists)
       const n = layer.count
       if (this.countEl) {
         this.countEl.textContent = `${n} editable ${n === 1 ? 'area' : 'areas'}`
@@ -669,6 +716,9 @@ function mountInlineHost(doc, theme) {
   root.innerHTML = `
     <div class="hcms-inline-bar">
       <div class="hcms-inline-count" hidden></div>
+      <button type="button" class="hcms-inline-toggle mirk-button mirk-button--small" data-hcms-controls-toggle aria-pressed="false">
+        <span class="mirk-button__label">Hide controls</span>
+      </button>
       <div class="hcms-inline-notice" role="status" hidden></div>
       <div class="hcms-inline-error" role="alert" hidden></div>
     </div>
@@ -686,6 +736,19 @@ function mountInlineHost(doc, theme) {
     countEl: root.querySelector('.hcms-inline-count'),
     layerEl: root.querySelector('.hcms-inline-layer'),
     popEl: root.querySelector('.hcms-inline-pop'),
+    toggleEl: root.querySelector('[data-hcms-controls-toggle]'),
     destroy() { root.remove() },
   }
+}
+
+// The form row a page row stands for. onMove and requestRemove both take a form
+// item element and find their array back from it, so this resolves exactly what
+// they expect to be handed: the array's own items slot, indexed. Deliberately
+// not a path query — the row's data-hcms-path is restamped by every structural
+// operation, and the slot's child order is the thing those two read.
+function formRowAt(arrayEl, index) {
+  const slot = arrayEl.querySelector('.hcms-array-items')
+  if (!slot) return null
+  const rows = slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]')
+  return rows[index] || null
 }

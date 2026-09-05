@@ -1685,6 +1685,46 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
   will-change: transform;
 }
 .hcms-inline-handle[hidden] { display: none; }
+
+/* The list controls: one ↑ ↓ ✕ strip per row, one Add per list. Positioned the
+   same way a handle is and by the same pass, so they carry the same absolute
+   origin and the same will-change. */
+.hcms-inline-row-controls {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+  will-change: transform;
+}
+.hcms-inline-row-controls[hidden] { display: none; }
+
+.hcms-inline-list-add {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  will-change: transform;
+}
+.hcms-inline-list-add[hidden] { display: none; }
+
+.hcms-inline-list-button {
+  min-width: 28px;
+  min-height: 28px;
+}
+.hcms-inline-list-button[hidden] { display: none; }
+
+/* A finger is not a mouse pointer: on touch the same three controls get the
+   44px target the platform guidelines ask for. */
+@media (pointer: coarse) {
+  .hcms-inline-list-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+.hcms-inline-toggle { align-self: center; }
 .hcms-inline-count {
   padding: 6px 12px;
   border-radius: 999px;
