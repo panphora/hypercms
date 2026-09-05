@@ -3,10 +3,11 @@ import assert from 'node:assert/strict'
 import { engine } from 'hyper-html-api'
 import HyperMorph from 'hyper-morph'
 import { loadPage, reset } from './_helpers.js'
-import { open, close, isOpen, api } from '../src/hypercms.js'
+import { open, close, isOpen, refresh, api } from '../src/hypercms.js'
 import { state } from '../src/session.js'
 import { coerceBooleans, extractFormData, stableStringify } from '../src/events.js'
 import { upgradeInlineTextRules } from '../src/enhance.js'
+import { resolveTargets } from '../src/targets.js'
 import { cleanRichClayFromSnapshot } from '../src/richclay-bridge.js'
 
 // richclay is not a dependency of hypercms — the page brings it — so the editor
@@ -37,6 +38,16 @@ function emitter() {
   }
 }
 
+// richclay's provenance rule, from removeRuntimeState (hyperclay.js:355-361):
+// data-richclay comes off only when data-richclay-runtime-marker says richclay
+// invented it, so an author's own opt-in survives every strip.
+function unmarkRichClay(el) {
+  if (el.getAttribute('data-richclay-runtime-marker') === 'true') {
+    el.removeAttribute('data-richclay')
+  }
+  el.removeAttribute('data-richclay-runtime-marker')
+}
+
 function installRichClay(win) {
   const made = []
   class FakeRichClay {
@@ -47,12 +58,21 @@ function installRichClay(win) {
       this.destroyed = false
       this.active = false
       made.push(this)
+      // Both attributes together, the way ensureMarker writes them
+      // (richclay.js:818-835): the marker is what says richclay invented this
+      // opt-in, and every strip below removes data-richclay only when it is set.
+      el.setAttribute('data-richclay-runtime-marker', 'true')
       el.setAttribute('data-richclay', '')
       this.unsupported =
         el.namespaceURI !== HTML_NS || REFUSED_TAGS.has((el.tagName || '').toUpperCase())
       if (this.unsupported) return
       el.setAttribute('contenteditable', 'true')
       el.classList.add('richclay-inline')
+      // The two setupEditorAttributes writes anything outside richclay reads
+      // (richclay.js:837-873): the "there is a live editor here" flag, and the
+      // marker that keeps the page's undo stack out of a region Squire owns.
+      el.setAttribute('data-richclay-active', 'true')
+      el.setAttribute('no-undo', '')
       this.active = true
     }
     focus() {
@@ -62,14 +82,19 @@ function installRichClay(win) {
       this.destroyed = true
       this.active = false
       this.element.removeAttribute('contenteditable')
-      this.element.removeAttribute('data-richclay')
+      this.element.removeAttribute('data-richclay-active')
+      this.element.removeAttribute('no-undo')
+      unmarkRichClay(this.element)
       this.element.classList.remove('richclay-inline')
       if (this.element.getAttribute('class') === '') this.element.removeAttribute('class')
     }
     static stripFromClone(docEl) {
       for (const el of docEl.querySelectorAll('[data-richclay]')) {
         el.removeAttribute('contenteditable')
+        el.removeAttribute('data-richclay-active')
+        el.removeAttribute('no-undo')
         el.classList.remove('richclay-inline')
+        unmarkRichClay(el)
       }
     }
   }
@@ -77,23 +102,30 @@ function installRichClay(win) {
   return { made, get last() { return made[made.length - 1] } }
 }
 
-// The parts of hyper-undo this path touches, with its two load-bearing rules:
-// recordValue is a no-op while the recorder is paused, and an undo replays the
-// primitive in reverse and then announces itself.
+// The parts of hyper-undo this path touches, with its four load-bearing rules:
+// recordValue is a no-op while the recorder is paused (scope.js:190), isPaused
+// reports that state (scope.js:297), a fresh record clears the redo stack
+// (pushCommit, scope.js:126), and an undo replays the primitive in reverse and
+// then announces itself OUTSIDE its own pause (scope.js:242-252).
 function installUndo(win) {
   const records = []
+  const redos = []
   const handlers = new Map()
   let depth = 0
   const undo = {
     records,
+    redos,
     pause() { depth++ },
     resume() { depth = Math.max(0, depth - 1) },
+    get isPaused() { return depth > 0 },
+    get canRedo() { return redos.length > 0 },
     commitCaptured() {},
     discardCaptured() {},
     recordValue(target, { prop = 'value', oldValue, newValue } = {}) {
       if (depth > 0) return
       if (!target || oldValue === newValue) return
       records.push({ target, prop, oldValue, newValue })
+      redos.length = 0
     },
     on(name, fn) {
       if (!handlers.has(name)) handlers.set(name, new Set())
@@ -105,11 +137,16 @@ function installUndo(win) {
       if (!primitive) return
       depth++
       try { primitive.target[primitive.prop] = primitive.oldValue } finally { depth-- }
+      redos.push(primitive)
       for (const fn of [...(handlers.get('undo') || [])]) fn()
     },
   }
   win.hyperclay.undo = undo
   return undo
+}
+
+function rulesTag(t) {
+  return t.doc.querySelector('script[data-rules-name="cms"]')
 }
 
 function page(rules, body) {
@@ -467,6 +504,69 @@ test('upgradeInlineTextRules: a row rule no row holds markup for is left alone',
   }
 })
 
+// The child in each fixture below is the wrapper squire puts around the content
+// of a block it binds. A plain paragraph grows one the instant it is clicked, so
+// the live DOM stops being evidence of what the author wrote and the marker's
+// value is read instead.
+test('upgradeInlineTextRules: a bound plain element holding squire\'s wrapper does not upgrade its rule', () => {
+  const dom = loadPage(page(
+    '{}',
+    '<div class="tagline" data-hcms-bound="plain"><div>One rules tag, two views.</div></div>'
+  ))
+  try {
+    const rules = upgradeInlineTextRules({ tagline: '.tagline' }, dom.window.document.body)
+    assert.equal(rules.tagline, '.tagline')
+  } finally {
+    reset(dom)
+  }
+})
+
+test('upgradeInlineTextRules: the same element unbound does upgrade, so it is the marker that decides', () => {
+  const dom = loadPage(page(
+    '{}',
+    '<div class="tagline"><div>One rules tag, two views.</div></div>'
+  ))
+  try {
+    const rules = upgradeInlineTextRules({ tagline: '.tagline' }, dom.window.document.body)
+    assert.equal(rules.tagline, '.tagline@innerHTML')
+  } finally {
+    reset(dom)
+  }
+})
+
+// The other half: a marker reading 'rich' keeps upgrading on every later
+// refresh, so author markup is never flattened back to textContent mid-session.
+test('upgradeInlineTextRules: a bound rich element keeps its upgrade', () => {
+  const dom = loadPage(page(
+    '{}',
+    '<div class="tagline" data-hcms-bound="rich"><div>One rules tag, <b>two</b> views.</div></div>'
+  ))
+  try {
+    const rules = upgradeInlineTextRules({ tagline: '.tagline' }, dom.window.document.body)
+    assert.equal(rules.tagline, '.tagline@innerHTML')
+  } finally {
+    reset(dom)
+  }
+})
+
+test('upgradeInlineTextRules: a bound plain row is ignored, an unbound row holding markup still upgrades', () => {
+  const dom = loadPage(page(
+    '{}',
+    `<div class="product"><span class="product-name" data-hcms-bound="plain"><div>P1</div></span></div>
+     <div class="product"><span class="product-name">P2 <b>bold</b></span></div>`
+  ))
+  try {
+    const rules = upgradeInlineTextRules(
+      { products: ['.product', { name: '.product-name' }] },
+      dom.window.document.body
+    )
+    assert.equal(rules.products[0], '.product')
+    assert.equal(rules.products[1].name, '.product-name@innerHTML')
+  } finally {
+    reset(dom)
+  }
+})
+
 test('inline: the session binds array rows through @innerHTML, which the sidebar does not', () => {
   const t = boot()
   try {
@@ -617,7 +717,7 @@ test('inline text: a live-sync morph strips the binding off the page element, an
 
     livesyncApplied(t)
 
-    assert.equal(title.getAttribute('data-hcms-bound'), '', 'the refresh bound it again')
+    assert.equal(title.getAttribute('data-hcms-bound'), 'rich', 'the refresh bound it again')
     assert.equal(title.getAttribute('contenteditable'), 'true')
     assert.equal(title.getAttribute('data-richclay'), '')
 
@@ -668,7 +768,7 @@ test('inline text: a morph that replaces the node drops the binding instead of l
   reset(t.dom)
 })
 
-test('inline text: what was typed before the sync lands as one undo primitive', () => {
+test('inline text: what was typed before the sync lands as one undo primitive', async () => {
   const t = boot(SYNCED)
   try {
     const undo = installUndo(t.win)
@@ -681,8 +781,15 @@ test('inline text: what was typed before the sync lands as one undo primitive', 
     type(t, title, 'Hello <em>world</em>')
     assert.deepEqual(undo.records, [], 'nothing is recorded mid-session')
 
+    // Inside the pause, because that is where the real event arrives: clayjs
+    // dispatches clay:sync-applied from inside its mutation pause, which pauses
+    // undo too (live-sync.js:1357, mutation.js:132). Fired outside it, this
+    // test passed against a recordUndo that dropped the record on the floor.
+    undo.pause()
     morphFromPeer(t)
     livesyncApplied(t)
+    undo.resume()
+    await Promise.resolve()
 
     assert.equal(undo.records.length, 1, 'the sync closed the session that was open')
     assert.equal(undo.records[0].target, title)
@@ -731,7 +838,7 @@ test('inline text: an element that came through the morph with its binding intac
     // the element and leaves the binding whole. A whole binding is not
     // something to tear down and build again.
     morphFromPeer(t, null, { clean: false })
-    assert.equal(title.getAttribute('data-hcms-bound'), '', 'the morph left the marker alone')
+    assert.equal(title.getAttribute('data-hcms-bound'), 'rich', 'the morph left the marker alone')
 
     livesyncApplied(t)
 
@@ -765,7 +872,7 @@ test('inline text: an undo that reverts the binding attributes rebinds too', () 
     title.removeAttribute('data-hcms-bound')
     undo.undo()
 
-    assert.equal(title.getAttribute('data-hcms-bound'), '', 'the undo refresh bound it again')
+    assert.equal(title.getAttribute('data-hcms-bound'), 'rich', 'the undo refresh bound it again')
     assert.equal(title.getAttribute('contenteditable'), 'true')
     assert.equal(editor.destroyed, true, 'and the editor that was pointing at it is gone')
   } finally {
@@ -797,6 +904,505 @@ test('inline text: an undo does not record a primitive describing its own revert
     // fresh record clears the redo stack, so the person who just pressed undo
     // could not press redo.
     assert.equal(undo.records.length, 0, 'the rebind recorded nothing on top of the undo')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// ---- review round 2 ----------------------------------------------------------
+
+// Written across three lines with no element children, so the rule stays a bare
+// textContent projection and the whitespace the DOM adapter trims is real.
+const PADDED = page(
+  `{ "title": ".title" }`,
+  `<h1 class="title">
+  Hello
+</h1>`
+)
+
+const PLAIN_TITLE = page(`{ "title": ".title" }`, '<h1 class="title">Hello</h1>')
+
+const ROWS = page(
+  `{ "products": [".product", { "name": ".name@innerHTML" }] }`,
+  `<div class="list">
+    <div class="product"><span class="name">One</span></div>
+    <div class="product"><span class="name">Two</span></div>
+    <div class="product"><span class="name">Three</span></div>
+  </div>`
+)
+
+// sku projects an attribute, so it is a handle target and opens the popover —
+// the other half of the path a move renumbers.
+const ROWS_SKU = page(
+  `{ "products": [".product", { "name": ".name@innerHTML", "sku": ".sku@data-sku" }] }`,
+  `<div class="list">
+    <div class="product"><span class="name">One</span><span class="sku" data-sku="A1">A1</span></div>
+    <div class="product"><span class="name">Two</span><span class="sku" data-sku="B2">B2</span></div>
+    <div class="product"><span class="name">Three</span><span class="sku" data-sku="C3">C3</span></div>
+  </div>`
+)
+
+const TAGS = page(
+  `{ "title": ".title", "tags": "ul.tags li[]" }`,
+  `<h1 class="title">Hello <em>you</em></h1>
+  <ul class="tags"><li>alpha</li><li>beta</li></ul>`
+)
+
+// A list with no rows and no [cms-template] seed: the engine has nothing to
+// clone, so an add raises EmptyListInsert and the apply rolls back.
+const EMPTY_LIST = page(
+  `{ "title": ".title", "products": [".product", { "name": ".name" }] }`,
+  `<h1 class="title">Hello <em>you</em></h1>
+  <div class="list"></div>`
+)
+
+function listNamed(ctx, path) {
+  const { lists } = resolveTargets(ctx.pageRoot, ctx.pageRules)
+  return lists.find((candidate) => candidate.path.join('.') === path)
+}
+
+function targetNamed(ctx, path) {
+  const { targets } = resolveTargets(ctx.pageRoot, ctx.pageRules)
+  return targets.find((candidate) => candidate.path.join('.') === path)
+}
+
+function activePath(t) {
+  return t.doc.querySelector('.is-hcms-inline-active')?.getAttribute('data-hcms-path')
+}
+
+function names() {
+  return api.getData().products.map((product) => product.name)
+}
+
+// --- F1: the commit reads the projection the way the engine does -------------
+
+test('F1: a textContent commit reads the trimmed value, so the caret node survives', () => {
+  const t = boot(PADDED)
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    const editor = editorFor(t, title)
+
+    title.textContent = '\n  Hello there\n'
+    // Captured after the editor wrote and before the commit: this is the node
+    // the caret is sitting in.
+    const caretNode = title.firstChild
+    editor.squire.emit('input')
+
+    assertCoherent('after a whitespace-padded textContent commit')
+    assert.equal(api.getData().title, 'Hello there')
+    assert.equal(title.firstChild, caretNode, 'the commit did not rewrite the node under the caret')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// --- F2: a binding follows the page, not the path it was born with -----------
+
+test('F2: a binding follows its row through a move instead of writing into the row that took its index', () => {
+  const t = boot(ROWS)
+  try {
+    const ctx = state.ctx
+    const second = t.doc.querySelectorAll('.product .name')[1]
+    assert.equal(second.textContent, 'Two', 'the fixture puts Two in the middle')
+
+    click(t, second)
+    type(t, second, 'Two edited')
+
+    ctx.view.listAction({ action: 'move-up', list: listNamed(ctx, 'products'), index: 1 })
+    refresh()
+
+    type(t, second, 'Two edited again')
+
+    assert.deepEqual(names(), ['Two edited again', 'One', 'Three'])
+    assert.equal(t.doc.querySelectorAll('.product .name')[1].innerHTML, 'One', 'the row it moved past is untouched')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('F2: a rule that upgrades to @innerHTML mid-session rebuilds the editor under it', () => {
+  const t = boot(PLAIN_TITLE)
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    const first = editorFor(t, title)
+    assert.equal(first.options.toolbar, false, 'bound on a textContent projection')
+
+    // The projection changes at its source: the author's rule itself becomes an
+    // @innerHTML one. refreshForm re-reads the rules tag every refresh, so this
+    // is the supported way a rule changes under a live binding. Markup merely
+    // APPEARING in a bound element is not, and must not be — a bound element's
+    // projection is frozen for the life of the binding, which is the same rule
+    // F10 keeps when it denies a plain-text target a formatting toolbar.
+    rulesTag(t).textContent = '{ "title": ".title@innerHTML" }'
+    refresh()
+
+    const rebuilt = editorFor(t, title)
+    assert.notEqual(rebuilt, first, 'the editor was rebuilt')
+    assert.equal(first.destroyed, true, 'and the textContent one was torn down')
+    // construct() derives the toolbar from the projection, so this is
+    // binding.prop === 'innerHTML' read from outside the closure that holds it.
+    assert.deepEqual(rebuilt.options.toolbar, ['bold', 'italic', 'link', 'undo', 'redo'])
+
+    type(t, title, 'Hello <em>world</em>')
+    assert.equal(api.getData().title, 'Hello <em>world</em>', 'the markup commits instead of being flattened')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// The defect this marker exists for, driven end to end. The fake editor does not
+// wrap its content, so squire's <div> is written by hand — measured in Chrome it
+// lands at t+0 and the upgrade followed on the next observer batch.
+test('F2b: clicking a plain paragraph does not turn its rule into a rich-text one', () => {
+  const t = boot(PLAIN_TITLE)
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    const first = editorFor(t, title)
+    assert.equal(first.options.toolbar, false, 'bound on a textContent projection')
+
+    title.innerHTML = '<div>Hello</div>'
+    refresh()
+
+    assert.equal(state.ctx.pageRules.title, '.title', 'the rule is still the plain one')
+    assert.equal(editorFor(t, title), first, 'and the editor was left alone')
+    assert.equal(first.destroyed, false)
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('F2: an open popover follows its row through a move', () => {
+  const t = boot(ROWS_SKU)
+  try {
+    const ctx = state.ctx
+    const rowTwo = t.doc.querySelectorAll('.product')[1]
+    ctx.view.activate(targetNamed(ctx, 'products.1.sku'))
+    assert.equal(activePath(t), 'products.1.sku', 'the popover opened over the middle row')
+
+    ctx.view.listAction({ action: 'move-up', list: listNamed(ctx, 'products'), index: 1, row: rowTwo })
+    refresh()
+
+    assert.equal(activePath(t), 'products.0.sku', 'and it is still editing the row it was anchored over')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// --- F3: row controls act on the row they are drawn on -----------------------
+
+test('F3: a second click on a stale row strip acts on its row, not on its old index', () => {
+  const t = boot(ROWS)
+  try {
+    const ctx = state.ctx
+    const rowTwo = t.doc.querySelectorAll('.product')[1]
+    // One list object, captured once, the way a strip built by the layer holds
+    // the numbering it was drawn with. No refresh runs between the two clicks.
+    const list = listNamed(ctx, 'products')
+
+    ctx.view.listAction({ action: 'move-up', list, index: 1, row: rowTwo })
+    ctx.view.listAction({ action: 'move-up', list, index: 1, row: rowTwo })
+
+    assert.deepEqual(names(), ['Two', 'One', 'Three'], 'the second click was a no-op on an already-first row')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// --- F5: never destroy an editor hypercms did not create ---------------------
+
+test('F5: an editor the author mounted is adopted for the session and never torn down', () => {
+  if (isOpen()) close()
+  const dom = loadPage(TEXT)
+  const richclay = installRichClay(dom.window)
+  const Base = dom.window.richclay.RichClay
+  const byElement = new Map()
+  // richclay's own constructor contract (richclay.js:85-86): a second
+  // construction on an element that already has an instance returns that one.
+  class Adopting extends Base {
+    constructor(el, options) {
+      const existing = byElement.get(el)
+      if (existing) return existing
+      super(el, options)
+      byElement.set(el, this)
+    }
+  }
+  dom.window.richclay = { RichClay: Adopting }
+  const t = { dom, win: dom.window, doc: dom.window.document, richclay }
+
+  const title = t.doc.querySelector('.title')
+  const authors = new Adopting(title, { inline: true })
+  assert.equal(title.getAttribute('data-richclay-active'), 'true', "the author's editor is live before hypercms looks")
+
+  open({ view: 'inline' })
+  try {
+    click(t, title)
+    assert.equal(editorFor(t, title), authors, "hypercms's 'new' editor is the author's")
+
+    close()
+
+    assert.equal(authors.destroyed, false, "the author's editor was not destroyed")
+    assert.equal(title.getAttribute('data-richclay-active'), 'true', 'and it is still driving the element')
+    assert.equal(title.hasAttribute('data-hcms-bound'), false, 'only the CMS marker came off')
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})
+
+// --- F6: the undo baseline is the author's markup, not Squire's --------------
+
+test("F6: undo returns the author's markup, not Squire's normalisation", () => {
+  const t = bootNormalizing()
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    const authored = title.innerHTML
+    assert.equal(authored, 'Hello <em>you</em>')
+
+    click(t, title)
+    assert.equal(title.innerHTML, '<div>Hello <i>you</i></div>', 'the editor rewrote it on bind')
+    type(t, title, '<div>Hello <i>world</i></div>')
+    blur(t, title)
+
+    assert.equal(undo.records.length, 1)
+    undo.undo()
+    assert.equal(title.innerHTML, authored, "undoing must not write Squire's <div> and <i> into the file")
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// --- F7: the undo record survives somebody else's pause ----------------------
+
+test("F7: a close inside teardown's own undo pause still records the edit", async () => {
+  const t = boot(TEXT)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    const original = title.innerHTML
+    click(t, title)
+    type(t, title, 'Hello <em>world</em>')
+
+    // teardownSession wraps view.destroy() in suppressUndo (session.js:225), so
+    // the recorder is paused at the exact moment the binding closes.
+    close()
+
+    await Promise.resolve()
+
+    assert.equal(undo.records.length, 1, 'the edit kept its place on the stack')
+    assert.equal(undo.records[0].oldValue, original)
+    assert.equal(undo.records[0].newValue, 'Hello <em>world</em>')
+    undo.undo()
+    assert.equal(title.innerHTML, original, 'and replaying it returns the heading')
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})
+
+test("F7: a live-sync applied inside clayjs's own pause still records the edit", async () => {
+  const t = boot(SYNCED)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    const original = title.innerHTML
+    click(t, title)
+    type(t, title, 'Hello <em>world</em>')
+
+    // clayjs dispatches clay:sync-applied from inside its mutation pause, which
+    // pauses undo too (live-sync.js:1357, mutation.js:132).
+    undo.pause()
+    morphFromPeer(t)
+    livesyncApplied(t)
+    assert.deepEqual(undo.records, [], 'nothing can land while somebody else holds the pause')
+    undo.resume()
+    await Promise.resolve()
+
+    assert.equal(undo.records.length, 1, 'and the edit arrives once the pause is over')
+    assert.equal(undo.records[0].oldValue, original)
+    assert.equal(undo.records[0].newValue, 'Hello <em>world</em>')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// --- F8: undo refreshes the baseline of a binding that survived it -----------
+
+test('F8: a binding that survived an undo takes the reverted value as its baseline', () => {
+  const t = boot(TEXT)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    const original = title.innerHTML
+    click(t, title)
+    type(t, title, 'Hello <em>world</em>')
+    blur(t, title)
+    assert.equal(undo.records.length, 1)
+
+    undo.undo()
+    assert.equal(title.innerHTML, original, 'the undo reverted the page')
+    assert.equal(undo.canRedo, true, 'and it is redoable')
+    assert.equal(title.getAttribute('data-hcms-bound'), 'rich', 'the binding came through with its marker intact')
+
+    blur(t, title)
+
+    assert.equal(undo.records.length, 0, 'a blur with no typing records nothing')
+    assert.equal(undo.canRedo, true, 'so the redo they just earned is still there')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// --- F9: close restores only what construct produced -------------------------
+
+test('F9: an API write in the same task as close is not reverted by the restore', () => {
+  const t = bootNormalizing()
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    assert.equal(title.innerHTML, '<div>Hello <i>you</i></div>', 'bound and normalised, nothing typed')
+
+    api.setValue('title', 'Replacement <em>from API</em>')
+    close()
+
+    assert.equal(title.innerHTML, 'Replacement <em>from API</em>', "the API's write stands")
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})
+
+// --- F10: no formatting toolbar on a plain-text projection -------------------
+
+test('F10: a plain-text projection gets no toolbar; an @innerHTML one gets the full set', () => {
+  const t = boot(TAGS)
+  try {
+    const tag = t.doc.querySelectorAll('ul.tags li')[0]
+    click(t, tag)
+    assert.equal(
+      editorFor(t, tag).options.toolbar,
+      false,
+      'a scalar row commits textContent, so a bold from this toolbar would be flattened'
+    )
+
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    assert.deepEqual(editorFor(t, title).options.toolbar, ['bold', 'italic', 'link', 'undo', 'redo'])
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// --- F11: orphan clones lose their editor state ------------------------------
+
+test('F11: a row the engine cloned off a bound one does not stay editable', () => {
+  const t = boot(ROWS)
+  try {
+    const first = t.doc.querySelector('.product .name')
+    click(t, first)
+    assert.equal(first.getAttribute('data-hcms-bound'), 'plain')
+
+    // listDiff clones oldNodes[0] to grow a list (diff.js:67), which is the row
+    // the editor is bound inside.
+    api.addItem('products')
+    refresh()
+    close()
+
+    const rows = [...t.doc.querySelectorAll('.product .name')]
+    const clone = rows[rows.length - 1]
+    assert.notEqual(clone, first, 'the added row is a new node')
+    assert.equal(clone.hasAttribute('contenteditable'), false, 'and it is not editable')
+    assert.equal(clone.hasAttribute('no-undo'), false, 'and page undo is not switched off for it')
+    assert.equal(clone.hasAttribute('data-hcms-bound'), false)
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})
+
+test('F11: the clone a rolled-back apply put on the page does not stay editable', () => {
+  const t = boot(EMPTY_LIST)
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    assert.equal(title.getAttribute('data-hcms-bound'), 'rich')
+
+    // Nothing to clone, so the apply raises EmptyListInsert and the rollback
+    // restores clones of every non-shell child (apply-loop.js:145).
+    api.addItem('products')
+    const replacement = t.doc.querySelector('.title')
+    assert.notEqual(replacement, title, 'the rollback replaced the heading with a clone')
+    assert.equal(replacement.getAttribute('data-hcms-bound'), 'rich', 'and the clone carries the marker')
+
+    refresh()
+
+    assert.equal(replacement.hasAttribute('contenteditable'), false)
+    assert.equal(replacement.hasAttribute('no-undo'), false)
+    assert.equal(replacement.hasAttribute('data-hcms-bound'), false)
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('F11: a richclay that offers stripElement is the one that does the cleanup', () => {
+  if (isOpen()) close()
+  const dom = loadPage(ROWS)
+  const richclay = installRichClay(dom.window)
+  const Base = dom.window.richclay.RichClay
+  const stripped = []
+  class WithStrip extends Base {
+    static stripElement(el) {
+      stripped.push(el)
+      el.removeAttribute('contenteditable')
+      el.removeAttribute('data-richclay-active')
+      el.removeAttribute('no-undo')
+      unmarkRichClay(el)
+    }
+  }
+  dom.window.richclay = { RichClay: WithStrip }
+  const t = { dom, win: dom.window, doc: dom.window.document, richclay }
+
+  open({ view: 'inline' })
+  try {
+    const first = t.doc.querySelector('.product .name')
+    click(t, first)
+    api.addItem('products')
+    refresh()
+
+    const rows = [...t.doc.querySelectorAll('.product .name')]
+    const clone = rows[rows.length - 1]
+    assert.deepEqual(stripped, [clone], 'the per-element strip was handed the orphan, and only it')
+    // The fallback branch cannot do this one: it removes the two attributes that
+    // harm the live page and leaves richclay's own flag behind.
+    assert.equal(clone.hasAttribute('data-richclay-active'), false)
+    assert.equal(clone.hasAttribute('data-hcms-bound'), false)
   } finally {
     close()
   }

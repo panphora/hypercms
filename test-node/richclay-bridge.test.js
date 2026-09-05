@@ -23,6 +23,10 @@ function makeFakeRichClay() {
         region.removeAttribute('contenteditable')
         region.removeAttribute('data-richclay-active')
         region.removeAttribute('data-richclay-runtime-contenteditable')
+        if (region.getAttribute('data-richclay-runtime-marker') === 'true') {
+          region.removeAttribute('data-richclay')
+        }
+        region.removeAttribute('data-richclay-runtime-marker')
       })
     }
   }
@@ -30,7 +34,7 @@ function makeFakeRichClay() {
 }
 
 const BOUND_HEADING =
-  '<h1 data-richclay data-richclay-active="true" data-richclay-runtime-contenteditable="true" contenteditable="true" data-hcms-bound>Title</h1>'
+  '<h1 data-richclay data-richclay-runtime-marker="true" data-richclay-active="true" data-richclay-runtime-contenteditable="true" contenteditable="true" data-hcms-bound>Title</h1>'
 
 function makeClone(html) {
   const dom = new JSDOM(`<!DOCTYPE html><html><body>${html}</body></html>`)
@@ -89,15 +93,35 @@ test('a clone with nothing hypercms bound never calls the strip', () => {
   dom.window.close()
 })
 
-test('a RichClay with no stripFromClone static still gets the markers removed', () => {
+test('a RichClay with no stripFromClone leaves the page attributes to richclay', () => {
   const { dom, clone } = makeClone(BOUND_HEADING)
   class OldRichClay {}
   assert.doesNotThrow(() => {
     cleanRichClayFromSnapshot(clone, { richclay: { RichClay: OldRichClay } })
   })
   const h1 = clone.querySelector('h1')
-  assert.equal(h1.hasAttribute('data-richclay'), false)
+  // Nothing stripped this element, so contenteditable is still on it. Removing
+  // the opt-in while leaving contenteditable behind is worse than leaving both:
+  // it would take the author's own marker out of the file AND leave the heading
+  // permanently editable. Only the CMS's own marker comes off here.
+  assert.equal(h1.hasAttribute('data-richclay'), true)
   assert.equal(h1.hasAttribute(BOUND_ATTR), false)
+  dom.window.close()
+})
+
+test("an authored data-richclay on a BOUND element survives the snapshot", () => {
+  const { dom, clone } = makeClone(
+    '<h2 data-richclay data-richclay-active="true" data-richclay-runtime-contenteditable="true" contenteditable="true" data-hcms-bound>Authored and bound</h2>'
+  )
+  const { FakeRichClay } = makeFakeRichClay()
+  cleanRichClayFromSnapshot(clone, { richclay: { RichClay: FakeRichClay } })
+  const h2 = clone.querySelector('h2')
+  // No runtime marker, so richclay never invented this attribute: the author
+  // did, and hypercms binding the element is not a reason to take their opt-in
+  // out of their file.
+  assert.equal(h2.hasAttribute('data-richclay'), true)
+  assert.equal(h2.hasAttribute('contenteditable'), false)
+  assert.equal(h2.hasAttribute(BOUND_ATTR), false)
   dom.window.close()
 })
 

@@ -9,7 +9,7 @@
 // whose element holds only text are left untouched. Hosts opt out with
 // cms.open({ richText: false }).
 
-import { resolveRichClay } from './richclay-bridge.js'
+import { BOUND_ATTR, resolveRichClay } from './richclay-bridge.js'
 import { ruleAttrIndex } from 'hyper-html-api/engine'
 
 export function upgradeRichTextRules(rules, pageRoot) {
@@ -87,7 +87,17 @@ function holdsMarkup(context, selector) {
   } catch (_) {
     return false
   }
-  return !!el && el.children.length > 0
+  if (!el) return false
+  // An element hypercms has an editor on cannot answer this from its live DOM.
+  // Squire wraps the content of a block it binds in a <div>, so a plain
+  // paragraph grows a child the instant someone clicks it, and reading that
+  // back as author markup upgrades the rule to @innerHTML and turns a
+  // plain-text field into a rich-text one just by being clicked. The marker
+  // carries the verdict from before the editor arrived, which is the only
+  // moment the question had an honest answer. Measured in Chrome: the wrapper
+  // lands at t+0 and the upgrade followed on the next observer batch.
+  if (el.hasAttribute(BOUND_ATTR)) return el.getAttribute(BOUND_ATTR) === 'rich'
+  return el.children.length > 0
 }
 
 function queryAll(root, selector) {

@@ -14,11 +14,23 @@ const FIXTURE = `<!DOCTYPE html><html><body>
   <h1 class="title">Hello <em>you</em></h1>
 </body></html>`
 
+function unmarkRichClay(el) {
+  if (el.getAttribute('data-richclay-runtime-marker') === 'true') {
+    el.removeAttribute('data-richclay')
+  }
+  el.removeAttribute('data-richclay-runtime-marker')
+}
+
 class FakeRichClay {
   constructor(el) {
     this.element = el
     this.squire = null
     this.unsupported = false
+    // Both attributes together, the way ensureMarker writes them
+    // (richclay.js:818-835). The strip below removes data-richclay only when
+    // the marker says richclay invented it, which is richclay's own rule
+    // (removeRuntimeState, hyperclay.js:355-361).
+    el.setAttribute('data-richclay-runtime-marker', 'true')
     el.setAttribute('data-richclay', '')
     el.setAttribute('contenteditable', 'true')
     this.active = true
@@ -26,11 +38,12 @@ class FakeRichClay {
   focus() {}
   destroy() {
     this.element.removeAttribute('contenteditable')
-    this.element.removeAttribute('data-richclay')
+    unmarkRichClay(this.element)
   }
   static stripFromClone(docEl) {
     for (const el of docEl.querySelectorAll('[data-richclay]')) {
       el.removeAttribute('contenteditable')
+      unmarkRichClay(el)
     }
   }
 }

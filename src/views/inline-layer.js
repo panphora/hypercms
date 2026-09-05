@@ -258,10 +258,13 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     return button
   }
 
-  // One row's strip. The row's position is what the view turns into a form row,
-  // so it is stamped onto the strip here rather than recounted from the DOM at
-  // click time, where the page may already have moved on.
-  function makeRowControls(list, rowIndex, count) {
+  // One row's strip. The index is stamped here because the first-row and
+  // last-row visibility rules below need the position the layer was built with.
+  // The action deliberately does NOT trust it: listAction re-resolves the row
+  // from the element it is handed, because a refresh trails a structural change
+  // by an observer batch, and a second click inside that window would otherwise
+  // act on whatever had taken this row's number.
+  function makeRowControls(list, row, rowIndex, count) {
     const path = list.path.join('.')
     const strip = doc.createElement('div')
     strip.className = 'hcms-inline-row-controls'
@@ -277,7 +280,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
       button.addEventListener('click', (event) => {
         event.preventDefault()
         event.stopPropagation()
-        onListAction?.({ action, list, index: rowIndex })
+        onListAction?.({ action, list, index: rowIndex, row })
       })
       strip.appendChild(button)
     }
@@ -304,7 +307,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
       // any better than it can carry a handle, and the strip would end up at the
       // viewport clamp with nothing to belong to.
       if (!isAnchorable(el)) return
-      const strip = makeRowControls(list, i, rows.length)
+      const strip = makeRowControls(list, el, i, rows.length)
       addPlacement(el, strip, 'row')
       rowOwners.set(el, el)
       rowOwners.set(strip, el)

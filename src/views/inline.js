@@ -39,7 +39,7 @@ import { isAnchorable } from '../anchor.js'
 import { resolveTargets } from '../targets.js'
 import { place } from '../place.js'
 import { platform } from '../platform.js'
-import { BOUND_ATTR, markBound, resolveRichClay } from '../richclay-bridge.js'
+import { BOUND_ATTR, markBound, resolveRichClay, stripOrphanEditorState } from '../richclay-bridge.js'
 import { installSnapshotHook } from '../hooks.js'
 import { createInlineLayer } from './inline-layer.js'
 
@@ -96,10 +96,35 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     // and presses Escape has changed nothing and must not have changed their
     // document either, so an untouched session puts this back verbatim.
     const originalHTML = el.innerHTML
-    const editor = construct(ctx, RichClay, el)
+    // Read here for the same reason, and the only moment it can be read: after
+    // construct, Squire's wrapper makes every bound block look like it holds
+    // markup. The rule upgrade reads this verdict back off the marker.
+    const heldMarkup = el.children.length > 0
+    // The undo baseline, read before richclay touches the element for the same
+    // reason as originalHTML above: read after construct it holds Squire's
+    // normalisation, and undoing then writes <div> wrappers and <i> tags into
+    // the author's file. richclay stamps no-undo on what it activates, so from
+    // the bind until unbind this is the only record the page's undo stack gets.
+    const oldValue = readPageValue(el, prop)
+    // richclay's constructor returns the existing instance for an element that
+    // already has one (richclay.js:85-86), so on a page where the author mounted
+    // their own editor this is theirs, not ours. Adopt it for the session and
+    // never tear it down: destroying it would take away an editor hypercms did
+    // not create and cannot put back. data-richclay-active is richclay's own
+    // "there is a live editor here" flag, written by setupEditorAttributes.
+    const adopted = el.getAttribute('data-richclay-active') === 'true'
+    const editor = construct(ctx, RichClay, el, prop)
     if (!editor) return null
 
-    markBound(el)
+    // What the element held once richclay had normalised it. The restore below
+    // exists to undo that normalisation for someone who clicked a heading, read
+    // it and pressed Escape, so it may only run while the element still holds
+    // exactly what construct produced. Anything else changed the content for a
+    // reason — the public API, a live-sync morph, an undo — and putting the
+    // pre-bind markup back over it would discard that change.
+    const constructedHTML = el.innerHTML
+
+    markBound(el, heldMarkup)
     // The second trigger for the snapshot hook, and the reliable one: by the
     // time anyone clicks a heading the host client is certainly loaded, even
     // on a page that missed the readiness event at open(). Without the hook
@@ -112,16 +137,15 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       path,
       prop,
       originalHTML,
+      oldValue,
+      constructedHTML,
+      adopted,
       // Set by squire's input event, which is the only signal that someone
       // actually edited. Comparing the projected value cannot answer this:
       // the normalisation above changes innerHTML at bind time, before anyone
       // has typed anything.
       dirty: false,
     }
-    // For the undo primitive: richclay stamps no-undo on everything it
-    // activates, so from here until unbind the page's undo stack sees nothing
-    // that happens in this element.
-    binding.oldValue = binding.el[binding.prop]
     bindings.set(el, binding)
 
     // Toolbar commands mutate the DOM through squire without always firing a
@@ -170,6 +194,8 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     prepareRules(sourceRules) {
       return richText ? upgradeInlineTextRules(sourceRules, pageRoot) : sourceRules
     },
+
+    bindText(el, path, prop) { return bindText(this.ctx, el, path, prop) },
 
     mount(initialData) {
       const ctx = this.ctx
@@ -236,7 +262,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     // state. Routing through requestRemove rather than onRemove is the same kind
     // of inheritance: the consent modal an object array raises is that path's,
     // and reimplementing it here would be a second policy to keep in step.
-    listAction({ action, list, index }) {
+    listAction({ action, list, index, row }) {
       const ctx = this.ctx
       const arrayPath = list.path.join('.')
       const arrayEl = ctx.formRoot.querySelector(`[data-hcms-path="${cssEscape(arrayPath)}"]`)
@@ -245,13 +271,19 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         onAdd(arrayPath, ctx)
         return
       }
-      const row = formRowAt(arrayEl, index)
-      if (!row) return
+      // The strip was stamped with the index its row held when the layer was
+      // last built, and a refresh trails a structural change by an observer
+      // batch. Re-resolve from the row element so a second click inside that
+      // window acts on the row under the pointer rather than on whatever has
+      // since taken its number.
+      const rowIndex = row ? liveRowIndex(ctx, arrayPath, row, index) : index
+      const formRow = formRowAt(arrayEl, rowIndex)
+      if (!formRow) return
       if (action === 'remove') {
-        requestRemove(row, ctx)
+        requestRemove(formRow, ctx)
         return
       }
-      onMove(row, action === 'move-up' ? -1 : 1, ctx)
+      onMove(formRow, action === 'move-up' ? -1 : 1, ctx)
     },
 
     toggleControls() {
@@ -364,15 +396,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         return true
       }
 
-      const binding = bindText(
-        this.ctx,
-        el,
-        target.path.join('.'),
-        // What the rule projects, so the commit reads the same thing the engine
-        // will write. A text target is either a bare rule (textContent) or one
-        // the upgrade rebound (@innerHTML); nothing else is ever text.
-        target.attr === 'innerHTML' ? 'innerHTML' : 'textContent'
-      )
+      const binding = bindText(this.ctx, el, target.path.join('.'), projectionOf(target))
       if (!binding) return false
 
       focusEditor(binding)
@@ -412,6 +436,15 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       const ctx = this.ctx
       const { targets, lists } = resolveTargets(ctx.pageRoot, ctx.pageRules)
       layer.setTargets(targets, lists)
+      const byEl = reconcileBindings(this, bindings, targets, doc)
+      // An open popover holds its path the same way a binding does. Re-point it
+      // at the target that now stands for the element it is anchored over, or
+      // the popover keeps editing the row that inherited its old index.
+      if (activeTarget) {
+        const fresh = byEl.get(activeTarget.el)
+        if (fresh) activeTarget = fresh
+      }
+      sweepOrphanEditors(this.ctx, bindings, doc)
       const n = layer.count
       if (this.countEl) {
         this.countEl.textContent = `${n} editable ${n === 1 ? 'area' : 'areas'}`
@@ -478,7 +511,15 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
           bindings.delete(el)
           continue
         }
-        if (el.hasAttribute(BOUND_ATTR)) continue
+        if (el.hasAttribute(BOUND_ATTR)) {
+          // Survived with the marker intact, so the editor is still live and
+          // still correct; only the value moved under it. Its baseline is now
+          // the value the morph reverted away from, and left stale the next
+          // blur records that revert as a fresh edit — which clears the redo
+          // stack, so the person who pressed undo cannot press redo.
+          binding.oldValue = readPageValue(el, binding.prop)
+          continue
+        }
         // Survived, but the page no longer treats it as ours. Close the session
         // that was open, one primitive for what they typed, and open a fresh one
         // on the markup as it now stands. Deliberately no restore: the element
@@ -562,7 +603,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
 // (measured, plan §6). Un-paused they read as a page edit and drive a full form
 // refresh; unsuppressed they land on the page's undo stack as three attribute
 // writes nobody made.
-function construct(ctx, RichClay, el) {
+function construct(ctx, RichClay, el, prop) {
   const handle = ctx && ctx.observerHandle
   handle?.pause()
   try {
@@ -572,7 +613,14 @@ function construct(ctx, RichClay, el) {
         editor = new RichClay(el, {
           inline: true,
           hyperclay: false,
-          toolbar: TOOLBAR,
+          // Formatting is offered only where the rule can keep it. A textContent
+          // projection commits the element's text, so a bold applied through this
+          // toolbar would be flattened by the very next commit — the button would
+          // be promising something the rule cannot hold. That is every scalar
+          // array row (enhance.js never upgrades a "[]" rule) and everything at
+          // all under richText: false. richclay reads false as "no toolbar"
+          // (resolveToolbarControls, richclay.js:1007).
+          toolbar: prop === 'innerHTML' ? TOOLBAR : false,
           // A heading is one line by definition; without this, Enter in it
           // creates a second block inside the <h1>.
           ...(HEADING.test(el.tagName) ? { singleLine: true } : null),
@@ -606,8 +654,16 @@ function construct(ctx, RichClay, el) {
 function acceptInlineTextChange(ctx, { path, el, prop }) {
   const field = findLeafField(ctx.formRoot, path)
   if (!field) return
-  writeFieldValue(field, el[prop], ctx.formRoot, path)
+  writeFieldValue(field, readPageValue(el, prop), ctx.formRoot, path)
   commit(extractFormData(ctx), { path, structural: false }, ctx)
+}
+
+// What the engine will read back out of this element. The DOM adapter trims a
+// text projection (hyper-html-api dom.js text()), so a raw textContent read puts
+// a value in the form that the page can never extract, the mirror disagrees on
+// every commit, and the engine rewrites the text node the caret is sitting in.
+function readPageValue(el, prop) {
+  return prop === 'innerHTML' ? el.innerHTML : (el.textContent || '').trim()
 }
 
 // One primitive per edit session, at the boundary that closes it. Everything in
@@ -618,13 +674,23 @@ function acceptInlineTextChange(ctx, { path, el, prop }) {
 // element is in hand rather than resolved from a document-level selector.
 function recordUndo(binding) {
   const { el, prop, oldValue } = binding
-  const newValue = el[prop]
+  const newValue = readPageValue(el, prop)
   if (newValue === oldValue) return
   binding.oldValue = newValue
   const u = platform('undo')
-  if (u && typeof u.recordValue === 'function') {
-    u.recordValue(el, { prop, oldValue, newValue })
-  }
+  if (!u || typeof u.recordValue !== 'function') return
+  // hyper-undo drops recordValue while its recorder is paused (scope.js:190),
+  // and both boundaries that close a binding sit inside a pause somebody else
+  // opened: teardownSession suppresses around destroy (session.js:225), and
+  // clayjs dispatches clay:sync-applied inside its mutation pause, which pauses
+  // undo too (live-sync.js:1357, mutation.js:132). The values are read here and
+  // the record is posted after those finally-blocks have run, so the edit keeps
+  // its place on the stack instead of vanishing at the moment it ends.
+  //
+  // A record against an element the morph took off the page would be an entry
+  // that replays into nothing and still costs an undo press, so it is skipped.
+  if (u.isPaused) queueMicrotask(() => { if (el.isConnected) u.recordValue(el, { prop, oldValue, newValue }) })
+  else u.recordValue(el, { prop, oldValue, newValue })
 }
 
 // Close one binding. The undo record comes first: recordValue is a no-op while
@@ -642,8 +708,10 @@ function unbind(ctx, binding, { restore = true, record = true } = {}) {
   handle?.pause()
   try {
     suppressUndo(() => {
-      try { binding.editor.destroy() } catch (err) {
-        console.warn('[hypercms] richclay teardown failed; editor state may reach the save', err)
+      if (!binding.adopted) {
+        try { binding.editor.destroy() } catch (err) {
+          console.warn('[hypercms] richclay teardown failed; editor state may reach the save', err)
+        }
       }
       // The bridge only unmarks the snapshot clone. Left on the live element,
       // the marker would tell the next snapshot to strip an element hypercms no
@@ -653,7 +721,9 @@ function unbind(ctx, binding, { restore = true, record = true } = {}) {
       // the author wrote is the editor's own normalisation. Put their markup
       // back. Inside the pause and the undo suppression with the teardown, so
       // the restore is not itself an edit.
-      if (restore && !binding.dirty) binding.el.innerHTML = binding.originalHTML
+      if (restore && !binding.adopted && !binding.dirty && binding.el.innerHTML === binding.constructedHTML) {
+        binding.el.innerHTML = binding.originalHTML
+      }
     })
   } finally {
     handle?.resume()
@@ -670,6 +740,60 @@ function focusEditor(binding) {
     if (typeof editor.focus === 'function') editor.focus()
     else el.focus()
   } catch (_) {}
+}
+
+// resolveTargets re-walks the page on every refresh, so it is the only authority
+// on which path reaches which element right now. Both a binding and an open
+// popover cache a path from the moment they were made: a move or a remove
+// renumbers every row after it, and without this, typing into the row you just
+// moved up writes into the row that took its old index.
+//
+// The projection is re-read for the same reason. refreshForm re-runs
+// prepareRules every refresh, so a rule upgrades to @innerHTML the moment its
+// element gains markup. A binding frozen on textContent would flatten every tag
+// in that element on the next keystroke, including the node under the caret.
+function reconcileBindings(view, bindings, targets, doc) {
+  const byEl = new Map()
+  for (const target of targets) byEl.set(target.el, target)
+
+  for (const [el, binding] of [...bindings]) {
+    const target = byEl.get(el)
+    if (!target) continue
+    binding.path = target.path.join('.')
+    const prop = projectionOf(target)
+    if (prop === binding.prop) continue
+    // The projection changed under a live editor. Rebuilding it is the only way
+    // the toolbar, the commit and the undo baseline end up describing the same
+    // half of the element.
+    const hadFocus = doc.activeElement === el
+    unbind(view.ctx, binding, { restore: false })
+    bindings.delete(el)
+    const rebound = view.bindText(el, binding.path, prop)
+    if (rebound && hadFocus) focusEditor(rebound)
+  }
+
+  return byEl
+}
+
+// A text target is either a bare rule (textContent) or one prepareRules rebound
+// to @innerHTML. Nothing else is ever text.
+function projectionOf(target) {
+  return target.attr === 'innerHTML' ? 'innerHTML' : 'textContent'
+}
+
+// Runs on every sync, because a structural apply is exactly when the engine
+// clones, and a refresh is what follows one.
+function sweepOrphanEditors(ctx, bindings, doc) {
+  for (const el of ctx.pageRoot.querySelectorAll(`[${BOUND_ATTR}]`)) {
+    if (bindings.has(el)) continue
+    const handle = ctx.observerHandle
+    handle?.pause()
+    try {
+      suppressUndo(() => stripOrphanEditorState(el, doc.defaultView))
+    } finally {
+      handle?.resume()
+    }
+  }
 }
 
 // Show exactly one leaf: mark it active, and mark every wrapper between it and
@@ -801,4 +925,13 @@ function formRowAt(arrayEl, index) {
   if (!slot) return null
   const rows = slot.querySelectorAll(':scope > [data-hcms-card], :scope > [data-hcms-array-item]')
   return rows[index] || null
+}
+
+// Where this page row sits in its list right now, or the stamped index when the
+// row is no longer in it (a remove that already landed).
+function liveRowIndex(ctx, arrayPath, row, fallback) {
+  const { lists } = resolveTargets(ctx.pageRoot, ctx.pageRules)
+  const list = lists.find((candidate) => candidate.path.join('.') === arrayPath)
+  const index = list ? list.items.indexOf(row) : -1
+  return index === -1 ? fallback : index
 }
