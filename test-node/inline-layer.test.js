@@ -1380,8 +1380,22 @@ test('inline lists: a failed apply rolls back to the pre-move page, not to a hal
     const failures = []
     t.doc.addEventListener('hcms:error', (event) => failures.push(event.detail.error.message))
 
+    // The container the rollback snapshots for this path, and its exact contents
+    // at the moment the apply begins. :1346 proves the control moves nothing
+    // first, so what it holds now is what captureChildren will record.
+    const grid = t.doc.querySelector('.grid')
+    const before = grid.innerHTML
+
     const real = engine.apply
-    engine.apply = () => { throw new Error('apply refused') }
+    engine.apply = () => {
+      // A HALF-DONE apply: one row moved and another dropped before the failure.
+      // A stub that throws before touching anything gives restoreChildren an
+      // unchanged container to restore, so the assertions below would pass just
+      // as well against a rollback that does nothing at all.
+      grid.insertBefore(grid.children[1], grid.children[0])
+      grid.removeChild(grid.lastElementChild)
+      throw new Error('apply refused')
+    }
     try {
       clickRow(t, 'products', 1, 'move-up')
     } finally {
@@ -1395,6 +1409,11 @@ test('inline lists: a failed apply rolls back to the pre-move page, not to a hal
       pageNames(t),
       ['One', 'Two', 'Three'],
       'the rollback restored the order the page had before the click'
+    )
+    assert.equal(
+      grid.innerHTML,
+      before,
+      'and every row is back, byte for byte, not just back in order'
     )
   } finally {
     close()

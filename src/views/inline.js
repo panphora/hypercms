@@ -145,6 +145,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       // the normalisation above changes innerHTML at bind time, before anyone
       // has typed anything.
       dirty: false,
+      lastEdited: undefined,
     }
     bindings.set(el, binding)
 
@@ -154,6 +155,10 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     if (squire && typeof squire.addEventListener === 'function') {
       const onInput = () => {
         binding.dirty = true
+        // What this person produced, captured while the DOM still holds it.
+        // recordUndo reads this rather than the element, because at the one
+        // boundary that matters the element no longer holds their work.
+        binding.lastEdited = readPageValue(el, binding.prop)
         acceptInlineTextChange(ctx, binding)
       }
       squire.addEventListener('input', onInput)
@@ -518,6 +523,11 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
           // blur records that revert as a fresh edit — which clears the redo
           // stack, so the person who pressed undo cannot press redo.
           binding.oldValue = readPageValue(el, binding.prop)
+          // The value they had typed is gone with the undo, so it must not
+          // survive as a pending edit: left set, the next blur would record it
+          // against the new baseline and clear the redo stack, which is the
+          // defect the line above exists to prevent, arriving one step later.
+          binding.lastEdited = undefined
           continue
         }
         // Survived, but the page no longer treats it as ours. Close the session
@@ -673,9 +683,14 @@ function readPageValue(el, prop) {
 // Unlike resolveUnobservedProjection this can record an array row, because the
 // element is in hand rather than resolved from a document-level selector.
 function recordUndo(binding) {
-  const { el, prop, oldValue } = binding
-  const newValue = readPageValue(el, prop)
-  if (newValue === oldValue) return
+  const { el, prop, oldValue, lastEdited } = binding
+  // Deliberately not the element. A live-sync morph replaces the content before
+  // this boundary is reached, so reading the DOM here records a peer's edit
+  // under this person's name and undo reverts THEIR change. No local edit means
+  // no primitive at all, which is the same fix from the other side: an untouched
+  // binding that a morph wrote through must not put anything on the stack.
+  const newValue = lastEdited
+  if (newValue === undefined || newValue === oldValue) return
   binding.oldValue = newValue
   const u = platform('undo')
   if (!u || typeof u.recordValue !== 'function') return

@@ -108,3 +108,39 @@ test('a save-prepare hook strips every hypercms body class from the save clone b
     dom.window.close()
   }
 })
+
+// The same strip, on the hook live sync actually reaches. onPrepareForSave runs
+// save-only, so a session's own body classes were still riding every live-sync
+// frame out to other people's browsers.
+test('a snapshot hook strips every hypercms body class, so live sync never carries them to a peer', () => {
+  const dom = loadPage(FIXTURE)
+  const hooks = []
+  // Stub the clone pipeline that runs for BOTH save and live sync, so
+  // installSnapshotHook (run at open) captures the hook hypercms registers.
+  dom.window.hyperclay.onSnapshot = (fn) => hooks.push(fn)
+  try {
+    open()
+    assert.equal(hooks.length, 1, 'hypercms registered exactly one snapshot hook')
+    assert.equal(
+      dom.window.document.body.classList.contains('hcms-session-open'),
+      true,
+      'a session is open, so the class really is on the live body'
+    )
+
+    const clone = dom.window.document.documentElement.cloneNode(true)
+    clone.querySelector('body').className =
+      'hcms-open hcms-overlay hcms-side-left hcms-session-open page-theme'
+
+    hooks[0](clone)
+
+    const cls = clone.querySelector('body').classList
+    assert.equal(cls.contains('hcms-open'), false, 'hcms-open stripped from the snapshot clone')
+    assert.equal(cls.contains('hcms-overlay'), false, 'hcms-overlay stripped')
+    assert.equal(cls.contains('hcms-side-left'), false, 'hcms-side-left stripped')
+    assert.equal(cls.contains('hcms-session-open'), false, 'hcms-session-open stripped')
+    assert.equal(cls.contains('page-theme'), true, 'unrelated page class preserved')
+  } finally {
+    close()
+    dom.window.close()
+  }
+})

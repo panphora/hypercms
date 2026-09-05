@@ -23,10 +23,20 @@ export function installSavePrepareHook() {
   const onPrepareForSave = platform('onPrepareForSave')
   if (typeof onPrepareForSave !== 'function') return
   onPrepareForSave((clonedDocEl) => {
-    const b = clonedDocEl && clonedDocEl.querySelector && clonedDocEl.querySelector('body')
-    if (b) b.classList.remove('hcms-open', 'hcms-overlay', 'hcms-side-left', SESSION_OPEN_CLASS)
+    stripSessionChrome(clonedDocEl)
   })
   prepareHookInstalled = true
+}
+
+// hypercms's own chrome lives on <body>, outside the [save-remove] shell, so it
+// has to be taken off the clone by hand. Both hooks call this: the save hook
+// because a client may offer onPrepareForSave and no onSnapshot, and the
+// snapshot hook because that is the only one live sync reaches, and without it
+// the session's own classes are broadcast to every other browser. Removing an
+// absent class is a no-op, so running twice on a save costs nothing.
+function stripSessionChrome(clonedDocEl) {
+  const b = clonedDocEl && clonedDocEl.querySelector && clonedDocEl.querySelector('body')
+  if (b) b.classList.remove('hcms-open', 'hcms-overlay', 'hcms-side-left', SESSION_OPEN_CLASS)
 }
 
 // Clean up after the richclay instances hypercms itself creates on page
@@ -42,6 +52,7 @@ export function installSnapshotHook() {
   if (typeof onSnapshot !== 'function') return
   onSnapshot((clonedDocEl) => {
     cleanRichClayFromSnapshot(clonedDocEl, typeof window !== 'undefined' ? window : null)
+    stripSessionChrome(clonedDocEl)
   })
   snapshotHookInstalled = true
 }

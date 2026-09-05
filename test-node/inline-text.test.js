@@ -802,6 +802,132 @@ test('inline text: what was typed before the sync lands as one undo primitive', 
   reset(t.dom)
 })
 
+// The heading has to lose focus before the peer's copy can reach its content:
+// morphChildren is skipped outright for document.activeElement under
+// ignoreActiveValue (hyper-morph.js:1216), which is the same option clayjs
+// passes. A bound element that nobody is typing in is the ordinary case anyway —
+// the binding outlives the blur, and only close or a rebind ends it.
+test("inline text: a sync that overwrites what was typed still records the person's own edit", async () => {
+  const t = boot(SYNCED)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    const original = title.innerHTML
+    click(t, title)
+    type(t, title, 'Hello <em>world</em>')
+    title.blur()
+    assert.equal(undo.records.length, 1, 'the blur closed the session they were in')
+
+    // A peer's copy with different content, so the morph really does write over
+    // what they typed before the binding is repaired.
+    undo.pause()
+    morphFromPeer(t, (incoming) => {
+      incoming.querySelector('.title').innerHTML = 'Theirs'
+    })
+    livesyncApplied(t)
+    undo.resume()
+    await Promise.resolve()
+
+    assert.equal(title.innerHTML, 'Theirs', "the peer's copy is what the page holds now")
+    assert.equal(undo.records.length, 1, 'and the repair added no second primitive')
+    assert.equal(undo.records[0].oldValue, original)
+    assert.equal(
+      undo.records[0].newValue,
+      'Hello <em>world</em>',
+      'what they typed, not what arrived — undoing this must not revert the peer'
+    )
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline text: a binding nobody typed into records nothing when a sync writes through it', async () => {
+  const t = boot(SYNCED)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    title.blur()
+
+    undo.pause()
+    morphFromPeer(t, (incoming) => {
+      incoming.querySelector('.title').innerHTML = 'Theirs'
+    })
+    livesyncApplied(t)
+    undo.resume()
+    await Promise.resolve()
+
+    assert.equal(title.innerHTML, 'Theirs', 'the morph really did change the content')
+    assert.equal(undo.records.length, 0, "a peer's edit is nobody else's undo step")
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline text: the ordinary blur still records the value that was typed', () => {
+  const t = boot(SYNCED)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    const original = title.innerHTML
+    click(t, title)
+    type(t, title, 'Hello <em>world</em>')
+    blur(t, title)
+
+    assert.equal(undo.records.length, 1, 'the blur closed the session')
+    assert.equal(undo.records[0].target, title)
+    assert.equal(undo.records[0].prop, 'innerHTML')
+    assert.equal(undo.records[0].oldValue, original)
+    assert.equal(undo.records[0].newValue, 'Hello <em>world</em>')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline text: a blur after an undo records nothing, so redo survives', () => {
+  const t = boot(SYNCED)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    const original = title.innerHTML
+    click(t, title)
+    type(t, title, 'Hello <em>world</em>')
+    blur(t, title)
+    assert.equal(undo.records.length, 1, 'the edit session recorded one primitive')
+
+    // The marker survives the undo, so the rebind takes the branch that only
+    // moves the baseline. What they typed went back with the undo and must not
+    // come back as a pending edit at the next blur.
+    undo.undo()
+    assert.equal(title.innerHTML, original, 'the undo put the authored markup back')
+    assert.equal(undo.canRedo, true)
+
+    click(t, title)
+    blur(t, title)
+
+    assert.equal(undo.records.length, 0, 'a blur with nothing typed records nothing')
+    assert.equal(undo.canRedo, true, 'so the person who pressed undo can still press redo')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
 test('inline text: a rebind does not move the caret into an element that did not have it', () => {
   const t = boot(SYNCED)
   try {
