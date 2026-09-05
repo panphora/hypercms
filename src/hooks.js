@@ -9,6 +9,7 @@
 
 import { platform, onPlatformEvent, PLATFORM_READY } from './platform.js'
 import { cleanRichClayFromSnapshot } from './richclay-bridge.js'
+import { SESSION_OPEN_CLASS } from './shell.js'
 
 // Strip hypercms's own body chrome from the SAVE clone so it never reaches disk
 // (the shell element itself is [save-remove], but the hcms-open class lives on
@@ -23,7 +24,7 @@ export function installSavePrepareHook() {
   if (typeof onPrepareForSave !== 'function') return
   onPrepareForSave((clonedDocEl) => {
     const b = clonedDocEl && clonedDocEl.querySelector && clonedDocEl.querySelector('body')
-    if (b) b.classList.remove('hcms-open', 'hcms-overlay', 'hcms-side-left')
+    if (b) b.classList.remove('hcms-open', 'hcms-overlay', 'hcms-side-left', SESSION_OPEN_CLASS)
   })
   prepareHookInstalled = true
 }

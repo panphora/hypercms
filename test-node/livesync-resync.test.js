@@ -75,7 +75,7 @@ test('livesync resync restores shell chrome (re-injects #hcms-shell-styles + re-
   }
 })
 
-test('a save-prepare hook strips hcms-open/hcms-overlay/hcms-side-left from the save clone but keeps page classes', () => {
+test('a save-prepare hook strips every hypercms body class from the save clone but keeps page classes', () => {
   const dom = loadPage(FIXTURE)
   const hooks = []
   // Stub the hyperclayjs save pipeline so installSavePrepareHook (run at open)
@@ -87,7 +87,8 @@ test('a save-prepare hook strips hcms-open/hcms-overlay/hcms-side-left from the 
 
     // Build a clone whose body carries both chrome classes and a real page class.
     const clone = dom.window.document.documentElement.cloneNode(true)
-    clone.querySelector('body').className = 'hcms-open hcms-overlay hcms-side-left page-theme'
+    clone.querySelector('body').className =
+      'hcms-open hcms-overlay hcms-side-left hcms-session-open page-theme'
 
     hooks[0](clone)
 
@@ -95,6 +96,12 @@ test('a save-prepare hook strips hcms-open/hcms-overlay/hcms-side-left from the 
     assert.equal(cls.contains('hcms-open'), false, 'hcms-open stripped from save clone')
     assert.equal(cls.contains('hcms-overlay'), false, 'hcms-overlay stripped')
     assert.equal(cls.contains('hcms-side-left'), false, 'hcms-side-left stripped')
+    // Measured in Chrome before this was added: the inline view sets this one and
+    // nothing took it off, so the saved file came back as
+    // <body class="hcms-session-open">. Every class hypercms puts on <body> has to
+    // be listed here, because <body> is outside the [save-remove] shell subtree
+    // and nothing else strips it.
+    assert.equal(cls.contains('hcms-session-open'), false, 'hcms-session-open stripped')
     assert.equal(cls.contains('page-theme'), true, 'unrelated page class preserved')
   } finally {
     close()
