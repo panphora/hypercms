@@ -39,7 +39,16 @@ import { isAnchorable } from '../anchor.js'
 import { resolveTargets } from '../targets.js'
 import { place } from '../place.js'
 import { platform } from '../platform.js'
-import { BOUND_ATTR, RC_OWNED_ATTR, markBound, resolveRichClay, stripOrphanEditorState } from '../richclay-bridge.js'
+import {
+  BOUND_ATTR,
+  BOUND_ID_ATTR,
+  RC_OWNED_ATTR,
+  markBound,
+  registerBinding,
+  releaseBinding,
+  resolveRichClay,
+  stripOrphanEditorState,
+} from '../richclay-bridge.js'
 import { installSnapshotHook } from '../hooks.js'
 import { createInlineLayer } from './inline-layer.js'
 
@@ -58,6 +67,8 @@ const FOCUSABLE =
 const TOOLBAR = ['bold', 'italic', 'link', 'undo', 'redo']
 
 const HEADING = /^H[1-6]$/
+
+let nextBoundId = 0
 
 export function createInlineView({ doc, pageRoot, opts = {} }) {
   const richText = opts.richText !== false
@@ -101,13 +112,6 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     // and presses Escape has changed nothing and must not have changed their
     // document either, so an untouched session puts this back verbatim.
     const originalHTML = inherited.originalHTML ?? el.innerHTML
-    // Read together with originalHTML, and for the restore below rather than for
-    // any projection. Squire's normalisation lands asynchronously, some time
-    // after construct returns, so there is no moment at which the normalised
-    // markup can be captured and compared against. Text is what that rewrite
-    // leaves alone, which makes it the one signal that separates it from a real
-    // change: the API, a morph and an undo all write a different value.
-    const originalText = inherited.originalText ?? (el.textContent || '').trim()
     const richClayIsOurs = inherited.richClayIsOurs ?? !el.hasAttribute('data-richclay')
     // richclay's constructor returns the existing instance for an element that
     // already has one (richclay.js:85-86), so on a page where the author mounted
@@ -133,6 +137,8 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     // it rich is deleted. Recording the projection also states the frozen
     // projection rule directly instead of approximating it.
     markBound(el, prop === 'innerHTML', richClayIsOurs)
+    const boundId = String(++nextBoundId)
+    el.setAttribute(BOUND_ID_ATTR, boundId)
     // The second trigger for the snapshot hook, and the reliable one: by the
     // time anyone clicks a heading the host client is certainly loaded, even
     // on a page that missed the readiness event at open(). Without the hook
@@ -144,8 +150,8 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       editor,
       path,
       prop,
+      boundId,
       originalHTML,
-      originalText,
       oldValue,
       richClayIsOurs,
       adopted,
@@ -154,9 +160,17 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       // the normalisation above changes innerHTML at bind time, before anyone
       // has typed anything.
       dirty: false,
+      written: false,
+      // Whether the pre-bind markup may go back. Adopted means the editor is the
+      // author's and its normalisation is theirs to keep; dirty means they
+      // typed; written means a commit changed this path.
+      restorable() {
+        return !this.adopted && !this.dirty && !this.written
+      },
       lastEdited: undefined,
     }
     bindings.set(el, binding)
+    registerBinding(boundId, binding)
 
     // Toolbar commands mutate the DOM through squire without always firing a
     // native input event, so squire's own signal is the one to commit on.
@@ -364,16 +378,35 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         if (event.key === 'Escape') this.deactivate()
       }
 
+      // A commit naming this element's path means something wrote content to it,
+      // and the pre-bind markup must never go back over that. richclay's
+      // rewriting commits nothing, which is precisely what makes this the right
+      // signal and the text comparison it replaces the wrong one: that could not
+      // tell an API write that kept the same words from the editor's own work.
+      //
+      // On the document because the event is dispatched on the host, which does
+      // not sit inside the page root. detail.pageRoot is what the payload
+      // carries it for.
+      const onChanged = (event) => {
+        const detail = event.detail
+        if (!detail || detail.pageRoot !== this.ctx.pageRoot || !detail.path) return
+        for (const binding of bindings.values()) {
+          if (binding.path === detail.path) binding.written = true
+        }
+      }
+
       root.addEventListener('pointerover', onPointerOver)
       root.addEventListener('pointerleave', onPointerLeave)
       root.addEventListener('click', onClick)
       hostRoot.addEventListener('keydown', onKeyDown)
+      doc.addEventListener('hcms:change', onChanged)
 
       unbindPage = () => {
         root.removeEventListener('pointerover', onPointerOver)
         root.removeEventListener('pointerleave', onPointerLeave)
         root.removeEventListener('click', onClick)
         hostRoot.removeEventListener('keydown', onKeyDown)
+        doc.removeEventListener('hcms:change', onChanged)
       }
     },
 
@@ -779,12 +812,13 @@ function unbind(ctx, binding, { restore = true, record = true } = {}) {
       // longer owns, and the provenance flag beside it would reach the file.
       binding.el.removeAttribute(BOUND_ATTR)
       binding.el.removeAttribute(RC_OWNED_ATTR)
+      binding.el.removeAttribute(BOUND_ID_ATTR)
+      releaseBinding(binding.boundId)
       // Nobody typed, so the only difference between this element and the one
       // the author wrote is the editor's own normalisation. Put their markup
       // back. Inside the pause and the undo suppression with the teardown, so
       // the restore is not itself an edit.
-      if (restore && !binding.adopted && !binding.dirty &&
-          (binding.el.textContent || '').trim() === binding.originalText) {
+      if (restore && binding.restorable()) {
         binding.el.innerHTML = binding.originalHTML
       }
     })
@@ -844,7 +878,6 @@ function reconcileBindings(view, bindings, targets, doc) {
       richClayIsOurs: binding.richClayIsOurs,
       adopted: binding.adopted,
       originalHTML: binding.originalHTML,
-      originalText: binding.originalText,
     })
     if (rebound && hadFocus) focusEditor(rebound)
   }

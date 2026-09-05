@@ -21,6 +21,39 @@ import { platform } from './platform.js'
 // can no longer answer whether the author wrote markup in this element.
 export const BOUND_ATTR = 'data-hcms-bound'
 
+// The binding's own id, written on the live element and carried into the clone
+// by cloneNode. It is how the save hook, holding a clone, finds the live binding
+// that knows what the author's markup was before richclay rewrote it. Identity
+// cannot cross cloneNode, and the markup is far too big to ride in an attribute.
+export const BOUND_ID_ATTR = 'data-hcms-bound-id'
+
+// id -> the live binding. Populated at bind, dropped at unbind, read only by the
+// save hook. Holding the binding rather than a copy of its markup is deliberate:
+// whether the restore should happen at all is a question about the binding's
+// state right now, not about its state when it was created.
+const boundById = new Map()
+
+export function registerBinding(id, binding) {
+  boundById.set(id, binding)
+}
+
+export function releaseBinding(id) {
+  boundById.delete(id)
+}
+
+// The author's markup for a clone element, or null when the clone must be left
+// exactly as it stands. Null covers all three reasons: no live binding behind
+// it, an editor the author owns, and any content this session has actually
+// changed. See restorable() in inline.js, which asks the same question of the
+// live element at teardown.
+export function pristineMarkupFor(cloneEl) {
+  const id = cloneEl.getAttribute(BOUND_ID_ATTR)
+  if (!id) return null
+  const binding = boundById.get(id)
+  if (!binding || !binding.restorable()) return null
+  return binding.originalHTML
+}
+
 // Written beside the marker when hypercms's own construct call is what put
 // data-richclay on the element. richclay 0.5.0 tracks the same provenance in
 // data-richclay-runtime-marker and strips the attribute for us, but clayjs and
@@ -103,4 +136,5 @@ export function stripOrphanEditorState(el, win) {
   if (el.getAttribute(RC_OWNED_ATTR) === 'true') el.removeAttribute('data-richclay')
   el.removeAttribute(RC_OWNED_ATTR)
   el.removeAttribute(BOUND_ATTR)
+  el.removeAttribute(BOUND_ID_ATTR)
 }

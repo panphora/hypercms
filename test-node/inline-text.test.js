@@ -1991,3 +1991,48 @@ test("G2d: on the vendored richclay, an author's own mount selector survives the
   }
   reset(t.dom)
 })
+
+// --- D3: a commit on this path is what stops the restore ---------------------
+
+test('D3: an api.setValue that changes the markup and keeps the same words is not reverted by close', () => {
+  const t = bootNormalizing()
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    assert.equal(title.innerHTML, '<div>Hello <i>you</i></div>', 'bound and normalised, nothing typed')
+
+    api.setValue('title', 'Hello <b>you</b>')
+    assert.equal(
+      (title.textContent || '').trim(),
+      'Hello you',
+      'the API wrote the words the author already had, so text cannot tell this from the editor'
+    )
+
+    close()
+
+    assert.equal(title.innerHTML, 'Hello <b>you</b>', "the API's write stands")
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})
+
+test("D3b: a structural commit on the array path does not mark a row's binding written, so an untouched row still restores", () => {
+  const t = bootNormalizing(TAGS)
+  try {
+    const tag = t.doc.querySelectorAll('ul.tags li')[0]
+    click(t, tag)
+    assert.equal(tag.innerHTML, '<div>alpha</div>', 'the editor rewrote the row it bound')
+
+    api.addItem('tags')
+
+    assert.equal(tag.innerHTML, '<div>alpha</div>', 'the structural apply wrote nothing into this row')
+
+    close()
+
+    assert.equal(tag.innerHTML, 'alpha', "so the author's markup goes back")
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})

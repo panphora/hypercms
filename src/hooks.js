@@ -8,7 +8,7 @@
 // out of the entry module would have made the entry module part of a cycle.
 
 import { platform, onPlatformEvent, PLATFORM_READY } from './platform.js'
-import { cleanRichClayFromSnapshot } from './richclay-bridge.js'
+import { BOUND_ID_ATTR, cleanRichClayFromSnapshot, pristineMarkupFor } from './richclay-bridge.js'
 import { SESSION_OPEN_CLASS } from './shell.js'
 
 // Strip hypercms's own body chrome from the SAVE clone so it never reaches disk
@@ -23,6 +23,7 @@ export function installSavePrepareHook() {
   const onPrepareForSave = platform('onPrepareForSave')
   if (typeof onPrepareForSave !== 'function') return
   onPrepareForSave((clonedDocEl) => {
+    restorePristineMarkup(clonedDocEl)
     stripSessionChrome(clonedDocEl)
   })
   prepareHookInstalled = true
@@ -39,6 +40,20 @@ function stripSessionChrome(clonedDocEl) {
   if (b) b.classList.remove('hcms-open', 'hcms-overlay', 'hcms-side-left', SESSION_OPEN_CLASS)
 }
 
+// A save can land while somebody is mid-session with an editor open on a
+// heading. richclay rewrites a block's markup simply by being attached to it, so
+// without this the file records that rewriting as though the author had typed
+// it. The live editors are deliberately untouched: this is the clone, and the
+// person editing keeps their caret and their selection.
+function restorePristineMarkup(clonedDocEl) {
+  if (!clonedDocEl || typeof clonedDocEl.querySelectorAll !== 'function') return
+  for (const el of clonedDocEl.querySelectorAll(`[${BOUND_ID_ATTR}]`)) {
+    const html = pristineMarkupFor(el)
+    if (html !== null) el.innerHTML = html
+    el.removeAttribute(BOUND_ID_ATTR)
+  }
+}
+
 // Clean up after the richclay instances hypercms itself creates on page
 // elements. Installed once at first open, alongside the save-prepare hook above,
 // and for the same reason: the host client may not be loaded yet at module
@@ -51,6 +66,7 @@ export function installSnapshotHook() {
   const onSnapshot = platform('onSnapshot')
   if (typeof onSnapshot !== 'function') return
   onSnapshot((clonedDocEl) => {
+    restorePristineMarkup(clonedDocEl)
     cleanRichClayFromSnapshot(clonedDocEl, typeof window !== 'undefined' ? window : null)
     stripSessionChrome(clonedDocEl)
   })
