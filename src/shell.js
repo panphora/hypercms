@@ -1,5 +1,10 @@
 const SHELL_STYLE_ID = 'hcms-shell-styles'
 const SHELL_BUNDLED_FLAG = 'hcms-bundled-styles-installed'
+// "A session of either kind is open", so a page (or the toggle) can style off
+// open state without reaching for hcms-open, which describes only this panel's
+// page shift and is absent for an inline session. Additive: hcms-open keeps its
+// meaning exactly. Both views add it on mount and drop it on destroy.
+export const SESSION_OPEN_CLASS = 'hcms-session-open'
 const FOCUSABLE = 'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 const styledDocs = new WeakSet()
@@ -15,6 +20,14 @@ export function markStylesBundled(doc) {
   if (!doc) return
   styledDocs.add(doc)
   doc[SHELL_BUNDLED_FLAG] = true
+}
+
+export function markSessionOpen(doc) {
+  doc?.body?.classList.add(SESSION_OPEN_CLASS)
+}
+
+export function clearSessionOpen(doc) {
+  doc?.body?.classList.remove(SESSION_OPEN_CLASS)
 }
 
 let titleIdCounter = 0
@@ -98,6 +111,7 @@ export function mountShell({
 
   const body = doc.body
   body.classList.add('hcms-open')
+  markSessionOpen(doc)
   if (overlay) body.classList.add('hcms-overlay')
   if (side === 'left') body.classList.add('hcms-side-left')
 
@@ -115,6 +129,7 @@ export function mountShell({
       condense.detach()
       root.remove()
       body.classList.remove('hcms-open', 'hcms-overlay', 'hcms-side-left')
+      clearSessionOpen(doc)
     },
     // Re-assert the shell's out-of-subtree chrome after a full-document morph
     // (e.g. a live-sync apply) wipes it: the stylesheet lives in <head> and the
@@ -123,6 +138,7 @@ export function mountShell({
     restoreChrome() {
       reensureStyles(doc)
       body.classList.add('hcms-open')
+      markSessionOpen(doc)
       if (overlay) body.classList.add('hcms-overlay')
       if (side === 'left') body.classList.add('hcms-side-left')
     },

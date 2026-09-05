@@ -2,7 +2,15 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { JSDOM } from 'jsdom'
-import { detectEditMode, injectToggle, maybeInjectToggle, parseRgb, pickSurface, TOGGLE_STYLE } from '../src/toggle.js'
+import {
+  detectEditMode,
+  injectToggle,
+  maybeInjectToggle,
+  parseRgb,
+  pickSurface,
+  readStoredView,
+  TOGGLE_STYLE,
+} from '../src/toggle.js'
 
 // ---------------------------------------------------------------------------
 // detectEditMode — mirrors hyperclayjs core/isAdminOfCurrentResource.js
@@ -101,10 +109,13 @@ test('injectToggle: builds the button with the strip attributes, once', () => {
   dom.window.close()
 })
 
+// One view available, so the main button opens it: with both views and nothing
+// remembered the first press opens the MENU, which is the split button's own
+// spec below.
 test('injectToggle: click calls open when closed, close when open', () => {
   const dom = setupDom()
   let openState = false
-  const api = spyApi({ isOpen: () => openState })
+  const api = spyApi({ isOpen: () => openState, views: ['sidebar'] })
   const btn = injectToggle(api, dom.window.document)
   btn.click()
   assert.deepEqual(api.calls, ['open'])
@@ -154,7 +165,7 @@ test('injectToggle: a page that already owns #hcms-toggle-style still gets our s
 
 test('injectToggle: a click on the inner button reaches the handler exactly once', () => {
   const dom = setupDom()
-  const api = spyApi()
+  const api = spyApi({ views: ['sidebar'] })
   const host = injectToggle(api, dom.window.document)
   host.querySelector('.hcms-toggle__main').click()
   assert.deepEqual(api.calls, ['open'])
@@ -400,4 +411,268 @@ test('each document measures through its own canvas', () => {
   )
   first.window.close()
   second.window.close()
+})
+
+// ---------------------------------------------------------------------------
+// The split button (§5.1). Two real buttons in a group, a menu of the views
+// this build has, and one remembered choice in localStorage under `hcms.view`.
+// Each spec drives the DOM the way a person does — press the main button, press
+// the arrow, walk the menu — rather than calling the internals.
+// ---------------------------------------------------------------------------
+
+// A spy that records WHICH view each open asked for, which is the whole subject
+// here. spyApi above deliberately keeps its coarser shape, so the click-wiring
+// specs it serves keep asserting exactly what they asserted before.
+function viewApi(overrides = {}) {
+  const opened = []
+  return {
+    opened,
+    open: (opts = {}) => { opened.push(opts.view || null) },
+    close: () => {},
+    isOpen: () => false,
+    hasRules: () => true,
+    ...overrides,
+  }
+}
+
+const tick = () => new Promise((r) => setTimeout(r, 0))
+
+const parts = (host) => ({
+  main: host.querySelector('.hcms-toggle__main'),
+  arrow: host.querySelector('.hcms-toggle__arrow'),
+  menu: host.querySelector('.hcms-toggle__menu'),
+  items: [...host.querySelectorAll('[role="menuitemradio"]')],
+})
+
+function keydown(dom, el, key) {
+  const ev = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+  el.dispatchEvent(ev)
+  return ev
+}
+
+test('split button: first run with both views opens the menu, not a view', async () => {
+  const dom = setupDom()
+  const api = viewApi()
+  const host = injectToggle(api, dom.window.document)
+  const { main, arrow, menu, items } = parts(host)
+  assert.equal(menu.hidden, true, 'the menu starts closed')
+
+  main.click()
+  await tick()
+  assert.deepEqual(api.opened, [], 'nothing was opened — the button asked instead of guessing')
+  assert.equal(menu.hidden, false)
+  assert.equal(arrow.getAttribute('aria-expanded'), 'true')
+  assert.deepEqual(items.map((i) => i.getAttribute('data-hcms-view')), ['sidebar', 'inline'])
+  assert.equal(dom.window.localStorage.getItem('hcms.view'), null, 'and nothing was remembered')
+  dom.window.close()
+})
+
+test('split button: a remembered view opens straight away, with no menu', async () => {
+  const dom = setupDom()
+  dom.window.localStorage.setItem('hcms.view', 'inline')
+  const api = viewApi()
+  const host = injectToggle(api, dom.window.document)
+  const { main, menu } = parts(host)
+
+  main.click()
+  await tick()
+  assert.deepEqual(api.opened, ['inline'])
+  assert.equal(menu.hidden, true, 'a remembered view is not a question')
+  dom.window.close()
+})
+
+// The preference belongs to the person, not to the page. A build without the
+// inline view must not spend someone else's setting.
+test('split button: a remembered view this page cannot render falls back and is kept', async () => {
+  const dom = setupDom()
+  dom.window.localStorage.setItem('hcms.view', 'inline')
+  const api = viewApi({ views: ['sidebar'] })
+  const host = injectToggle(api, dom.window.document)
+
+  parts(host).main.click()
+  await tick()
+  assert.deepEqual(api.opened, ['sidebar'], 'the view this page does have')
+  assert.equal(
+    dom.window.localStorage.getItem('hcms.view'),
+    'inline',
+    'the stored preference survives a page that cannot honour it'
+  )
+  dom.window.close()
+})
+
+// The membership check at the boundary, on its own. The button ALSO filters a
+// remembered view against the views this page has, and that second gate hides a
+// missing check here: every value this rejects is a value that filter rejects
+// too. Anything else reading the preference would get the raw string.
+test('split button: only the two view names read back as a preference', () => {
+  const dom = setupDom()
+  const win = dom.window
+  for (const value of ['drawer', 'Sidebar', 'inline ', '', 'null']) {
+    win.localStorage.setItem('hcms.view', value)
+    assert.equal(readStoredView(win), null, `"${value}" is not a view name`)
+  }
+  win.localStorage.removeItem('hcms.view')
+  assert.equal(readStoredView(win), null, 'and an absent one is first run')
+  for (const value of ['sidebar', 'inline']) {
+    win.localStorage.setItem('hcms.view', value)
+    assert.equal(readStoredView(win), value)
+  }
+  dom.window.close()
+})
+
+test('split button: a stored value that is not a view name reads as first run', async () => {
+  const dom = setupDom()
+  dom.window.localStorage.setItem('hcms.view', 'drawer')
+  const api = viewApi()
+  const host = injectToggle(api, dom.window.document)
+
+  parts(host).main.click()
+  await tick()
+  assert.deepEqual(api.opened, [], 'no view was opened off an unknown name')
+  assert.equal(parts(host).menu.hidden, false, 'the menu asked instead')
+  dom.window.close()
+})
+
+test('split button: one view means no arrow at all, and the button opens it', async () => {
+  const dom = setupDom()
+  const api = viewApi({ views: ['sidebar'] })
+  const host = injectToggle(api, dom.window.document)
+  const { main, arrow, menu } = parts(host)
+  assert.equal(arrow === null, true, 'an arrow offering one view is a question with one answer')
+  assert.equal(menu === null, true)
+  assert.equal(host.hasAttribute('data-hcms-split'), false)
+
+  main.click()
+  await tick()
+  assert.deepEqual(api.opened, ['sidebar'])
+  dom.window.close()
+})
+
+test('split button: picking a view opens it and remembers it', async () => {
+  const dom = setupDom()
+  const api = viewApi()
+  const host = injectToggle(api, dom.window.document)
+  const { arrow, menu, items } = parts(host)
+
+  arrow.click()
+  items[1].click()
+  await tick()
+  assert.deepEqual(api.opened, ['inline'])
+  assert.equal(dom.window.localStorage.getItem('hcms.view'), 'inline')
+  assert.equal(menu.hidden, true, 'the menu closes behind the choice')
+
+  // Reopening shows the choice as the checked one.
+  arrow.click()
+  assert.deepEqual(
+    parts(host).items.map((i) => i.getAttribute('aria-checked')),
+    ['false', 'true']
+  )
+  dom.window.close()
+})
+
+test('split button: a view that fails to mount is not remembered', async () => {
+  const dom = setupDom()
+  const api = viewApi({ open: () => { throw new Error('no mutation hub') } })
+  const host = injectToggle(api, dom.window.document)
+  const { arrow, items } = parts(host)
+
+  arrow.click()
+  assert.doesNotThrow(() => items[1].click())
+  await tick()
+  assert.equal(
+    dom.window.localStorage.getItem('hcms.view'),
+    null,
+    'a preference written before the open would teach the next load to retry a broken view'
+  )
+  dom.window.close()
+})
+
+test('split button: the keyboard walks the menu and Escape hands focus back', async () => {
+  const dom = setupDom()
+  const doc = dom.window.document
+  const api = viewApi()
+  const host = injectToggle(api, doc)
+  const { arrow, menu, items } = parts(host)
+
+  assert.equal(arrow.getAttribute('aria-haspopup'), 'menu')
+  arrow.focus()
+  keydown(dom, arrow, 'ArrowDown')
+  assert.equal(menu.hidden, false)
+  assert.equal(doc.activeElement, items[0], 'ArrowDown opens onto the first item')
+
+  keydown(dom, items[0], 'ArrowDown')
+  assert.equal(doc.activeElement, items[1])
+  keydown(dom, items[1], 'ArrowDown')
+  assert.equal(doc.activeElement, items[0], 'and wraps')
+  keydown(dom, items[0], 'End')
+  assert.equal(doc.activeElement, items[items.length - 1])
+  keydown(dom, items[items.length - 1], 'Home')
+  assert.equal(doc.activeElement, items[0])
+
+  keydown(dom, items[0], 'Escape')
+  assert.equal(menu.hidden, true)
+  assert.equal(arrow.getAttribute('aria-expanded'), 'false')
+  assert.equal(doc.activeElement, arrow, 'Escape returns focus to the arrow')
+
+  // ArrowUp opens onto the last item, and Enter selects whatever is focused.
+  keydown(dom, arrow, 'ArrowUp')
+  assert.equal(doc.activeElement, items[items.length - 1])
+  keydown(dom, items[items.length - 1], 'Enter')
+  await tick()
+  assert.deepEqual(api.opened, ['inline'])
+  assert.equal(menu.hidden, true)
+  dom.window.close()
+})
+
+test('split button: Tab leaves the menu instead of cycling inside it', () => {
+  const dom = setupDom()
+  const host = injectToggle(viewApi(), dom.window.document)
+  const { arrow, menu, items } = parts(host)
+  keydown(dom, arrow, 'ArrowDown')
+  const ev = keydown(dom, items[0], 'Tab')
+  assert.equal(menu.hidden, true)
+  assert.equal(ev.defaultPrevented, false, 'the browser still moves focus onward')
+  dom.window.close()
+})
+
+test('split button: a pointer press outside the control closes the menu', () => {
+  const dom = setupDom()
+  const doc = dom.window.document
+  const host = injectToggle(viewApi(), doc)
+  const { arrow, menu } = parts(host)
+  arrow.click()
+  assert.equal(menu.hidden, false)
+  // Inside first: pressing the control itself must not close it out from under
+  // the click that is about to land on it.
+  host.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true }))
+  assert.equal(menu.hidden, false)
+  doc.body.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true }))
+  assert.equal(menu.hidden, true)
+  dom.window.close()
+})
+
+// The same reason the host's position is pinned: a page-level
+// `* { ... !important }` reset is what these declarations exist to survive, and
+// an ordinary declaration loses to it. Structure only — the arrow's opaque
+// surface and the menu's whole geometry, never its cosmetics.
+test('split button: the arrow and the menu root carry their structural pins', () => {
+  const dom = setupDom()
+  const host = injectToggle(viewApi(), dom.window.document)
+  const { arrow, menu } = parts(host)
+
+  assert.equal(arrow.style.getPropertyPriority('background'), 'important')
+  for (const property of ['position', 'right', 'bottom', 'z-index', 'display']) {
+    assert.equal(
+      menu.style.getPropertyPriority(property),
+      'important',
+      `the menu's ${property} must survive a hostile reset`
+    )
+  }
+  assert.equal(menu.style.position, 'absolute')
+  // [hidden] is a UA rule at zero specificity, so the hidden state is pinned too.
+  assert.equal(menu.style.display, 'none')
+  arrow.click()
+  assert.equal(menu.style.display, 'block')
+  assert.equal(menu.style.getPropertyPriority('display'), 'important')
+  dom.window.close()
 })

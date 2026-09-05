@@ -34,7 +34,8 @@ import {
 import { autosizeTextarea, enhanceFields, upgradeInlineTextRules } from '../enhance.js'
 import { applyUnresolvedState } from '../unresolved.js'
 import { refreshForm } from '../refresh.js'
-import { reensureStyles } from '../shell.js'
+import { clearSessionOpen, markSessionOpen, reensureStyles } from '../shell.js'
+import { isAnchorable } from '../anchor.js'
 import { resolveTargets } from '../targets.js'
 import { place } from '../place.js'
 import { platform } from '../platform.js'
@@ -153,6 +154,8 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     errorEl: null,
     noticeEl: null,
     countEl: null,
+    handoffEl: null,
+    handoffCountEl: null,
 
     popEl: null,
 
@@ -176,7 +179,12 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       this.errorEl = host.errorEl
       this.noticeEl = host.noticeEl
       this.countEl = host.countEl
+      this.handoffEl = host.handoffEl
+      this.handoffCountEl = host.handoffCountEl
       this.popEl = host.popEl
+      // A body class is a page edit unless it is suppressed, the same reason
+      // the sidebar wraps its own mount.
+      suppressUndo(() => markSessionOpen(doc))
 
       const fragment = buildForm({
         pageRules: ctx.pageRules,
@@ -203,6 +211,15 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         event.preventDefault()
         event.stopPropagation()
         this.toggleControls()
+      })
+      // There is no drawer. What a field with no visual representation gets is
+      // the count above and this one tap out to the view that edits everything.
+      // The switch carries the session's options across (hypercms.js open()), so
+      // the sidebar comes up on the same page root with the same callbacks.
+      host.handoffEl.querySelector('[data-hcms-open-view]').addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        ctx.onViewRequested?.('sidebar')
       })
       this.bindPage()
       this.syncTargets()
@@ -400,6 +417,19 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         this.countEl.textContent = `${n} editable ${n === 1 ? 'area' : 'areas'}`
         this.countEl.hidden = n === 0
       }
+      // Every ruled field with no anchorable element, whatever its kind: a
+      // permanently hidden metadata span and a target inside a closed tab are
+      // byte-identical to the browser, so this is a live count and not a
+      // classification. Read off the same floor the handles clear rather than a
+      // second rule that could disagree with it.
+      const away = targets.reduce((total, target) => total + (isAnchorable(target.el) ? 0 : 1), 0)
+      if (this.handoffEl) {
+        this.handoffCountEl.textContent = away === 0
+          ? ''
+          : `${away} ${away === 1 ? "field isn't" : "fields aren't"} visible right now.`
+        // At zero the bar says nothing at all, rather than "0 fields".
+        this.handoffEl.hidden = away === 0
+      }
     },
 
     // `changes` is the mutation batch behind an 'observer' refresh. The inline
@@ -407,10 +437,11 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     // view must treat an absent batch as "refresh everything".
     refresh(reason, changes) {
       if (reason === 'livesync') {
-        // The stylesheet lives in <head>, outside this host, so a full-document
-        // morph can strip it. The host itself carries no body classes to
-        // restore: unlike the sidebar it does not shift the page.
+        // The stylesheet lives in <head> and the session class on <body>, both
+        // outside this host, so a full-document morph can strip either. The page
+        // shift is still the sidebar's alone: this view adds no geometry class.
         reensureStyles(doc)
+        markSessionOpen(doc)
         refreshForm(this.ctx, { ignoreActiveValue: true })
       } else if (reason === 'undo') {
         refreshForm(this.ctx, { ignoreActiveValue: false })
@@ -515,7 +546,10 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       layer = null
       host?.destroy()
       host = null
+      clearSessionOpen(doc)
       this.popEl = null
+      this.handoffEl = null
+      this.handoffCountEl = null
     },
   }
 }
@@ -724,6 +758,12 @@ function mountInlineHost(doc, theme) {
   root.innerHTML = `
     <div class="hcms-inline-bar">
       <div class="hcms-inline-count" hidden></div>
+      <div class="hcms-inline-handoff" hidden>
+        <span class="hcms-inline-handoff-count"></span>
+        <button type="button" class="hcms-inline-handoff-open mirk-button mirk-button--small" data-hcms-open-view="sidebar">
+          <span class="mirk-button__label">Edit in the sidebar</span>
+        </button>
+      </div>
       <button type="button" class="hcms-inline-toggle mirk-button mirk-button--small" data-hcms-controls-toggle aria-pressed="false">
         <span class="mirk-button__label">Hide controls</span>
       </button>
@@ -742,6 +782,8 @@ function mountInlineHost(doc, theme) {
     noticeEl: root.querySelector('.hcms-inline-notice'),
     errorEl: root.querySelector('.hcms-inline-error'),
     countEl: root.querySelector('.hcms-inline-count'),
+    handoffEl: root.querySelector('.hcms-inline-handoff'),
+    handoffCountEl: root.querySelector('.hcms-inline-handoff-count'),
     layerEl: root.querySelector('.hcms-inline-layer'),
     popEl: root.querySelector('.hcms-inline-pop'),
     toggleEl: root.querySelector('[data-hcms-controls-toggle]'),

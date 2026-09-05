@@ -91,7 +91,14 @@ export function open(opts = {}) {
   installHooks()
 
   const view = makeView({ doc, pageRoot, opts: effective })
-  const ctx = createSession({ view, doc, pageRoot, opts: effective, onCloseRequested: () => close() })
+  const ctx = createSession({
+    view,
+    doc,
+    pageRoot,
+    opts: effective,
+    onCloseRequested: () => close(),
+    onViewRequested: (name) => open({ view: name }),
+  })
   // Where focus was before the FIRST open, carried across the switch. Closing
   // the second view should return the person where they started, not to
   // whatever held focus after the first view was pulled out from under them.
@@ -312,6 +319,9 @@ maybeInjectToggle({
   open,
   close,
   isOpen,
+  // The same map open() resolves a view name against, so the split button
+  // offers exactly the views this build can actually render.
+  views: Object.keys(VIEWS),
   hasRules: (doc) => !!engine.findRules(doc, 'cms'),
 })
 

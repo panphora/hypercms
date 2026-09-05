@@ -16,11 +16,56 @@
 // public custom property, so overriding still works. Everything cosmetic is a
 // normal declaration selected by [data-hcms-toggle-host], which an author's own
 // #hcms-toggle rule outranks on specificity.
+//
+// With two views to choose between it is a split button: the main button plus an
+// arrow that opens a menu. The arrow's background and the menu's whole geometry
+// are pinned for exactly the reason the host's position is — an unpinned arrow
+// goes transparent under a page's `button { background: none !important }`, and
+// an unpinned menu drops into the flow and shoves the page. The menu's `display`
+// is pinned too: [hidden] is a UA rule with no specificity, so any page rule
+// matching the element beats it and the menu would sit open forever.
 
 const TOGGLE_ID = 'hcms-toggle'
 const HOST_ATTR = 'data-hcms-toggle-host'
 const STYLE_ID = 'hcms-toggle-style'
 const STYLE_ATTR = 'data-hcms-toggle-style'
+// "A session of either kind is up", written by the open/close events. NOT
+// body.hcms-open: that class is the sidebar's page shift and an inline session
+// sets nothing on <body>, so a body-class label reads "Edit content" over an
+// open inline editor.
+const SESSION_ATTR = 'data-hcms-session'
+const SPLIT_ATTR = 'data-hcms-split'
+
+// The preference, one setting across the origin. No version suffix: there are
+// exactly two valid values and the membership check on read is what makes any
+// other value — a stale name, a hand-edited entry, a future view this build does
+// not have — read as first run rather than as a broken session.
+export const VIEW_STORAGE_KEY = 'hcms.view'
+const VIEW_NAMES = ['sidebar', 'inline']
+const VIEW_LABELS = { sidebar: 'In the sidebar', inline: 'On the page' }
+
+const SURFACE_VAR = 'var(--hcms-toggle-bg, var(--hcms-toggle-_surface))'
+
+export function readStoredView(win) {
+  try {
+    const value = win && win.localStorage ? win.localStorage.getItem(VIEW_STORAGE_KEY) : null
+    return VIEW_NAMES.includes(value) ? value : null
+  } catch (_) {
+    return null
+  }
+}
+
+// Written when someone picks a view, and only once that view is actually up: a
+// mount that throws must not teach the next page load to try the same broken
+// view. localStorage throws outright in a few configurations (Safari private
+// mode, cookies disabled), and a remembered view is a convenience, not a
+// requirement.
+export function writeStoredView(win, view) {
+  if (!VIEW_NAMES.includes(view)) return
+  try {
+    win?.localStorage?.setItem(VIEW_STORAGE_KEY, view)
+  } catch (_) {}
+}
 
 // The pill's surface is opaque and neutral, picked at inject time from the two
 // values below by whichever has more contrast against the page's own ink. It is
@@ -41,7 +86,8 @@ export const TOGGLE_STYLE = `
 [${HOST_ATTR}][data-hcms-surface="dark"] {
   --hcms-toggle-_surface: ${SURFACE_DARK};
 }
-[${HOST_ATTR}] .hcms-toggle__main {
+[${HOST_ATTR}] .hcms-toggle__main,
+[${HOST_ATTR}] .hcms-toggle__arrow {
   all: unset;
   box-sizing: border-box;
   display: inline-flex;
@@ -59,19 +105,71 @@ export const TOGGLE_STYLE = `
   cursor: pointer;
   box-shadow: 0 10px 28px -12px rgba(0, 0, 0, .35);
 }
-[${HOST_ATTR}] .hcms-toggle__main:hover {
+[${HOST_ATTR}] .hcms-toggle__main:hover,
+[${HOST_ATTR}] .hcms-toggle__arrow:hover {
   border-color: color-mix(in srgb, currentColor 45%, transparent);
   box-shadow: 0 12px 32px -12px rgba(0, 0, 0, .45);
 }
-[${HOST_ATTR}] .hcms-toggle__main:focus-visible {
+[${HOST_ATTR}] .hcms-toggle__main:focus-visible,
+[${HOST_ATTR}] .hcms-toggle__arrow:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: -5px;
 }
 [${HOST_ATTR}] .hcms-toggle__close { display: none; }
-body.hcms-open [${HOST_ATTR}] .hcms-toggle__open { display: none; }
-body.hcms-open [${HOST_ATTR}] .hcms-toggle__close { display: inline; }
+[${HOST_ATTR}][${SESSION_ATTR}="open"] .hcms-toggle__open { display: none; }
+[${HOST_ATTR}][${SESSION_ATTR}="open"] .hcms-toggle__close { display: inline; }
+[${HOST_ATTR}][${SPLIT_ATTR}] .hcms-toggle__main {
+  border-radius: 999px 0 0 999px;
+  padding-right: 12px;
+}
+[${HOST_ATTR}] .hcms-toggle__arrow {
+  gap: 0;
+  padding: 0 10px;
+  border-radius: 0 999px 999px 0;
+  border-left-width: 0;
+}
+[${HOST_ATTR}] .hcms-toggle__menu {
+  all: unset;
+  box-sizing: border-box;
+  min-width: 180px;
+  padding: 4px;
+  font-family: inherit;
+  font-size: clamp(12px, 0.85em, 15px);
+  line-height: 1;
+  color: var(--hcms-toggle-color, currentColor);
+  background: ${SURFACE_VAR};
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 12px;
+  box-shadow: 0 14px 34px -14px rgba(0, 0, 0, .45);
+}
+[${HOST_ATTR}] .hcms-toggle__item {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+[${HOST_ATTR}] .hcms-toggle__item::before {
+  content: "○";
+  margin-right: 8px;
+  opacity: .55;
+}
+[${HOST_ATTR}] .hcms-toggle__item[aria-checked="true"]::before {
+  content: "●";
+  opacity: 1;
+}
+[${HOST_ATTR}] .hcms-toggle__item:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+[${HOST_ATTR}] .hcms-toggle__item:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -3px;
+}
 @media (pointer: coarse) {
-  [${HOST_ATTR}] .hcms-toggle__main { min-height: 44px; }
+  [${HOST_ATTR}] .hcms-toggle__main,
+  [${HOST_ATTR}] .hcms-toggle__arrow { min-height: 44px; }
 }
 `
 
@@ -279,7 +377,7 @@ function scheduleSurface(host) {
   }
 }
 
-export function injectToggle({ open, close, isOpen }, doc = document) {
+export function injectToggle({ open, close, isOpen, views = VIEW_NAMES }, doc = document) {
   const existing = doc.querySelector(`[${HOST_ATTR}]`)
   if (existing) return existing
 
@@ -310,6 +408,22 @@ export function injectToggle({ open, close, isOpen }, doc = document) {
     '<span class="hcms-toggle__close">Close editor</span>' +
     '</button>'
 
+  const win = doc.defaultView
+  const main = host.querySelector('.hcms-toggle__main')
+  // Fixed order, so the menu does not reorder itself from page to page, and
+  // filtered against the views this build actually has.
+  const available = VIEW_NAMES.filter((name) => views.includes(name))
+  // An arrow offering a choice of one is a menu that can only repeat what the
+  // button already does, so with a single view there is no arrow at all.
+  const split = available.length > 1
+  const arrow = split ? makeArrow(doc) : null
+  const menu = split ? makeMenu(doc, available) : null
+  if (split) {
+    host.setAttribute(SPLIT_ATTR, '')
+    host.appendChild(arrow)
+    host.appendChild(menu)
+  }
+
   // The only declarations a page's `* { ... !important }` reset can take from
   // us and leave the control broken rather than merely ugly. Each reads its
   // public custom property first, so an author override still lands.
@@ -319,24 +433,221 @@ export function injectToggle({ open, close, isOpen }, doc = document) {
     bottom: 'calc(var(--hcms-toggle-offset, 16px) + env(safe-area-inset-bottom, 0px))',
     'z-index': 'var(--hcms-toggle-z, 2147482900)',
   })
-  pin(host.firstElementChild, {
-    background: 'var(--hcms-toggle-bg, var(--hcms-toggle-_surface))',
-  })
+  pin(main, { background: SURFACE_VAR })
+  if (arrow) pin(arrow, { background: SURFACE_VAR })
+  if (menu) {
+    pin(menu, {
+      position: 'absolute',
+      right: '0',
+      bottom: 'calc(100% + 8px)',
+      'z-index': 'var(--hcms-toggle-z, 2147482900)',
+      display: 'none',
+    })
+  }
 
-  // Delegated, so both a real click on the inner button and a programmatic
-  // host.click() fire exactly once.
-  host.addEventListener('click', async () => {
+  const items = () => (menu ? [...menu.querySelectorAll('[role="menuitemradio"]')] : [])
+
+  function focusEl(el) {
+    if (!el || typeof el.focus !== 'function') return
+    try { el.focus({ preventScroll: true }) } catch (_) { el.focus() }
+  }
+
+  function focusItem(index) {
+    const list = items()
+    if (!list.length) return
+    focusEl(list[(index + list.length) % list.length])
+  }
+
+  // Read fresh every time the menu opens: the selection made two clicks ago is
+  // the one the radio should be sitting on.
+  function markChecked() {
+    const stored = readStoredView(win)
+    for (const item of items()) {
+      item.setAttribute('aria-checked', String(item.getAttribute('data-hcms-view') === stored))
+    }
+  }
+
+  function onOutsidePointer(event) {
+    if (host.contains(event.target)) return
+    closeMenu()
+  }
+
+  function setMenuOpen(show) {
+    if (!menu) return
+    menu.hidden = !show
+    pin(menu, { display: show ? 'block' : 'none' })
+    arrow.setAttribute('aria-expanded', String(show))
+    if (show) {
+      markChecked()
+      // Capture, so a page that swallows pointer events on the way up cannot
+      // leave the menu standing open over content it no longer belongs to.
+      doc.addEventListener('pointerdown', onOutsidePointer, true)
+    } else {
+      doc.removeEventListener('pointerdown', onOutsidePointer, true)
+    }
+  }
+
+  function openMenu(index = 0) {
+    setMenuOpen(true)
+    focusItem(index)
+  }
+
+  function closeMenu({ focusArrow = false } = {}) {
+    if (!menu || menu.hidden) return
+    setMenuOpen(false)
+    if (focusArrow) focusEl(arrow)
+  }
+
+  // A remembered view this page cannot render is ignored HERE and left in
+  // storage: the preference belongs to the person, not to the page, and the
+  // next page may well be able to honour it.
+  function rememberedView() {
+    const stored = readStoredView(win)
+    return stored && available.includes(stored) ? stored : null
+  }
+
+  // The one path that writes the preference, because it is the one where the
+  // person chose. After the open, never before: a mount that throws leaves the
+  // preference exactly as it was.
+  async function chooseView(name) {
+    await open({ view: name })
+    writeStoredView(win, name)
+  }
+
+  async function mainAction() {
+    if (isOpen()) {
+      close()
+      return
+    }
+    const remembered = rememberedView()
+    if (remembered) return open({ view: remembered })
+    // First run. With a real choice to make the button asks rather than
+    // guessing; with one view there is nothing to ask.
+    if (split) return openMenu()
+    // Opening the only view a page has is not a choice, so it is not
+    // remembered: writing it here would take the preference away from every
+    // page that does offer both, which is deletion by another name.
+    return open(available[0] ? { view: available[0] } : {})
+  }
+
+  async function run(action) {
     try {
-      if (isOpen()) close()
-      else await open()
+      await action()
     } catch (err) {
       console.warn('hypercms: toggle failed to open the CMS', err)
     }
+  }
+
+  // Delegated, so both a real click on the inner button and a programmatic
+  // host.click() fire exactly once. The arrow and the menu own their own
+  // clicks, which bubble through here on their way out.
+  host.addEventListener('click', async (event) => {
+    if (arrow && arrow.contains(event.target)) return
+    if (menu && menu.contains(event.target)) return
+    await run(mainAction)
   })
+
+  if (arrow) {
+    arrow.addEventListener('click', (event) => {
+      event.preventDefault()
+      if (menu.hidden) openMenu()
+      else closeMenu({ focusArrow: true })
+    })
+    arrow.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        openMenu(-1)
+        return
+      }
+      // preventDefault on Enter and Space stops the button's own activation
+      // click, which would otherwise arrive and toggle the menu straight back
+      // shut.
+      if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        openMenu(0)
+      }
+    })
+    menu.addEventListener('click', (event) => {
+      const item = event.target.closest?.('[role="menuitemradio"]')
+      if (!item) return
+      event.preventDefault()
+      closeMenu()
+      run(() => chooseView(item.getAttribute('data-hcms-view')))
+    })
+    menu.addEventListener('keydown', (event) => {
+      const list = items()
+      const current = list.indexOf(doc.activeElement)
+      switch (event.key) {
+        case 'ArrowDown': event.preventDefault(); focusItem(current + 1); break
+        case 'ArrowUp': event.preventDefault(); focusItem(current - 1); break
+        case 'Home': event.preventDefault(); focusItem(0); break
+        case 'End': event.preventDefault(); focusItem(list.length - 1); break
+        case 'Enter':
+        case ' ':
+          event.preventDefault()
+          if (current === -1) break
+          closeMenu()
+          run(() => chooseView(list[current].getAttribute('data-hcms-view')))
+          break
+        case 'Escape': event.preventDefault(); closeMenu({ focusArrow: true }); break
+        // No preventDefault: Tab leaves the menu, it does not cycle inside it.
+        case 'Tab': closeMenu(); break
+      }
+    })
+  }
+
+  // Which label the main button shows, and nothing else decides it. hcms:close
+  // fires BEFORE the session is torn down, so isOpen() still answers true inside
+  // that handler: the event says what happened and re-asking would leave the
+  // button reading "Close editor" over a closed editor.
+  const setSessionState = (sessionOpen) => {
+    if (sessionOpen) host.setAttribute(SESSION_ATTR, 'open')
+    else host.removeAttribute(SESSION_ATTR)
+  }
+  setSessionState(isOpen())
+  doc.addEventListener('hcms:open', () => setSessionState(true))
+  doc.addEventListener('hcms:close', () => setSessionState(false))
 
   doc.body.appendChild(host)
   scheduleSurface(host)
   return host
+}
+
+function makeArrow(doc) {
+  const arrow = doc.createElement('button')
+  arrow.type = 'button'
+  arrow.className = 'hcms-toggle__arrow'
+  arrow.setAttribute('aria-haspopup', 'menu')
+  arrow.setAttribute('aria-expanded', 'false')
+  // The arrow is a glyph, so unlike the main button it has no visible text to
+  // take its accessible name from.
+  arrow.setAttribute('aria-label', 'Choose where to edit')
+  arrow.textContent = '▾'
+  return arrow
+}
+
+function makeMenu(doc, available) {
+  const menu = doc.createElement('div')
+  menu.className = 'hcms-toggle__menu'
+  menu.setAttribute('role', 'menu')
+  menu.setAttribute('aria-label', 'Where to edit')
+  menu.hidden = true
+  for (const name of available) {
+    const item = doc.createElement('button')
+    item.type = 'button'
+    item.className = 'hcms-toggle__item'
+    // menuitemradio, not menuitem: the two are one choice with one answer, and
+    // the remembered one is checked.
+    item.setAttribute('role', 'menuitemradio')
+    item.setAttribute('aria-checked', 'false')
+    item.setAttribute('data-hcms-view', name)
+    // Roving focus: the menu is entered from the arrow and moved through with
+    // the arrow keys, never tabbed into item by item.
+    item.tabIndex = -1
+    item.textContent = VIEW_LABELS[name]
+    menu.appendChild(item)
+  }
+  return menu
 }
 
 // Inject at page load when in edit mode and the page has cms rules. DOM-ready

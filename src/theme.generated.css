@@ -1736,6 +1736,23 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
 }
 .hcms-inline-count[hidden] { display: none; }
 
+/* The sidebar handoff: the count of ruled fields with no place on the page,
+   and the one tap out to the view that can edit them. Same pill as the count
+   above, because it is the same kind of statement about this session. */
+.hcms-inline-handoff {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  border: 1px solid var(--mirk-input-border);
+  background: var(--mirk-bg);
+  color: var(--mirk-fg);
+  align-self: center;
+}
+.hcms-inline-handoff[hidden] { display: none; }
+
 /* One field at a time. Scoped to the inline host: [data-hcms-shell] is on BOTH
    hosts, so an unscoped rule hides the sidebar's whole form too. */
 .hcms-inline .hcms-form [data-hcms-path] { display: none; }

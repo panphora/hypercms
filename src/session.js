@@ -34,7 +34,7 @@ export const state = {
 // its own preparation, derive the form schema, and take the first read of the
 // page. The view is not mounted yet — ctx reads its DOM handles lazily, so the
 // mount can stay inside open()'s try block.
-export function createSession({ view, doc, pageRoot, opts = {}, onCloseRequested }) {
+export function createSession({ view, doc, pageRoot, opts = {}, onCloseRequested, onViewRequested }) {
   // Resolve rules via the union: an explicit rules object, a token string, or
   // the default token "cms". findRules is document-scoped, so a head-mounted
   // rules tag is found even though pageRoot defaults to <body>.
@@ -113,6 +113,10 @@ export function createSession({ view, doc, pageRoot, opts = {}, onCloseRequested
       target.dispatchEvent(ev)
     },
     onCloseRequested,
+    // How a view asks to be rendered as a different one. The switch runs through
+    // open({ view }), which carries this session's options across it, so the
+    // request changes the presentation and not the session.
+    onViewRequested,
   }
   ctx.updateFingerprint = () => {
     ctx.lastFingerprint = stableStringify(extractFormData(ctx))
