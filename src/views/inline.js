@@ -737,6 +737,14 @@ function construct(ctx, RichClay, el, prop, richClayIsOurs) {
         if (richClayIsOurs) { try { editor.destroy() } catch (_) {} }
         return null
       }
+      // An editor can be active while its element is inert. A live-sync morph
+      // strips contenteditable and the runtime attributes off the element and
+      // leaves the instance believing it never stopped, so on the rebind that
+      // follows, this call is the only thing that makes the element editable
+      // again. reattach answers for itself whether anything needs doing, so a
+      // healthy editor costs one comparison. Absent on an older richclay, where
+      // the element stays inert and there is nothing hypercms can do about it.
+      if (typeof editor.reattach === 'function') editor.reattach()
       return editor
     })
   } finally {

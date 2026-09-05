@@ -1806,6 +1806,129 @@ test('G4: an adopted editor survives a live-sync rebind and is still never torn 
   reset(t.dom)
 })
 
+// richclay as it stands (a8d30d5): its constructor hands back the instance it
+// already made for an element (richclay.js:85-86), and reattach re-applies the
+// element state a morph took off an instance that never stopped being active.
+// Both halves matter here — without the adoption the rebind would build a fresh
+// editor and the constructor would make the element editable on its way past.
+function installReattaching(win) {
+  const richclay = installRichClay(win)
+  const Base = win.richclay.RichClay
+  const byElement = new Map()
+  class Reattaching extends Base {
+    constructor(el, options) {
+      const existing = byElement.get(el)
+      if (existing) return existing
+      super(el, options)
+      byElement.set(el, this)
+    }
+    destroy() {
+      byElement.delete(this.element)
+      super.destroy()
+    }
+    // richclay.js:401-415, with the same early-out: intact means the watcher
+    // would still adopt this element, so a healthy editor writes nothing.
+    reattach() {
+      if (this.unsupported || !this.active) return false
+      const intact =
+        this.element.getAttribute('contenteditable') === 'true' &&
+        this.element.getAttribute('data-richclay-active') === 'true' &&
+        this.element.hasAttribute('data-richclay')
+      if (intact) return false
+      this.element.setAttribute('data-richclay-runtime-marker', 'true')
+      this.element.setAttribute('data-richclay', '')
+      this.element.setAttribute('contenteditable', 'true')
+      this.element.setAttribute('data-richclay-active', 'true')
+      this.element.setAttribute('no-undo', '')
+      this.element.classList.add('richclay-inline')
+      return true
+    }
+  }
+  win.richclay = { RichClay: Reattaching }
+  return { richclay, Reattaching }
+}
+
+test('E1: a morph that strips an adopted editor is repaired by the rebind, on the same instance', () => {
+  if (isOpen()) close()
+  const dom = loadPage(SYNCED)
+  const { richclay, Reattaching } = installReattaching(dom.window)
+  const t = { dom, win: dom.window, doc: dom.window.document, richclay }
+
+  const title = t.doc.querySelector('.title')
+  const authors = new Reattaching(title, { inline: true })
+
+  const changes = []
+  open({ view: 'inline', onChange: (data) => changes.push(data) })
+  try {
+    click(t, title)
+    assert.equal(editorFor(t, title), authors, "hypercms adopted the author's editor")
+
+    morphFromPeer(t)
+    assert.equal(title.hasAttribute('contenteditable'), false, 'the morph left the element inert')
+    assert.equal(title.hasAttribute('data-richclay-active'), false)
+    assert.equal(authors.active, true, 'while the instance behind it never stopped')
+
+    livesyncApplied(t)
+
+    assert.equal(editorFor(t, title), authors, 'the rebind adopted it again, not a replacement')
+    assert.equal(richclay.made.filter((e) => e.element === title).length, 1, 'nothing was rebuilt')
+    assert.equal(authors.destroyed, false)
+    // Without the reattach the instance is live and the element is not: clicking
+    // it selects text and nothing else happens.
+    assert.equal(title.getAttribute('contenteditable'), 'true', 'and put the element back')
+    assert.equal(title.getAttribute('data-richclay-active'), 'true')
+    assert.equal(title.getAttribute('data-richclay'), '')
+    assert.equal(title.getAttribute('data-hcms-bound'), 'rich')
+
+    type(t, title, 'Hello <em>again</em>')
+    assert.equal(changes.length, 1, 'and typing into it commits')
+    assert.equal(api.getData().title, 'Hello <em>again</em>')
+    assertCoherent('after a reattach repaired the adopted editor')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// The shipping path today: clayjs vendors a richclay whose instances have no
+// reattach at all, so the base fake above is that copy exactly.
+test('E2: a richclay with no reattach binds and rebinds without throwing', () => {
+  const errors = []
+  const changes = []
+  const t = boot(SYNCED, { onChange: (data) => changes.push(data) })
+  t.win.addEventListener('error', (event) => errors.push(event))
+  try {
+    const title = t.doc.querySelector('.title')
+    assert.equal(
+      typeof t.win.richclay.RichClay.prototype.reattach,
+      'undefined',
+      'the vendored copy offers no reattach'
+    )
+
+    click(t, title)
+    assert.deepEqual(errors, [], 'the bind did not throw')
+    assert.equal(title.getAttribute('data-hcms-bound'), 'rich')
+    assert.equal(title.getAttribute('contenteditable'), 'true')
+
+    type(t, title, 'Hello <em>world</em>')
+    assert.equal(changes.length, 1, 'and the session works')
+
+    morphFromPeer(t)
+    livesyncApplied(t)
+
+    assert.deepEqual(errors, [], 'and neither did the rebind')
+    assert.equal(title.getAttribute('data-hcms-bound'), 'rich', 'which bound it again')
+    assert.equal(title.getAttribute('contenteditable'), 'true')
+
+    type(t, title, 'Hello <em>again</em>')
+    assert.equal(changes.length, 2)
+    assert.equal(api.getData().title, 'Hello <em>again</em>')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
 // An element the author opted in on, on a page where richclay never activates:
 // view mode, say. richclay hands back THEIR inactive instance.
 const AUTHORED_RC = page(
