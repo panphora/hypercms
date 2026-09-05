@@ -74,6 +74,73 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
   let activeHandle = null
   let popMode = null
 
+  // Build one binding: the editor, the marker, the snapshot hook, and the two
+  // listeners that turn typing into commits and blur into one undo primitive.
+  // Returns it, or null when the element cannot carry an editor. Shared by the
+  // first click and by the repair after a morph, so a rebound element comes back
+  // with everything the first bind gave it.
+  function bindText(ctx, el, path, prop) {
+    const RichClay = resolveRichClay(doc.defaultView)
+    if (typeof RichClay !== 'function') return null
+
+    // Before richclay touches it. Squire normalises the markup it is handed:
+    // measured in Chrome, binding a heading rewrote
+    //   <h1>A page that edits <em>itself</em></h1>
+    // into
+    //   <h1><div>A page that edits <i>itself</i></div></h1>
+    // and that reaches the saved file. Someone who clicks a heading, reads it
+    // and presses Escape has changed nothing and must not have changed their
+    // document either, so an untouched session puts this back verbatim.
+    const originalHTML = el.innerHTML
+    const editor = construct(ctx, RichClay, el)
+    if (!editor) return null
+
+    markBound(el)
+    // The second trigger for the snapshot hook, and the reliable one: by the
+    // time anyone clicks a heading the host client is certainly loaded, even
+    // on a page that missed the readiness event at open(). Without the hook
+    // the editor's contenteditable reaches the saved file.
+    installSnapshotHook()
+
+    const binding = {
+      el,
+      editor,
+      path,
+      prop,
+      originalHTML,
+      // Set by squire's input event, which is the only signal that someone
+      // actually edited. Comparing the projected value cannot answer this:
+      // the normalisation above changes innerHTML at bind time, before anyone
+      // has typed anything.
+      dirty: false,
+    }
+    // For the undo primitive: richclay stamps no-undo on everything it
+    // activates, so from here until unbind the page's undo stack sees nothing
+    // that happens in this element.
+    binding.oldValue = binding.el[binding.prop]
+    bindings.set(el, binding)
+
+    // Toolbar commands mutate the DOM through squire without always firing a
+    // native input event, so squire's own signal is the one to commit on.
+    const squire = editor.squire
+    if (squire && typeof squire.addEventListener === 'function') {
+      const onInput = () => {
+        binding.dirty = true
+        acceptInlineTextChange(ctx, binding)
+      }
+      squire.addEventListener('input', onInput)
+      binding.detachInput = () => squire.removeEventListener?.('input', onInput)
+    }
+
+    // Blur closes an edit session: one undo primitive covering everything
+    // typed since the bind (or since the last blur).
+    const onBlur = () => recordUndo(binding)
+    el.addEventListener('blur', onBlur)
+    binding.detachBlur = () => el.removeEventListener('blur', onBlur)
+
+    return binding
+  }
+
   return {
     name: 'inline',
     richText,
@@ -225,66 +292,16 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         return true
       }
 
-      const RichClay = resolveRichClay(doc.defaultView)
-      if (typeof RichClay !== 'function') return false
-
-      // Before richclay touches it. Squire normalises the markup it is handed:
-      // measured in Chrome, binding a heading rewrote
-      //   <h1>A page that edits <em>itself</em></h1>
-      // into
-      //   <h1><div>A page that edits <i>itself</i></div></h1>
-      // and that reaches the saved file. Someone who clicks a heading, reads it
-      // and presses Escape has changed nothing and must not have changed their
-      // document either, so an untouched session puts this back verbatim.
-      const originalHTML = el.innerHTML
-      const editor = construct(this.ctx, RichClay, el)
-      if (!editor) return false
-
-      markBound(el)
-      // The second trigger for the snapshot hook, and the reliable one: by the
-      // time anyone clicks a heading the host client is certainly loaded, even
-      // on a page that missed the readiness event at open(). Without the hook
-      // the editor's contenteditable reaches the saved file.
-      installSnapshotHook()
-
-      const binding = {
+      const binding = bindText(
+        this.ctx,
         el,
-        editor,
-        path: target.path.join('.'),
+        target.path.join('.'),
         // What the rule projects, so the commit reads the same thing the engine
         // will write. A text target is either a bare rule (textContent) or one
         // the upgrade rebound (@innerHTML); nothing else is ever text.
-        prop: target.attr === 'innerHTML' ? 'innerHTML' : 'textContent',
-        originalHTML,
-        // Set by squire's input event, which is the only signal that someone
-        // actually edited. Comparing the projected value cannot answer this:
-        // the normalisation above changes innerHTML at bind time, before anyone
-        // has typed anything.
-        dirty: false,
-      }
-      // For the undo primitive: richclay stamps no-undo on everything it
-      // activates, so from here until unbind the page's undo stack sees nothing
-      // that happens in this element.
-      binding.oldValue = binding.el[binding.prop]
-      bindings.set(el, binding)
-
-      // Toolbar commands mutate the DOM through squire without always firing a
-      // native input event, so squire's own signal is the one to commit on.
-      const squire = editor.squire
-      if (squire && typeof squire.addEventListener === 'function') {
-        const onInput = () => {
-          binding.dirty = true
-          acceptInlineTextChange(this.ctx, binding)
-        }
-        squire.addEventListener('input', onInput)
-        binding.detachInput = () => squire.removeEventListener?.('input', onInput)
-      }
-
-      // Blur closes an edit session: one undo primitive covering everything
-      // typed since the bind (or since the last blur).
-      const onBlur = () => recordUndo(binding)
-      el.addEventListener('blur', onBlur)
-      binding.detachBlur = () => el.removeEventListener('blur', onBlur)
+        target.attr === 'innerHTML' ? 'innerHTML' : 'textContent'
+      )
+      if (!binding) return false
 
       focusEditor(binding)
       return true
@@ -346,7 +363,49 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         refreshForm(this.ctx)
       }
       this.syncTargets()
+      // Both reasons put a morph over the page, and a morph takes the editor's
+      // attributes off every element this view has bound.
+      if (reason === 'livesync' || reason === 'undo') this.rebindText(reason)
       this.restoreActive()
+    },
+
+    // A live-sync morph re-syncs the page against the incoming copy, and this
+    // view's own snapshot hook is what makes that copy clean: contenteditable,
+    // data-richclay, no-undo and the bound marker all come back off an element
+    // a live editor is still pointing at. An undo replaying those same
+    // attribute writes in reverse does the same thing. Repair the pairing after
+    // the morph, for the reason restoreActive repairs the popover after it.
+    rebindText(reason) {
+      // On the undo path the value did not change because anyone typed: the undo
+      // itself reverted it. Recording that would push a primitive describing the
+      // undo's own effect, and a fresh record clears the redo stack, so the
+      // person who just pressed undo could not press redo. Measured against the
+      // recorder, which fires its handlers outside its own pause.
+      const record = reason !== 'undo'
+      for (const [el, binding] of [...bindings]) {
+        // Replaced outright: no key matched, so the incoming element took this
+        // one's place. What they typed before the sync is already committed and
+        // still belongs on the undo stack, but the node it was typed into is off
+        // the page — nothing is put back onto it, and the incoming markup stands.
+        if (!doc.contains(el)) {
+          unbind(this.ctx, binding, { restore: false, record })
+          bindings.delete(el)
+          continue
+        }
+        if (el.hasAttribute(BOUND_ATTR)) continue
+        // Survived, but the page no longer treats it as ours. Close the session
+        // that was open, one primitive for what they typed, and open a fresh one
+        // on the markup as it now stands. Deliberately no restore: the element
+        // holds the incoming copy's markup, and putting a pre-morph snapshot
+        // back over it would undo somebody else's edit.
+        const hadFocus = doc.activeElement === el
+        unbind(this.ctx, binding, { restore: false, record })
+        bindings.delete(el)
+        const rebound = bindText(this.ctx, el, binding.path, binding.prop)
+        // Only the element they were actually in: a sync that arrives while
+        // someone is typing must not pull the caret into a different one.
+        if (rebound && hadFocus) focusEditor(rebound)
+      }
     },
 
     // morphForm re-syncs every field from a freshly built form, and that form
@@ -481,8 +540,13 @@ function recordUndo(binding) {
 
 // Close one binding. The undo record comes first: recordValue is a no-op while
 // the recorder is paused, and destroy has to run inside a pause.
-function unbind(ctx, binding) {
-  recordUndo(binding)
+//
+// `restore` is what separates ending a session from repairing one. Ending it
+// puts the author's markup back when nobody typed; repairing after a morph must
+// not, because the markup on the element is the incoming copy's and a pre-morph
+// snapshot written back over it would undo somebody else's edit.
+function unbind(ctx, binding, { restore = true, record = true } = {}) {
+  if (record) recordUndo(binding)
   binding.detachInput?.()
   binding.detachBlur?.()
   const handle = ctx && ctx.observerHandle
@@ -500,7 +564,7 @@ function unbind(ctx, binding) {
       // the author wrote is the editor's own normalisation. Put their markup
       // back. Inside the pause and the undo suppression with the teardown, so
       // the restore is not itself an edit.
-      if (!binding.dirty) binding.el.innerHTML = binding.originalHTML
+      if (restore && !binding.dirty) binding.el.innerHTML = binding.originalHTML
     })
   } finally {
     handle?.resume()

@@ -1,11 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { engine } from 'hyper-html-api'
+import HyperMorph from 'hyper-morph'
 import { loadPage, reset } from './_helpers.js'
 import { open, close, isOpen, api } from '../src/hypercms.js'
 import { state } from '../src/session.js'
 import { coerceBooleans, extractFormData, stableStringify } from '../src/events.js'
 import { upgradeInlineTextRules } from '../src/enhance.js'
+import { cleanRichClayFromSnapshot } from '../src/richclay-bridge.js'
 
 // richclay is not a dependency of hypercms — the page brings it — so the editor
 // below stands in for it. It reproduces the three things this phase actually
@@ -177,11 +179,17 @@ function blur(t, el) {
   el.dispatchEvent(new t.win.Event('blur'))
 }
 
+// The instance currently driving this element. Always the LAST one made for it:
+// a rebind leaves the destroyed editor in `made`, ahead of the live one.
+function editorFor(t, el) {
+  return t.richclay.made.findLast((e) => e.element === el)
+}
+
 // Type through the editor: richclay writes the page element, then squire
 // announces it. Both halves matter — a commit driven by anything but squire's
 // signal would miss every toolbar command.
 function type(t, el, html) {
-  const editor = t.richclay.made.find((e) => e.element === el)
+  const editor = editorFor(t, el)
   assert.ok(editor, 'nothing is bound to this element')
   el.innerHTML = html
   editor.squire.emit('input')
@@ -547,6 +555,250 @@ test('inline text: a session that did edit keeps the edit, normalisation and all
     )
   } finally {
     if (isOpen()) close()
+  }
+  reset(t.dom)
+})
+
+// ---- surviving a live-sync morph ---------------------------------------------
+
+// Live sync keys on data-id / id (clayjs/src/sync/live-sync.js:1276), so both
+// text targets here carry one: with a key the bound element is re-synced in
+// place, and changing that key is how a peer's copy replaces it outright.
+const SYNCED = page(
+  `{ "title": ".title", "lede": ".lede" }`,
+  `<h1 class="title" id="hero">Hello <em>you</em></h1>
+  <p class="lede" id="sub">Plain lede</p>`
+)
+
+// The morph half of a live sync, with the options clayjs applies
+// (live-sync.js:1276). The incoming copy is this document's own snapshot — clean
+// because cleanRichClayFromSnapshot strips the editor out of it, which is
+// exactly the hook hypercms installs at bind time — morphed back over the live
+// tree. The CMS host is left in the copy on purpose: this is a test about the
+// binding, not about the chrome a real snapshot removes.
+function morphFromPeer(t, mutate, { clean = true } = {}) {
+  const incoming = t.doc.documentElement.cloneNode(true)
+  if (clean) cleanRichClayFromSnapshot(incoming, t.win)
+  mutate?.(incoming)
+  HyperMorph.morph(t.doc.documentElement, incoming, {
+    morphStyle: 'outerHTML',
+    ignoreActiveValue: true,
+    head: { style: 'merge' },
+    key: (el) => (el.getAttribute && (el.getAttribute('data-id') || el.getAttribute('id'))) || null,
+  })
+}
+
+// The signal the framework emits once the bytes have landed, which is what
+// hypercms subscribes to.
+function livesyncApplied(t) {
+  t.doc.dispatchEvent(
+    new t.win.CustomEvent('hyperclay:livesync-applied', { detail: { seq: 1 } })
+  )
+}
+
+test('inline text: a live-sync morph strips the binding off the page element, and the refresh puts it back', () => {
+  const changes = []
+  const t = boot(SYNCED, { onChange: (data) => changes.push(data) })
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    type(t, title, 'Hello <em>world</em>')
+    assert.equal(changes.length, 1)
+
+    morphFromPeer(t)
+
+    // The premise, measured rather than assumed: the incoming copy is clean
+    // because our own snapshot hook made it clean, so the morph re-syncs every
+    // attribute richclay wrote straight back off the live element.
+    assert.ok(t.doc.contains(title), 'the node itself survived the morph')
+    assert.equal(title.hasAttribute('data-hcms-bound'), false, 'and lost the marker')
+    assert.equal(title.hasAttribute('contenteditable'), false, 'and stopped being editable')
+    assert.equal(title.hasAttribute('data-richclay'), false)
+
+    livesyncApplied(t)
+
+    assert.equal(title.getAttribute('data-hcms-bound'), '', 'the refresh bound it again')
+    assert.equal(title.getAttribute('contenteditable'), 'true')
+    assert.equal(title.getAttribute('data-richclay'), '')
+
+    type(t, title, 'Hello <em>again</em>')
+    assert.equal(changes.length, 2, 'and typing into it still commits')
+    assert.equal(changes[1].title, 'Hello <em>again</em>')
+    assert.equal(api.getData().title, 'Hello <em>again</em>')
+    assertCoherent('after a live-sync morph rebound the heading')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline text: a morph that replaces the node drops the binding instead of leaving a live editor on it', () => {
+  const changes = []
+  const t = boot(SYNCED, { onChange: (data) => changes.push(data) })
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    type(t, title, 'Mine')
+    const editor = editorFor(t, title)
+
+    // No key match, so the peer's heading is not morphed onto ours — it takes
+    // its place, and the editor's root is detached.
+    morphFromPeer(t, (incoming) => {
+      const heading = incoming.querySelector('.title')
+      heading.setAttribute('id', 'hero-2')
+      heading.innerHTML = 'Theirs'
+    })
+    assert.equal(t.doc.contains(title), false, 'the node was replaced outright')
+
+    livesyncApplied(t)
+
+    assert.equal(editor.destroyed, true, 'no live editor is left on the detached node')
+    assert.equal(t.richclay.made.filter((e) => e.element === title).length, 1, 'and nothing was rebuilt on it')
+
+    // The detached editor still has a squire to announce with. Nothing may
+    // reach the page through it: the peer's heading is the one on the page now.
+    const before = changes.length
+    editor.squire.emit('input')
+    assert.equal(changes.length, before, 'a signal from the dropped editor commits nothing')
+    assert.equal(t.doc.querySelector('.title').innerHTML, 'Theirs', "the peer's copy stands")
+    assert.equal(api.getData().title, 'Theirs')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline text: what was typed before the sync lands as one undo primitive', () => {
+  const t = boot(SYNCED)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    const original = title.innerHTML
+    click(t, title)
+    type(t, title, 'Hello <em>world</em>')
+    assert.deepEqual(undo.records, [], 'nothing is recorded mid-session')
+
+    morphFromPeer(t)
+    livesyncApplied(t)
+
+    assert.equal(undo.records.length, 1, 'the sync closed the session that was open')
+    assert.equal(undo.records[0].target, title)
+    assert.equal(undo.records[0].prop, 'innerHTML')
+    assert.equal(undo.records[0].oldValue, original)
+    assert.equal(undo.records[0].newValue, 'Hello <em>world</em>')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline text: a rebind does not move the caret into an element that did not have it', () => {
+  const t = boot(SYNCED)
+  try {
+    const title = t.doc.querySelector('.title')
+    const lede = t.doc.querySelector('.lede')
+    // Both bound, the caret in the heading. The heading is bound FIRST, so a
+    // rebind that focuses every element it touches would leave the caret in the
+    // paragraph instead.
+    click(t, title)
+    click(t, lede)
+    click(t, title)
+    assert.equal(t.doc.activeElement, title, 'the caret is in the heading')
+    const ledeEditor = editorFor(t, lede)
+
+    morphFromPeer(t)
+    livesyncApplied(t)
+
+    assert.notEqual(editorFor(t, lede), ledeEditor, 'the paragraph really was rebound too')
+    assert.equal(t.doc.activeElement, title, 'and the sync left the caret where it was')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline text: an element that came through the morph with its binding intact is not rebuilt', () => {
+  const t = boot(SYNCED)
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    const editor = t.richclay.last
+
+    // A copy that still carries the editor's own attributes: the morph reaches
+    // the element and leaves the binding whole. A whole binding is not
+    // something to tear down and build again.
+    morphFromPeer(t, null, { clean: false })
+    assert.equal(title.getAttribute('data-hcms-bound'), '', 'the morph left the marker alone')
+
+    livesyncApplied(t)
+
+    assert.equal(t.richclay.made.length, 1, 'no second editor was built')
+    assert.equal(t.richclay.last, editor, 'the same instance is still driving the element')
+    assert.equal(editor.destroyed, false)
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline text: an undo that reverts the binding attributes rebinds too', () => {
+  const t = boot(SYNCED)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    type(t, title, 'Hello <em>world</em>')
+    blur(t, title)
+    const editor = editorFor(t, title)
+
+    // What replaying richclay's own attribute writes in reverse leaves behind:
+    // the element is still on the page, the editor is still pointing at it, and
+    // the page no longer calls it editable.
+    title.removeAttribute('contenteditable')
+    title.removeAttribute('data-richclay')
+    title.removeAttribute('data-hcms-bound')
+    undo.undo()
+
+    assert.equal(title.getAttribute('data-hcms-bound'), '', 'the undo refresh bound it again')
+    assert.equal(title.getAttribute('contenteditable'), 'true')
+    assert.equal(editor.destroyed, true, 'and the editor that was pointing at it is gone')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline text: an undo does not record a primitive describing its own revert', () => {
+  const t = boot(SYNCED)
+  try {
+    const undo = installUndo(t.win)
+    close()
+    open({ view: 'inline' })
+
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    type(t, title, 'Hello <em>world</em>')
+    blur(t, title)
+    assert.equal(undo.records.length, 1, 'the edit session recorded one primitive')
+
+    title.removeAttribute('contenteditable')
+    title.removeAttribute('data-richclay')
+    title.removeAttribute('data-hcms-bound')
+    undo.undo()
+
+    // The value changed because the undo reverted it, not because anyone typed.
+    // Recording that would push a primitive for the undo's own effect, and a
+    // fresh record clears the redo stack, so the person who just pressed undo
+    // could not press redo.
+    assert.equal(undo.records.length, 0, 'the rebind recorded nothing on top of the undo')
+  } finally {
+    close()
   }
   reset(t.dom)
 })

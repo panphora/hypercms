@@ -18,6 +18,11 @@ const FORCE_REFRESH = [
 
 export function loadPage(html) {
   const dom = new JSDOM(html, { url: 'http://localhost/', pretendToBeVisual: true })
+  // jsdom implements no window.CSS at all, and hyper-morph calls CSS.escape the
+  // moment a morph has to move an element by id — which a full-document morph
+  // over a page carrying ids does. Without this the morph throws
+  // ReferenceError: CSS is not defined, in the test realm only.
+  if (dom.window.CSS === undefined) dom.window.CSS = { escape: escapeIdent }
   globalThis.window = dom.window
   globalThis.document = dom.window.document
   for (const k of FORCE_REFRESH) {
@@ -37,6 +42,13 @@ export function loadPage(html) {
   // enough. Tests that want to trigger refresh call cms.refresh() directly.
   installMutationStub(dom.window)
   return dom
+}
+
+// Deliberately standalone rather than reusing src/events.js's cssEscape: that
+// one delegates to CSS.escape when it exists, so wiring it in as CSS.escape
+// makes it call itself forever.
+function escapeIdent(value) {
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, (c) => '\\' + c)
 }
 
 function installMutationStub(win) {
