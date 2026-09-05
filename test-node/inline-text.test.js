@@ -478,3 +478,75 @@ test('inline: the session binds array rows through @innerHTML, which the sidebar
   }
   reset(t.dom)
 })
+
+// Squire normalises whatever markup it is handed, and hypercms does not get to
+// opt out. Measured in Chrome against the real richclay: binding
+//   <h1 class="page-title">A page that edits <em>itself</em></h1>
+// left the live element, and the saved file, holding
+//   <h1 class="page-title"><div>A page that edits <i>itself</i></div></h1>
+// after a click that typed nothing. The stub above deliberately does not do
+// this, or every other test in this file would be asserting Squire's behaviour
+// instead of hypercms's. These two are the ones about it.
+function bootNormalizing() {
+  if (isOpen()) close()
+  const dom = loadPage(TEXT)
+  const richclay = installRichClay(dom.window)
+  const Base = dom.window.richclay.RichClay
+  class Normalizing extends Base {
+    constructor(el, options) {
+      super(el, options)
+      if (this.unsupported) return
+      el.innerHTML = `<div>${el.innerHTML.replace(/<(\/?)em>/g, '<$1i>')}</div>`
+    }
+  }
+  dom.window.richclay = { RichClay: Normalizing }
+  open({ view: 'inline' })
+  return { dom, win: dom.window, doc: dom.window.document, richclay }
+}
+
+test('inline text: a session that edits nothing leaves the markup as the author wrote it', () => {
+  const t = bootNormalizing()
+  try {
+    const title = t.doc.querySelector('.title')
+    const authored = title.innerHTML
+    assert.equal(authored, 'Hello <em>you</em>', 'the fixture is the author\'s markup')
+
+    click(t, title)
+    assert.equal(
+      title.innerHTML,
+      '<div>Hello <i>you</i></div>',
+      'the editor really did rewrite it on bind'
+    )
+
+    close()
+
+    assert.equal(
+      title.innerHTML,
+      authored,
+      'reading a heading and leaving must not rewrite the document'
+    )
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})
+
+test('inline text: a session that did edit keeps the edit, normalisation and all', () => {
+  const t = bootNormalizing()
+  try {
+    const title = t.doc.querySelector('.title')
+    click(t, title)
+    type(t, title, '<div>Hello <i>world</i></div>')
+
+    close()
+
+    assert.equal(
+      title.innerHTML,
+      '<div>Hello <i>world</i></div>',
+      'someone who edited keeps what they typed'
+    )
+  } finally {
+    if (isOpen()) close()
+  }
+  reset(t.dom)
+})

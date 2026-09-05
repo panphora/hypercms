@@ -228,6 +228,15 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       const RichClay = resolveRichClay(doc.defaultView)
       if (typeof RichClay !== 'function') return false
 
+      // Before richclay touches it. Squire normalises the markup it is handed:
+      // measured in Chrome, binding a heading rewrote
+      //   <h1>A page that edits <em>itself</em></h1>
+      // into
+      //   <h1><div>A page that edits <i>itself</i></div></h1>
+      // and that reaches the saved file. Someone who clicks a heading, reads it
+      // and presses Escape has changed nothing and must not have changed their
+      // document either, so an untouched session puts this back verbatim.
+      const originalHTML = el.innerHTML
       const editor = construct(this.ctx, RichClay, el)
       if (!editor) return false
 
@@ -246,6 +255,12 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         // will write. A text target is either a bare rule (textContent) or one
         // the upgrade rebound (@innerHTML); nothing else is ever text.
         prop: target.attr === 'innerHTML' ? 'innerHTML' : 'textContent',
+        originalHTML,
+        // Set by squire's input event, which is the only signal that someone
+        // actually edited. Comparing the projected value cannot answer this:
+        // the normalisation above changes innerHTML at bind time, before anyone
+        // has typed anything.
+        dirty: false,
       }
       // For the undo primitive: richclay stamps no-undo on everything it
       // activates, so from here until unbind the page's undo stack sees nothing
@@ -257,7 +272,10 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       // native input event, so squire's own signal is the one to commit on.
       const squire = editor.squire
       if (squire && typeof squire.addEventListener === 'function') {
-        const onInput = () => acceptInlineTextChange(this.ctx, binding)
+        const onInput = () => {
+          binding.dirty = true
+          acceptInlineTextChange(this.ctx, binding)
+        }
         squire.addEventListener('input', onInput)
         binding.detachInput = () => squire.removeEventListener?.('input', onInput)
       }
@@ -478,6 +496,11 @@ function unbind(ctx, binding) {
       // the marker would tell the next snapshot to strip an element hypercms no
       // longer owns.
       binding.el.removeAttribute(BOUND_ATTR)
+      // Nobody typed, so the only difference between this element and the one
+      // the author wrote is the editor's own normalisation. Put their markup
+      // back. Inside the pause and the undo suppression with the teardown, so
+      // the restore is not itself an edit.
+      if (!binding.dirty) binding.el.innerHTML = binding.originalHTML
     })
   } finally {
     handle?.resume()
