@@ -21,11 +21,16 @@ import {
   nextSearchAfterClose,
   shouldAutoOpenFromSearch,
 } from './session.js'
+import { findLeafField, writeFieldValue } from './events.js'
 import { maybeInjectToggle } from './toggle.js'
-import { platform, onPlatformEvent, MUTATION_READY, PLATFORM_READY } from './platform.js'
-import { cleanRichClayFromSnapshot } from './richclay-bridge.js'
+import { platform, onPlatformEvent, MUTATION_READY } from './platform.js'
+import { installHooks } from './hooks.js'
 
 export { nextSearchAfterClose, shouldAutoOpenFromSearch }
+// The leaf-write pair api.setValue is built on. Exported because the inline
+// view's text commit writes the same form leaf from the page element, and a
+// second copy of this logic is how the two paths drift apart.
+export { findLeafField, writeFieldValue }
 
 export function installStyles(text) {
   setShellStyles(text)
@@ -33,59 +38,6 @@ export function installStyles(text) {
 
 export function markBundledStyles(doc) {
   markStylesBundled(doc)
-}
-
-// Strip hypercms's own body chrome from the SAVE clone so it never reaches disk
-// (the shell element itself is [save-remove], but the hcms-open class lives on
-// <body>, outside the stripped subtree). Registered once at first open():
-// onPrepareForSave runs save-only, on a clone, so it never touches the live DOM,
-// and removing absent classes is a no-op when the shell is closed. Guarded so it
-// degrades cleanly when the host save pipeline (hyperclayjs) isn't present.
-let prepareHookInstalled = false
-function installSavePrepareHook() {
-  if (prepareHookInstalled) return
-  const onPrepareForSave = platform('onPrepareForSave')
-  if (typeof onPrepareForSave !== 'function') return
-  onPrepareForSave((clonedDocEl) => {
-    const b = clonedDocEl && clonedDocEl.querySelector && clonedDocEl.querySelector('body')
-    if (b) b.classList.remove('hcms-open', 'hcms-overlay', 'hcms-side-left')
-  })
-  prepareHookInstalled = true
-}
-
-// Clean up after the richclay instances hypercms itself creates on page
-// elements. Installed once at first open, alongside the save-prepare hook above,
-// and for the same reason: the host client may not be loaded yet at module
-// evaluation. onSnapshot rather than onPrepareForSave, because this has to run
-// for live sync too — a hook on the save-only path fires after the editor's
-// leftovers have already been broadcast to every other browser.
-let snapshotHookInstalled = false
-function installSnapshotHook() {
-  if (snapshotHookInstalled) return
-  const onSnapshot = platform('onSnapshot')
-  if (typeof onSnapshot !== 'function') return
-  onSnapshot((clonedDocEl) => {
-    cleanRichClayFromSnapshot(clonedDocEl, typeof window !== 'undefined' ? window : null)
-  })
-  snapshotHookInstalled = true
-}
-
-// Both hooks read a capability that can arrive after hypercms does, and both
-// return without recording success when it is missing. Retry on the clients'
-// readiness pair and disarm once both are in, so a page that lost the import
-// race still gets its clone cleanup.
-let offPlatformReady = null
-function armHookRetry() {
-  if (offPlatformReady || typeof document === 'undefined') return
-  const retry = () => {
-    installSavePrepareHook()
-    installSnapshotHook()
-    if (prepareHookInstalled && snapshotHookInstalled) {
-      offPlatformReady?.()
-      offPlatformReady = null
-    }
-  }
-  offPlatformReady = onPlatformEvent(document, PLATFORM_READY, retry)
 }
 
 // The views a session can be rendered through. A name that is not in here is a
@@ -136,9 +88,7 @@ export function open(opts = {}) {
     teardownSession(state.ctx, { restoreFocus: false, updateUrl: false, reason: 'switch' })
   }
 
-  installSavePrepareHook()
-  installSnapshotHook()
-  if (!prepareHookInstalled || !snapshotHookInstalled) armHookRetry()
+  installHooks()
 
   const view = makeView({ doc, pageRoot, opts: effective })
   const ctx = createSession({ view, doc, pageRoot, opts: effective, onCloseRequested: () => close() })
@@ -246,67 +196,6 @@ export const api = {
       commit(extractFormData(ctx), { path: '', structural: true }, ctx)
     )
   },
-}
-
-function findLeafField(formRoot, path) {
-  const esc = cssEscape(path)
-  // Prefer a tag-qualified leaf (input/textarea/select/img/a) — since v0.3
-  // stamps data-hcms-field on the wrapping container too, a bare attribute
-  // match would resolve to the container and lose the value write.
-  const leafSel =
-    `[data-hcms-path="${esc}"] input[data-hcms-field], ` +
-    `[data-hcms-path="${esc}"] textarea[data-hcms-field], ` +
-    `[data-hcms-path="${esc}"] select[data-hcms-field], ` +
-    `[data-hcms-path="${esc}"] img[data-hcms-field], ` +
-    `[data-hcms-path="${esc}"] a[data-hcms-field], ` +
-    `[data-hcms-path="${esc}"] [contenteditable][data-hcms-field], ` +
-    // Leaf is the path-stamped element itself (inline-stamped fields):
-    `input[data-hcms-path="${esc}"][data-hcms-field], ` +
-    `textarea[data-hcms-path="${esc}"][data-hcms-field], ` +
-    `select[data-hcms-path="${esc}"][data-hcms-field], ` +
-    `img[data-hcms-path="${esc}"][data-hcms-field], ` +
-    `a[data-hcms-path="${esc}"][data-hcms-field], ` +
-    `[contenteditable][data-hcms-path="${esc}"][data-hcms-field]`
-  return formRoot.querySelector(leafSel)
-}
-
-function writeFieldValue(el, value, formRoot, path) {
-  const tag = (el.tagName || '').toUpperCase()
-  const type = (el.getAttribute('type') || '').toLowerCase()
-  if (tag === 'INPUT' && type === 'checkbox') {
-    el.checked = value === true || value === 'true'
-    return
-  }
-  if (tag === 'INPUT' && type === 'radio') {
-    // Radios sharing the same path act as a group. Toggle the matching option.
-    const esc = cssEscape(path)
-    const group = formRoot.querySelectorAll(
-      `[data-hcms-path="${esc}"][data-hcms-field][type="radio"], [data-hcms-path="${esc}"] [data-hcms-field][type="radio"]`
-    )
-    if (group.length) {
-      group.forEach((r) => { r.checked = String(r.value) === String(value ?? '') })
-    } else {
-      el.checked = String(el.value) === String(value ?? '')
-    }
-    return
-  }
-  if (tag === 'IMG') {
-    el.src = value == null ? '' : String(value)
-    return
-  }
-  if (tag === 'A') {
-    el.href = value == null ? '' : String(value)
-    return
-  }
-  if (el.hasAttribute && el.hasAttribute('contenteditable')) {
-    el.innerHTML = value == null ? '' : String(value)
-    return
-  }
-  if ('value' in el) {
-    el.value = value == null ? '' : String(value)
-    return
-  }
-  el.textContent = value == null ? '' : String(value)
 }
 
 // ?cms=true auto-open. When the page URL carries cms=true at load, open the CMS

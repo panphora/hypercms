@@ -53,7 +53,7 @@ export function refreshForm(ctx, { ignoreActiveValue } = {}) {
   seeder.seed(ctx.formRoot)
   // The morph can rebuild field nodes, dropping autosize heights and richclay
   // instances (instances are per-element); re-enhance whatever is new.
-  enhanceFields(ctx.formRoot, ctx.doc)
+  enhanceFields(ctx.formRoot, ctx.doc, ctx.view?.enhanceFormRichText !== false)
   // morphForm rebuilds the form structure; inline error slots get wiped. Re-apply
   // the last error state so error messages survive across observer-driven refreshes
   // (e.g., the rollback after a failed add).

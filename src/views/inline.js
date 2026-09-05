@@ -1,27 +1,42 @@
 // The inline view: the editing session rendered onto the page itself rather than
 // into a side panel.
 //
-// This phase mounts the host and the form. The controls that make the page
-// visibly editable — handles, the popover, rich text bound to page elements —
-// are the next phase, so opening this view currently changes nothing you can
-// see. That is intentional: the switch semantics, the teardown and the data
-// path are worth proving before any of it is drawn.
+// Three ways to change one field, chosen per target: text is edited in place
+// through richclay bound to the page element, a native control on the page is
+// left alone to be used, and everything else gets a handle that opens the
+// popover holding that field's real form control.
 //
 // The form is NOT a second representation of the data. It is the same form the
 // sidebar builds, mounted inside the inline host with every field hidden; the
-// popover will later show one field at a time by revealing it in place. Nothing
-// is ever moved in or out of the form tree, so engine.extract(formRoot,
-// formRules) can never be missing a path. That is the failure mode of the
-// obvious alternative, relocating a field node into a popover and back.
+// popover shows one field at a time by revealing it in place. Nothing is ever
+// moved in or out of the form tree, so engine.extract(formRoot, formRules) can
+// never be missing a path. That is the failure mode of the obvious alternative,
+// relocating a field node into a popover and back.
+//
+// A text edit is the one path that does not write the page through the engine:
+// richclay has already written it. What the commit does is mirror that value
+// into the form leaf and apply as usual, which the engine's compare-before-write
+// guard turns into a no-op on the element under the caret.
 
 import { buildForm } from '../form-builder.js'
-import { bindEvents, cssEscape } from '../events.js'
-import { autosizeTextarea, enhanceFields, upgradeRichTextRules } from '../enhance.js'
+import {
+  bindEvents,
+  commit,
+  cssEscape,
+  extractFormData,
+  findLeafField,
+  suppressUndo,
+  writeFieldValue,
+} from '../events.js'
+import { autosizeTextarea, enhanceFields, upgradeInlineTextRules } from '../enhance.js'
 import { applyUnresolvedState } from '../unresolved.js'
 import { refreshForm } from '../refresh.js'
 import { reensureStyles } from '../shell.js'
 import { resolveTargets } from '../targets.js'
 import { place } from '../place.js'
+import { platform } from '../platform.js'
+import { BOUND_ATTR, markBound, resolveRichClay } from '../richclay-bridge.js'
+import { installSnapshotHook } from '../hooks.js'
 import { createInlineLayer } from './inline-layer.js'
 
 const HOST_TAG = 'hypercms-inline'
@@ -34,11 +49,22 @@ const ONPATH_CLASS = 'is-hcms-inline-onpath'
 const FOCUSABLE =
   'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
+// The same commands the sidebar's rich-text fields carry, so the two views
+// offer the same formatting.
+const TOOLBAR = ['bold', 'italic', 'link', 'undo', 'redo']
+
+const HEADING = /^H[1-6]$/
+
 export function createInlineView({ doc, pageRoot, opts = {} }) {
   const richText = opts.richText !== false
   let host = null
   let layer = null
   let unbindPage = null
+  // Every richclay instance this view put on a PAGE element, keyed by that
+  // element. Bindings are made on the first click and live until the session
+  // ends, so a second click on a heading finds its editor rather than building
+  // another one.
+  const bindings = new Map()
   // Which target the popover is open over, which handle opened it (so focus can
   // go back there), and the placement mode of THIS open. The mode is reset on
   // every activation: place()'s hysteresis is about one popover following its
@@ -60,12 +86,16 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
 
     popEl: null,
 
-    // Today the same upgrade the sidebar performs. The inline view needs a wider
-    // one — every text projection it binds rich text to has to round-trip
-    // through @innerHTML, including inside list rows — but that upgrade belongs
-    // with the binding that motivates it, in the next phase, not ahead of it.
+    // The form's own rich-text fields are never focused in this view — a rich
+    // target is edited on the page element itself — so mounting richclay on
+    // them buys nothing and costs five document-level capture listeners each.
+    enhanceFormRichText: false,
+
+    // The wider upgrade, not the sidebar's. Every text projection this view
+    // binds rich text to has to round-trip through @innerHTML, list rows
+    // included, and only this one looks inside an array.
     prepareRules(sourceRules) {
-      return richText ? upgradeRichTextRules(sourceRules, pageRoot) : sourceRules
+      return richText ? upgradeInlineTextRules(sourceRules, pageRoot) : sourceRules
     },
 
     mount(initialData) {
@@ -86,7 +116,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       })
       host.formRoot.appendChild(fragment)
       ctx.seeder.seed(host.formRoot)
-      enhanceFields(host.formRoot, doc)
+      enhanceFields(host.formRoot, doc, this.enhanceFormRichText)
       applyUnresolvedState(ctx)
 
       bindEvents(ctx)
@@ -155,7 +185,11 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     // engine.extract(formRoot) can never be missing a path.
     activate(target, handle) {
       if (!target || !host) return
-      if (target.kind === 'text') return this.activateText(target)
+      // A text target is edited where it sits, and only falls through to the
+      // popover when it cannot be: no richclay on the page, or a root richclay
+      // refuses. Without the fall-through, clicking such a target would do
+      // nothing at all.
+      if (target.kind === 'text' && this.activateText(target)) return
 
       const leaf = revealPath(this, host, target.path.join('.'))
       if (!leaf) {
@@ -176,8 +210,67 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       focusFirst(leaf)
     },
 
-    // B2b-3b binds richclay to the page element and edits the text in place.
-    activateText() {},
+    // Bind richclay to the page element and edit the text where it sits.
+    // Returns false when the target cannot be bound, which is the caller's
+    // signal to open the popover over it instead.
+    //
+    // On demand, never at mount: an instance per text target on a page with
+    // twenty of them is twenty Squire editors, twenty toolbars and a hundred
+    // document-level listeners for one heading someone might click.
+    activateText(target) {
+      const el = target.el
+      const existing = bindings.get(el)
+      if (existing) {
+        focusEditor(existing)
+        return true
+      }
+
+      const RichClay = resolveRichClay(doc.defaultView)
+      if (typeof RichClay !== 'function') return false
+
+      const editor = construct(this.ctx, RichClay, el)
+      if (!editor) return false
+
+      markBound(el)
+      // The second trigger for the snapshot hook, and the reliable one: by the
+      // time anyone clicks a heading the host client is certainly loaded, even
+      // on a page that missed the readiness event at open(). Without the hook
+      // the editor's contenteditable reaches the saved file.
+      installSnapshotHook()
+
+      const binding = {
+        el,
+        editor,
+        path: target.path.join('.'),
+        // What the rule projects, so the commit reads the same thing the engine
+        // will write. A text target is either a bare rule (textContent) or one
+        // the upgrade rebound (@innerHTML); nothing else is ever text.
+        prop: target.attr === 'innerHTML' ? 'innerHTML' : 'textContent',
+      }
+      // For the undo primitive: richclay stamps no-undo on everything it
+      // activates, so from here until unbind the page's undo stack sees nothing
+      // that happens in this element.
+      binding.oldValue = binding.el[binding.prop]
+      bindings.set(el, binding)
+
+      // Toolbar commands mutate the DOM through squire without always firing a
+      // native input event, so squire's own signal is the one to commit on.
+      const squire = editor.squire
+      if (squire && typeof squire.addEventListener === 'function') {
+        const onInput = () => acceptInlineTextChange(this.ctx, binding)
+        squire.addEventListener('input', onInput)
+        binding.detachInput = () => squire.removeEventListener?.('input', onInput)
+      }
+
+      // Blur closes an edit session: one undo primitive covering everything
+      // typed since the bind (or since the last blur).
+      const onBlur = () => recordUndo(binding)
+      el.addEventListener('blur', onBlur)
+      binding.detachBlur = () => el.removeEventListener('blur', onBlur)
+
+      focusEditor(binding)
+      return true
+    },
 
     placePopover() {
       if (!host || !activeTarget || host.popEl.hidden) return
@@ -282,6 +375,8 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       // session's own restore of whatever had focus before it opened.
       activeHandle = null
       this.deactivate()
+      for (const binding of bindings.values()) unbind(this.ctx, binding)
+      bindings.clear()
       unbindPage?.()
       unbindPage = null
       layer?.destroy()
@@ -291,6 +386,114 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       this.popEl = null
     },
   }
+}
+
+// Build the editor, or answer null when this element cannot carry one.
+//
+// The pause is around the construction and nothing else, and it is not
+// belt-and-braces: richclay writes contenteditable, data-richclay and a class
+// onto an authored page element, and those three DO reach the mutation hub
+// (measured, plan §6). Un-paused they read as a page edit and drive a full form
+// refresh; unsuppressed they land on the page's undo stack as three attribute
+// writes nobody made.
+function construct(ctx, RichClay, el) {
+  const handle = ctx && ctx.observerHandle
+  handle?.pause()
+  try {
+    return suppressUndo(() => {
+      let editor = null
+      try {
+        editor = new RichClay(el, {
+          inline: true,
+          hyperclay: false,
+          toolbar: TOOLBAR,
+          // A heading is one line by definition; without this, Enter in it
+          // creates a second block inside the <h1>.
+          ...(HEADING.test(el.tagName) ? { singleLine: true } : null),
+        })
+      } catch (err) {
+        console.warn('[hypercms] richclay activation failed; the field falls back to the popover', err)
+        return null
+      }
+      // richclay's own verdict, which it delivers by returning an instance that
+      // never activates: TABLE and its row parts, SCRIPT/STYLE/TEXTAREA/TITLE/
+      // IFRAME/NOSCRIPT/XMP, TEMPLATE, and anything outside the HTML namespace.
+      // Without this check the person clicks one of those and nothing happens.
+      if (editor.unsupported || !editor.active) {
+        try { editor.destroy() } catch (_) {}
+        return null
+      }
+      return editor
+    })
+  } finally {
+    handle?.resume()
+  }
+}
+
+// Mirror the page element into the form leaf, then commit like any other edit.
+//
+// Per change, not on blur. commit IS the notification — it dispatches
+// hcms:change and calls onChange — so a blur-only commit would lose the edit's
+// own event to whatever unrelated commit folded the text in first, and then be
+// skipped on its fingerprint. The form leaf has to be written first or the
+// commit extracts the stale one and puts the old text back on the page.
+function acceptInlineTextChange(ctx, { path, el, prop }) {
+  const field = findLeafField(ctx.formRoot, path)
+  if (!field) return
+  writeFieldValue(field, el[prop], ctx.formRoot, path)
+  commit(extractFormData(ctx), { path, structural: false }, ctx)
+}
+
+// One primitive per edit session, at the boundary that closes it. Everything in
+// between is invisible to the page's undo stack: richclay stamps no-undo on
+// what it activates and hyper-undo honours it.
+//
+// Unlike resolveUnobservedProjection this can record an array row, because the
+// element is in hand rather than resolved from a document-level selector.
+function recordUndo(binding) {
+  const { el, prop, oldValue } = binding
+  const newValue = el[prop]
+  if (newValue === oldValue) return
+  binding.oldValue = newValue
+  const u = platform('undo')
+  if (u && typeof u.recordValue === 'function') {
+    u.recordValue(el, { prop, oldValue, newValue })
+  }
+}
+
+// Close one binding. The undo record comes first: recordValue is a no-op while
+// the recorder is paused, and destroy has to run inside a pause.
+function unbind(ctx, binding) {
+  recordUndo(binding)
+  binding.detachInput?.()
+  binding.detachBlur?.()
+  const handle = ctx && ctx.observerHandle
+  handle?.pause()
+  try {
+    suppressUndo(() => {
+      try { binding.editor.destroy() } catch (err) {
+        console.warn('[hypercms] richclay teardown failed; editor state may reach the save', err)
+      }
+      // The bridge only unmarks the snapshot clone. Left on the live element,
+      // the marker would tell the next snapshot to strip an element hypercms no
+      // longer owns.
+      binding.el.removeAttribute(BOUND_ATTR)
+    })
+  } finally {
+    handle?.resume()
+  }
+}
+
+// The click that opens a text target lands before the element is editable, so
+// the browser has put no caret in it. richclay's focus() goes through squire,
+// which puts the caret in the text rather than selecting the whole region.
+function focusEditor(binding) {
+  const { editor, el } = binding
+  if (el.ownerDocument.activeElement === el) return
+  try {
+    if (typeof editor.focus === 'function') editor.focus()
+    else el.focus()
+  } catch (_) {}
 }
 
 // Show exactly one leaf: mark it active, and mark every wrapper between it and

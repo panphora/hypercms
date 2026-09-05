@@ -41,6 +41,63 @@ export function upgradeRichTextRules(rules, pageRoot) {
   }
 }
 
+// The inline view's upgrade. Identical to the one above for a scalar or an
+// object rule, and different for the one case that one deliberately refuses:
+// the rules inside an array.
+//
+// The narrow version cannot answer "does THIS row's element hold markup" from a
+// document-level querySelector, so it leaves array subtrees alone. Here the item
+// elements are resolved first, so the question IS answerable — once per rule
+// rather than once per row, because the rule language has no per-row rule. ANY
+// row holding markup upgrades the rule for every row, and that costs nothing:
+// @innerHTML round-trips plain text unchanged.
+//
+// It matters because the inline view binds rich text to the row element itself.
+// A row left on textContent loses its links and its bold on the first commit.
+export function upgradeInlineTextRules(rules, pageRoot) {
+  if (!pageRoot || rules == null) return rules
+  return walk(rules, [pageRoot])
+
+  function walk(rule, contexts) {
+    if (typeof rule === 'string') {
+      if (rule.endsWith('[]')) return rule
+      if (ruleAttrIndex(rule) !== -1) return rule
+      return contexts.some((ctx) => holdsMarkup(ctx, rule)) ? rule + '@innerHTML' : rule
+    }
+    if (Array.isArray(rule)) {
+      const [selector, shape] = rule
+      if (typeof selector !== 'string' || !selector) return rule
+      const items = queryAll(pageRoot, selector)
+      if (!items.length) return rule
+      return [selector, walk(shape, items)]
+    }
+    if (rule && typeof rule === 'object') {
+      const out = Object.create(null)
+      for (const [k, v] of Object.entries(rule)) out[k] = walk(v, contexts)
+      return out
+    }
+    return rule
+  }
+}
+
+function holdsMarkup(context, selector) {
+  let el = null
+  try {
+    el = context.querySelector(selector)
+  } catch (_) {
+    return false
+  }
+  return !!el && el.children.length > 0
+}
+
+function queryAll(root, selector) {
+  try {
+    return [...root.querySelectorAll(selector)]
+  } catch (_) {
+    return []
+  }
+}
+
 // Grow a form textarea to fit its content. Browsers with `field-sizing:
 // content` handle this in CSS (the theme sets it); everywhere else the
 // height is pinned to scrollHeight on populate and on every input.
@@ -57,9 +114,18 @@ export function autosizeTextarea(el) {
 // page ships it (window.richclay / window.hyperclay.RichClay). Without
 // richclay the surface stays a plain contenteditable bound via @innerHTML,
 // which still round-trips markup — richclay only adds the editing chrome.
-export function enhanceFields(root, doc) {
+//
+// `formRichText` is the view's, read off view.enhanceFormRichText. The inline
+// view passes false: its form fields are never focused (rich text is edited on
+// the page element itself), and each instance installs five document-level
+// capture listeners that test event.target against their element on every
+// keydown, beforeinput, cut, paste and drop. Twenty rich fields is a hundred
+// dead listeners. The autosize pass runs either way — the popover shows those
+// same fields for every non-text target.
+export function enhanceFields(root, doc, formRichText = true) {
   if (!root || !root.querySelectorAll) return
   root.querySelectorAll('textarea[data-hcms-field]').forEach(autosizeTextarea)
+  if (formRichText === false) return
 
   const win = (doc && doc.defaultView) || (typeof window !== 'undefined' ? window : null)
   const RichClay = resolveRichClay(win)

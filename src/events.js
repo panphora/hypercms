@@ -484,7 +484,7 @@ export function onAdd(arrayPath, ctx) {
     pageRules,
   })
   slot.appendChild(itemNode)
-  enhanceFields(itemNode, ctx.doc)
+  enhanceFields(itemNode, ctx.doc, ctx.view?.enhanceFormRichText !== false)
   updateArrayButtonsVisibility(arrayEl)
   return commitWithUndo(`Add ${arrayPath}`, () =>
     commit(extractFormData(ctx), { path: arrayPath, structural: true }, ctx)
@@ -641,6 +641,70 @@ export function commit(newData, info, ctx) {
     ctx.onError?.(result.error)
   }
   return result
+}
+
+// Resolve one form leaf by path, and write a value into it. Shared by
+// cms.api.setValue and by the inline view's text commit, which reads the page
+// element richclay just edited and mirrors it into the form before committing.
+export function findLeafField(formRoot, path) {
+  const esc = cssEscape(path)
+  // Prefer a tag-qualified leaf (input/textarea/select/img/a) — since v0.3
+  // stamps data-hcms-field on the wrapping container too, a bare attribute
+  // match would resolve to the container and lose the value write.
+  const leafSel =
+    `[data-hcms-path="${esc}"] input[data-hcms-field], ` +
+    `[data-hcms-path="${esc}"] textarea[data-hcms-field], ` +
+    `[data-hcms-path="${esc}"] select[data-hcms-field], ` +
+    `[data-hcms-path="${esc}"] img[data-hcms-field], ` +
+    `[data-hcms-path="${esc}"] a[data-hcms-field], ` +
+    `[data-hcms-path="${esc}"] [contenteditable][data-hcms-field], ` +
+    // Leaf is the path-stamped element itself (inline-stamped fields):
+    `input[data-hcms-path="${esc}"][data-hcms-field], ` +
+    `textarea[data-hcms-path="${esc}"][data-hcms-field], ` +
+    `select[data-hcms-path="${esc}"][data-hcms-field], ` +
+    `img[data-hcms-path="${esc}"][data-hcms-field], ` +
+    `a[data-hcms-path="${esc}"][data-hcms-field], ` +
+    `[contenteditable][data-hcms-path="${esc}"][data-hcms-field]`
+  return formRoot.querySelector(leafSel)
+}
+
+export function writeFieldValue(el, value, formRoot, path) {
+  const tag = (el.tagName || '').toUpperCase()
+  const type = (el.getAttribute('type') || '').toLowerCase()
+  if (tag === 'INPUT' && type === 'checkbox') {
+    el.checked = value === true || value === 'true'
+    return
+  }
+  if (tag === 'INPUT' && type === 'radio') {
+    // Radios sharing the same path act as a group. Toggle the matching option.
+    const esc = cssEscape(path)
+    const group = formRoot.querySelectorAll(
+      `[data-hcms-path="${esc}"][data-hcms-field][type="radio"], [data-hcms-path="${esc}"] [data-hcms-field][type="radio"]`
+    )
+    if (group.length) {
+      group.forEach((r) => { r.checked = String(r.value) === String(value ?? '') })
+    } else {
+      el.checked = String(el.value) === String(value ?? '')
+    }
+    return
+  }
+  if (tag === 'IMG') {
+    el.src = value == null ? '' : String(value)
+    return
+  }
+  if (tag === 'A') {
+    el.href = value == null ? '' : String(value)
+    return
+  }
+  if (el.hasAttribute && el.hasAttribute('contenteditable')) {
+    el.innerHTML = value == null ? '' : String(value)
+    return
+  }
+  if ('value' in el) {
+    el.value = value == null ? '' : String(value)
+    return
+  }
+  el.textContent = value == null ? '' : String(value)
 }
 
 export function extractFormData(ctx) {

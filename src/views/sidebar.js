@@ -20,6 +20,9 @@ export function createSidebarView({ doc, pageRoot, opts = {} }) {
   return {
     name: 'sidebar',
     richText,
+    // The form IS the editing surface here, so its rich-text fields are the
+    // ones richclay has to be on.
+    enhanceFormRichText: true,
     ctx: null,
     root: null,
     formRoot: null,
