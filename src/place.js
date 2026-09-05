@@ -88,13 +88,34 @@ export function place({ anchor, bar, rail = bar, viewport, current = null }) {
 // right edge would otherwise put its handle half off-screen, and a heading at
 // the very top of the document would put it above the fold.
 export function placeHandle({ anchor, handle, viewport, inset = 6 }) {
-  const x = Math.max(
-    VIEWPORT_INSET,
-    Math.min(anchor.right - handle.width + inset, viewport.width - handle.width - VIEWPORT_INSET)
-  )
-  const y = Math.max(
-    VIEWPORT_INSET,
-    Math.min(anchor.top - inset, viewport.height - handle.height - VIEWPORT_INSET)
-  )
-  return { x, y }
+  // Overlapping only reads as "belongs to this" when there is something left to
+  // belong to. On a 108x18 link a 36x31 handle covered 28% of it, including the
+  // last word — measured in a real browser. So a small anchor gets its handle
+  // set BESIDE it instead: still adjacent, nothing hidden.
+  const roomy = anchor.height >= handle.height * 1.5 && anchor.width >= handle.width * 2
+  if (roomy) {
+    const x = Math.max(
+      VIEWPORT_INSET,
+      Math.min(anchor.right - handle.width + inset, viewport.width - handle.width - VIEWPORT_INSET)
+    )
+    const y = Math.max(
+      VIEWPORT_INSET,
+      Math.min(anchor.top - inset, viewport.height - handle.height - VIEWPORT_INSET)
+    )
+    return { x, y, mode: 'over' }
+  }
+
+  // Beside: to the right when it fits, otherwise to the left, vertically
+  // centred on the anchor. Both are clamped, so a handle never leaves the
+  // viewport even for an anchor flush against an edge.
+  const gap = 4
+  const fitsRight = anchor.right + gap + handle.width <= viewport.width - VIEWPORT_INSET
+  const rawX = fitsRight ? anchor.right + gap : anchor.left - gap - handle.width
+  // Only the left edge needs clamping. fitsRight is the test for "the right
+  // placement is inside the viewport", so the right branch is already in bounds
+  // by construction; the left branch can run off a narrow anchor's left side.
+  const x = Math.max(VIEWPORT_INSET, rawX)
+  const centred = anchor.top + anchor.height / 2 - handle.height / 2
+  const y = Math.max(VIEWPORT_INSET, Math.min(centred, viewport.height - handle.height - VIEWPORT_INSET))
+  return { x, y, mode: fitsRight ? 'beside-right' : 'beside-left' }
 }

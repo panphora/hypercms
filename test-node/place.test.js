@@ -89,3 +89,54 @@ test('placeHandle: an anchor at the very top of the document is clamped below th
   const out = placeHandle({ anchor, handle, viewport: VIEWPORT })
   assert.equal(out.y, VIEWPORT_INSET)
 })
+
+test('placeHandle: a handle taller than its anchor sits beside it, covering nothing', () => {
+  // The link that started this: in a real browser a 36x31 handle over a 108x18
+  // anchor covered 28% of it, including the last word of the link text.
+  const anchor = rect(100, 200, 108, 18)
+  const handle = { width: 36, height: 31 }
+  const out = placeHandle({ anchor, handle, viewport: VIEWPORT })
+  assert.equal(out.mode, 'beside-right')
+  assert.ok(out.x >= anchor.right, 'the handle starts at or after the anchor ends')
+  assert.equal(out.y + handle.height / 2, anchor.top + anchor.height / 2, 'centred on the anchor')
+})
+
+test('placeHandle: a roomy anchor still overlaps, because there is plenty left to see', () => {
+  const anchor = rect(100, 200, 200, 120)
+  const handle = { width: 36, height: 31 }
+  const out = placeHandle({ anchor, handle, viewport: VIEWPORT })
+  assert.equal(out.mode, 'over')
+  assert.ok(out.x < anchor.right, 'it really is over the anchor, not beside it')
+})
+
+test('placeHandle: a small anchor with no room to its right flips to its left', () => {
+  const anchor = rect(880, 200, 108, 18)
+  const handle = { width: 36, height: 31 }
+  assert.ok(
+    anchor.right + 4 + handle.width > VIEWPORT.width - VIEWPORT_INSET,
+    'the right side really is too tight'
+  )
+  const out = placeHandle({ anchor, handle, viewport: VIEWPORT })
+  assert.equal(out.mode, 'beside-left')
+  assert.ok(out.x + handle.width <= anchor.left, 'it clears the anchor on the left')
+})
+
+test('placeHandle: a small anchor in the top corner stays inside both insets', () => {
+  const anchor = rect(0, 0, 40, 10)
+  const handle = { width: 36, height: 31 }
+  const out = placeHandle({ anchor, handle, viewport: VIEWPORT })
+  assert.ok(out.x >= VIEWPORT_INSET && out.y >= VIEWPORT_INSET)
+  assert.ok(out.x + handle.width <= VIEWPORT.width - VIEWPORT_INSET)
+})
+
+test('placeHandle: a wide, thin anchor spanning the viewport is clamped, not pushed off the left', () => {
+  // Too short to overlap and too wide to sit on the right, so it flips left and
+  // the flip lands outside the viewport. This is the only case where the beside
+  // path's clamp does any work.
+  const anchor = rect(10, 200, 980, 18)
+  const handle = { width: 36, height: 31 }
+  const out = placeHandle({ anchor, handle, viewport: VIEWPORT })
+  assert.equal(out.mode, 'beside-left')
+  assert.ok(anchor.left - 4 - handle.width < VIEWPORT_INSET, 'unclamped it would be off-screen')
+  assert.equal(out.x, VIEWPORT_INSET)
+})
