@@ -87,7 +87,16 @@ export function open(opts = {}) {
   if (!makeView) {
     throw new Error(`hypercms: unknown view "${viewName}" (expected ${Object.keys(VIEWS).join(' or ')})`)
   }
-  const pageRoot = opts.pageRoot || (typeof document !== 'undefined' ? document.body : null)
+  // A switch changes the presentation of one session, not the session. Someone
+  // calling open({ view: 'sidebar' }) means "show me this in the sidebar"; they
+  // are not restating the pageRoot, the rules and the callbacks they opened
+  // with. Resolving those from this call alone silently retargets the CMS at
+  // document.body with the default rules tag and stops calling onChange.
+  // state.opts holds the active session's options and teardown clears it, so it
+  // has to be read here, before anything is torn down.
+  const effective = state.isOpen ? { ...state.opts, ...opts, view: viewName } : opts
+
+  const pageRoot = effective.pageRoot || (typeof document !== 'undefined' ? document.body : null)
   if (!pageRoot) throw new Error('hypercms: no pageRoot available')
   const doc = pageRoot.ownerDocument || (typeof document !== 'undefined' ? document : null)
   if (!doc) throw new Error('hypercms: no document available')
@@ -108,8 +117,8 @@ export function open(opts = {}) {
   installSavePrepareHook()
   installSnapshotHook()
 
-  const view = makeView({ doc, pageRoot, opts })
-  const ctx = createSession({ view, doc, pageRoot, opts, onCloseRequested: () => close() })
+  const view = makeView({ doc, pageRoot, opts: effective })
+  const ctx = createSession({ view, doc, pageRoot, opts: effective, onCloseRequested: () => close() })
   // Where focus was before the FIRST open, carried across the switch. Closing
   // the second view should return the person where they started, not to
   // whatever held focus after the first view was pulled out from under them.
@@ -129,7 +138,7 @@ export function open(opts = {}) {
 
     state.isOpen = true
     state.ctx = ctx
-    state.opts = opts
+    state.opts = effective
 
     ctx.dispatch('hcms:open', { pageRoot })
   } catch (err) {

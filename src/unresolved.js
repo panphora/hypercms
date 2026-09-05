@@ -1,5 +1,5 @@
 import domAdapter from 'hyper-html-api/dom'
-import { ruleAttrIndex } from 'hyper-html-api/engine'
+import { ruleAttrIndex, DOM_PROPERTIES_READ_ONLY_SET } from 'hyper-html-api/engine'
 
 const PREFIX = '[hypercms]'
 
@@ -28,15 +28,59 @@ export class InvalidRuleSelector extends Error {
 export function findUnresolved(root, rules) {
   const missing = []
   const twins = []
-  walk(root, rules, [], missing, twins)
-  return { missing: unique(missing), twins: uniqueTwins(twins) }
+  const readOnly = []
+  walk(root, rules, [], missing, twins, readOnly)
+  return { missing: unique(missing), twins: uniqueTwins(twins), readOnly: unique(readOnly) }
 }
 
-function walk(ctx, rule, path, missing, twins) {
+// The rules to WRITE with. Extract keeps the full tree, because a read-only
+// projection still READS (".box@classList" reads its class list) and dropping
+// it would change what onChange reports. apply() ignores data keys its rules do
+// not mention, so narrowing only the write side costs nothing and removes the
+// failure class: apply throws RuleTargetReadOnly part-way through its walk, and
+// the ordinary edit path does not snapshot, so the writes ordered before the
+// throw stay and the ones after never happen.
+export function stripReadOnly(rules) {
+  return strip(rules)
+}
+
+function strip(rule) {
+  if (typeof rule === 'string') return isReadOnlyRule(rule) ? undefined : rule
+  if (Array.isArray(rule)) {
+    const [selector, shape] = rule
+    // Keep the tuple even when the item shape strips to nothing. The selector is
+    // what engine.apply needs in order to add, remove and reorder rows, so
+    // dropping it made every structural operation on a list whose only field is
+    // read-only report success while the page did not change. An undefined item
+    // shape writes no value and leaves row reconciliation intact.
+    return [selector, strip(shape)]
+  }
+  if (rule && typeof rule === 'object') {
+    const out = {}
+    for (const [key, sub] of Object.entries(rule)) {
+      const kept = strip(sub)
+      if (kept !== undefined) out[key] = kept
+    }
+    return out
+  }
+  return rule
+}
+
+function walk(ctx, rule, path, missing, twins, readOnly) {
   if (typeof rule === 'string') {
     const selector = selectorOf(rule)
+    // Resolve the selector even for a read-only rule, so an invalid one still
+    // becomes InvalidRuleSelector here rather than a raw SyntaxError out of the
+    // extract that follows.
+    const matches = selector ? find(ctx, selector, FIND_OPTS, path) : []
+    // Reported on its own and never also as missing: the selector may well
+    // match, and the reason the edit cannot land is the property, not the
+    // element.
+    if (isReadOnlyRule(rule)) {
+      readOnly.push(pathStr(path))
+      return
+    }
     if (!selector) return
-    const matches = find(ctx, selector, FIND_OPTS, path)
     if (rule.endsWith('[]')) {
       if (matches.length === 0 && find(ctx, selector, SEED_OPTS, path).length === 0) {
         missing.push(pathStr(path))
@@ -58,12 +102,12 @@ function walk(ctx, rule, path, missing, twins) {
     }
     // Rows collapse to one '*' segment, so a field broken on every row is
     // reported once rather than once per row.
-    for (const node of matches) walk(node, shape, [...path, '*'], missing, twins)
+    for (const node of matches) walk(node, shape, [...path, '*'], missing, twins, readOnly)
     return
   }
 
   if (rule && typeof rule === 'object') {
-    for (const [key, sub] of Object.entries(rule)) walk(ctx, sub, [...path, key], missing, twins)
+    for (const [key, sub] of Object.entries(rule)) walk(ctx, sub, [...path, key], missing, twins, readOnly)
   }
 }
 
@@ -86,6 +130,20 @@ function selectorOf(rule) {
   return (at === -1 ? rule : rule.slice(0, at)) || null
 }
 
+// The attribute or property half of a scalar rule, or null when the rule is a
+// bare selector, an array rule, or ".". ruleAttrIndex returns the index of the
+// last top-level @, so a leading @ (the context node itself) resolves here too.
+function attrOf(rule) {
+  if (rule.endsWith('[]')) return null
+  const at = ruleAttrIndex(rule)
+  return at === -1 ? null : rule.slice(at + 1) || null
+}
+
+function isReadOnlyRule(rule) {
+  const attr = attrOf(rule)
+  return attr != null && DOM_PROPERTIES_READ_ONLY_SET.has(attr)
+}
+
 export function applyUnresolvedState(ctx) {
   renderNotice(ctx)
   warnTwins(ctx)
@@ -98,15 +156,26 @@ function renderNotice(ctx) {
   const el = ctx.noticeEl
   if (!el) return
   const missing = (ctx.unresolved && ctx.unresolved.missing) || []
-  if (missing.length === 0) {
+  const readOnly = (ctx.unresolved && ctx.unresolved.readOnly) || []
+  if (missing.length === 0 && readOnly.length === 0) {
     el.textContent = ''
     el.hidden = true
     return
   }
-  const count = missing.length === 1
-    ? '1 field no longer matches this page'
-    : `${missing.length} fields no longer match this page`
-  el.textContent = `${count}: ${missing.join(', ')}`
+  const lines = []
+  if (missing.length) {
+    const count = missing.length === 1
+      ? '1 field no longer matches this page'
+      : `${missing.length} fields no longer match this page`
+    lines.push(`${count}: ${missing.join(', ')}`)
+  }
+  if (readOnly.length) {
+    const count = readOnly.length === 1
+      ? '1 field reads a property the browser will not let anything write'
+      : `${readOnly.length} fields read properties the browser will not let anything write`
+    lines.push(`${count}: ${readOnly.join(', ')}`)
+  }
+  el.textContent = lines.join('\n')
   el.hidden = false
 }
 

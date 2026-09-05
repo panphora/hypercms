@@ -4,8 +4,8 @@ import { morphForm } from './morph.js'
 import { injectDefaults, injectComponents } from './templates.js'
 import { deriveFormRules } from './form-rules.js'
 import { coerceBooleans, applyErrorState } from './events.js'
-import { findUnresolved, applyUnresolvedState } from './unresolved.js'
-import { enhanceFields, upgradeRichTextRules } from './enhance.js'
+import { findUnresolved, applyUnresolvedState, stripReadOnly } from './unresolved.js'
+import { enhanceFields } from './enhance.js'
 import { platform } from './platform.js'
 import { rowIdentitySeeder } from './row-identity.js'
 
@@ -17,16 +17,20 @@ export function refreshForm(ctx, { ignoreActiveValue } = {}) {
   // livesync-replaced rules tag is picked up. Document-scoped via ctx.doc.
   const found = engine.findRules(ctx.doc, ctx.rulesSource || 'cms')
   if (found) {
-    // Re-apply the rich-text upgrade open() performed: the tag holds the
-    // author's bare rules, and using them raw would rebind upgraded fields
-    // back to textContent mid-session.
-    ctx.pageRules = ctx.richText ? upgradeRichTextRules(found.rules, ctx.pageRoot) : found.rules
+    // Re-apply the rule upgrade open() performed: the tag holds the author's
+    // bare rules, and using them raw would rebind upgraded fields back to
+    // textContent mid-session. Route it through the SAME seam open() used
+    // (session.js hands found.rules to view.prepareRules) rather than
+    // hardcoding one view's upgrade here — that undid a wider upgrade on the
+    // first refresh, silently flattening rich text back to plain.
+    ctx.pageRules = ctx.view.prepareRules(found.rules)
     ctx.rulesTagNode = found.tagNode
   }
   // Re-derive formRules so schema changes (rule shape, template overrides) flow through.
   injectDefaults(ctx.doc)
   injectComponents(ctx.doc, ctx.pageRules)
   ctx.formRules = deriveFormRules(ctx.pageRules, ctx.doc)
+  ctx.writeRules = stripReadOnly(ctx.pageRules)
   // Before the extract below, for the same readable-failure reason as open().
   ctx.unresolved = findUnresolved(ctx.pageRoot, ctx.pageRules)
 

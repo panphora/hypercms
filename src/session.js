@@ -8,7 +8,7 @@ import { engine } from 'hyper-html-api'
 import { injectDefaults, injectComponents } from './templates.js'
 import { deriveFormRules } from './form-rules.js'
 import { warnUnmatchedTemplates } from './diagnostics.js'
-import { findUnresolved } from './unresolved.js'
+import { findUnresolved, stripReadOnly } from './unresolved.js'
 import { rowIdentitySeeder } from './row-identity.js'
 import {
   commit,
@@ -55,6 +55,9 @@ export function createSession({ view, doc, pageRoot, opts = {}, onCloseRequested
   injectComponents(doc, pageRules)
   warnUnmatchedTemplates(doc, pageRules)
   const formRules = deriveFormRules(pageRules, doc)
+  // The write half of the rules; see stripReadOnly. The form and every extract
+  // keep the full tree.
+  const writeRules = stripReadOnly(pageRules)
   // Runs before the first extract so a rule with invalid CSS names its field
   // instead of throwing a bare SyntaxError out of querySelectorAll.
   const unresolved = findUnresolved(pageRoot, pageRules)
@@ -69,6 +72,7 @@ export function createSession({ view, doc, pageRoot, opts = {}, onCloseRequested
     doc,
     pageRoot,
     pageRules,
+    writeRules,
     formRules,
     rulesTagNode,
     rulesSource: source,

@@ -110,8 +110,16 @@ function describe(path, el, rule, attr) {
 function kindOf(el, attr) {
   const tag = (el.tagName || '').toUpperCase()
   if (!attr || attr === 'innerHTML') return NON_TEXT_TAGS.has(tag) ? HANDLE : TEXT
-  if (attr === 'value' && NATIVE_TAGS.has(tag) && !el.readOnly && !el.disabled) return NATIVE
+  if (attr === 'value' && NATIVE_TAGS.has(tag) && !el.readOnly && !isEffectivelyDisabled(el)) return NATIVE
   return HANDLE
+}
+
+// el.disabled is false for an input inside <fieldset disabled>, but :disabled
+// matches it and the browser will not let anyone type in it. Checking only the
+// property leaves an unusable field with no control at all.
+function isEffectivelyDisabled(el) {
+  if (el.disabled) return true
+  return typeof el.matches === 'function' && el.matches(':disabled')
 }
 
 function iconOf(el, attr) {

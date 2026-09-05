@@ -558,7 +558,15 @@ export function requestRemove(itemEl, ctx) {
   if (message == null) return onRemove(itemEl, ctx)
   const consent = platform('consent') || (typeof window !== 'undefined' && window.consent)
   if (typeof consent === 'function') {
-    Promise.resolve(consent(message)).then(() => onRemove(itemEl, ctx), () => {})
+    Promise.resolve(consent(message)).then(() => {
+      // The editor can be closed, or switched to another view, while the
+      // confirm is still on screen. ctx is dead by then, but itemEl still
+      // points into the detached form and commit would apply that stale form
+      // over the live page: the card goes, and every other field reverts to
+      // whatever it held when the dialog opened.
+      if (ctx.closed) return
+      onRemove(itemEl, ctx)
+    }, () => {})
   } else if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
     if (window.confirm(message)) onRemove(itemEl, ctx)
   } else {
@@ -589,6 +597,15 @@ export function onRemove(itemEl, ctx) {
 }
 
 export function commit(newData, info, ctx) {
+  // The last line of defence for any deferred path that reaches a torn-down
+  // session: a resolved confirmation, an upload that finished after close, a
+  // queued handler. ctx.pageRoot is still the live page.
+  //
+  // ok:false is deliberate and load-bearing — commitWithUndo records an undo
+  // entry on a truthy ok, so returning ok:true here would put a commit that
+  // never happened onto the undo stack. Returning before the error branch below
+  // is equally deliberate: setError would write into a detached shell.
+  if (ctx.closed) return { ok: false, skipped: true, closed: true }
   const fingerprint = stableStringify(newData)
   // Only a plain edit can be skipped on an unchanged fingerprint. A structural
   // operation is never a no-op even when the data is identical: reordering two
@@ -599,7 +616,13 @@ export function commit(newData, info, ctx) {
     return { ok: true, skipped: true }
   }
 
-  const result = applyWithRollback(ctx.pageRoot, ctx.pageRules, newData, {
+  // undefined is a legitimate value here: a rules tree that is nothing but a
+  // read-only projection strips to it, and engine.apply writes nothing when the
+  // rules are undefined. Only a ctx that never had the field at all — the
+  // hand-built stubs in older tests — falls back to the unstripped rules.
+  const writeRules = Object.hasOwn(ctx, 'writeRules') ? ctx.writeRules : ctx.pageRules
+
+  const result = applyWithRollback(ctx.pageRoot, writeRules, newData, {
     observerHandle: ctx.observerHandle,
     shellRoot: ctx.shellRoot,
     structural: !!info.structural,

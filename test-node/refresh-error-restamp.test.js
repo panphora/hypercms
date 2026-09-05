@@ -39,6 +39,7 @@ function buildCtx(pageRules, data) {
     formRules,
     formRoot: formHost,
     rulesSource: 'cms',
+    view: { prepareRules: (rules) => rules },
     errorEl,
     lastFingerprint: null,
     lastData: null,

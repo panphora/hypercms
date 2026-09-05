@@ -77,6 +77,13 @@ test('a mirk tags box used as the array slot keeps mirk row layout, not the stac
   assert.doesNotMatch(css, /(^|[\s,}])\.hcms-array-items\s*\{[^}]*flex-direction:\s*column/)
 })
 
+test('the notice keeps its line breaks', () => {
+  const css = stripComments(readTheme())
+  // renderNotice joins the missing-fields line and the read-only line with \n
+  // into textContent, so without this the two run together on one line.
+  assert.match(css, /\.hcms-shell-notice\s*\{[^}]*white-space:\s*pre-line/)
+})
+
 test('vendored mirk runtime is guarded for non-browser realms', () => {
   const js = fs.readFileSync(vendorPath, 'utf8')
   assert.match(js, /typeof window !== "undefined"/)

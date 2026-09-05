@@ -530,6 +530,7 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
 .hcms-shell-notice {
   font-size: 12px;
   line-height: 1.45;
+  white-space: pre-line;
   color: var(--mirk-mark-fg);
   background: var(--mirk-bevel-bg);
   border: 1px solid var(--mirk-input-border);
