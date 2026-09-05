@@ -129,6 +129,50 @@ test('placeHandle: a small anchor in the top corner stays inside both insets', (
   assert.ok(out.x + handle.width <= VIEWPORT.width - VIEWPORT_INSET)
 })
 
+// prefer: 'corner' is what a control that BELONGS to a row asks for. The two
+// tests above stay the whole statement of the auto rule handles keep using.
+test('placeHandle: prefer corner overrides the small-anchor rule and puts the control on the row', () => {
+  // The measured case: a 114x31 row strip on a 718x36 card. 36 is short of the
+  // 46.5 the auto rule wants, so it sends the strip beside the row instead —
+  // right for a handle floating near a link, wrong for a strip that belongs to
+  // the row it operates on.
+  const anchor = rect(100, 400, 718, 36)
+  const strip = { width: 114, height: 31 }
+
+  const auto = placeHandle({ anchor, handle: strip, viewport: VIEWPORT })
+  assert.equal(auto.mode, 'beside-right', 'the auto rule really does send this one beside')
+  assert.ok(auto.x >= anchor.right, 'and beside here means wholly outside the row')
+
+  const corner = placeHandle({
+    anchor, handle: strip, viewport: VIEWPORT, prefer: 'corner', inset: 0,
+  })
+  assert.equal(corner.mode, 'over')
+  assert.ok(corner.x >= anchor.left, 'inside the row on the left')
+  assert.ok(corner.x + strip.width <= anchor.right, 'and inside it on the right')
+  assert.ok(corner.y >= anchor.top, 'inside it at the top')
+  assert.ok(corner.y + strip.height <= anchor.bottom, 'and at the bottom')
+})
+
+test('placeHandle: corner mode is still clamped to the viewport, on both axes', () => {
+  // Flush against the top-right corner of the document, and too short for the
+  // auto rule, so this is the corner branch doing the clamping and not the
+  // beside one.
+  const anchor = rect(892, 0, 108, 18)
+  const strip = { width: 114, height: 31 }
+  assert.equal(anchor.right, VIEWPORT.width, 'the anchor really is flush with the edge')
+  assert.ok(
+    anchor.right - strip.width > VIEWPORT.width - strip.width - VIEWPORT_INSET,
+    'unclamped it would run off the right'
+  )
+
+  const out = placeHandle({
+    anchor, handle: strip, viewport: VIEWPORT, prefer: 'corner', inset: 0,
+  })
+  assert.equal(out.mode, 'over')
+  assert.equal(out.x, VIEWPORT.width - strip.width - VIEWPORT_INSET)
+  assert.equal(out.y, VIEWPORT_INSET, 'and off the top of the fold')
+})
+
 test('placeHandle: a wide, thin anchor spanning the viewport is clamped, not pushed off the left', () => {
   // Too short to overlap and too wide to sit on the right, so it flips left and
   // the flip lands outside the viewport. This is the only case where the beside

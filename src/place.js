@@ -87,13 +87,23 @@ export function place({ anchor, bar, rail = bar, viewport, current = null }) {
 // The one thing it does need is the viewport clamp. A card flush against the
 // right edge would otherwise put its handle half off-screen, and a heading at
 // the very top of the document would put it above the fold.
-export function placeHandle({ anchor, handle, viewport, inset = 6 }) {
+//
+// `prefer` picks which of the two placements below the caller wants:
+// 'auto' adapts to the anchor's size, 'corner' always takes the corner.
+export function placeHandle({ anchor, handle, viewport, inset = 6, prefer = 'auto' }) {
   // Overlapping only reads as "belongs to this" when there is something left to
   // belong to. On a 108x18 link a 36x31 handle covered 28% of it, including the
   // last word — measured in a real browser. So a small anchor gets its handle
   // set BESIDE it instead: still adjacent, nothing hidden.
+  //
+  // That rule is about a handle floating near a link. A control that BELONGS to
+  // a list row wants the opposite and asks for 'corner': measured in Chrome, a
+  // 31px strip beside a 36px card row landed wholly outside the row, and beside
+  // a run of 60px-pitch pills the strips covered each other. Such a caller pins
+  // the control to the corner and decides for itself whether the row is big
+  // enough to carry one at all. The clamp below is shared either way.
   const roomy = anchor.height >= handle.height * 1.5 && anchor.width >= handle.width * 2
-  if (roomy) {
+  if (prefer === 'corner' || roomy) {
     const x = Math.max(
       VIEWPORT_INSET,
       Math.min(anchor.right - handle.width + inset, viewport.width - handle.width - VIEWPORT_INSET)

@@ -28,6 +28,23 @@ const ROW_ACTIONS = [
   ['remove', '✕', 'Remove'],
 ]
 
+// A list control is pinned INSIDE its anchor's top-right corner. 'corner'
+// because place.js's adaptive rule measures the anchor against the control and
+// sends a small one BESIDE it, which is right for a handle floating near a link
+// and wrong for a strip that belongs to a row: measured in Chrome, every card
+// row shorter than ~47px put its strip wholly outside the card. inset 0 because
+// a handle straddles its corner on purpose and a strip must not — §3.3 asks for
+// a strip pinned to the card's top-right, inside it.
+const CONTROL_PLACEMENT = { prefer: 'corner', inset: 0 }
+
+// Can this row carry its own strip? Measured against the row's real box, never
+// guessed from its tag. Three buttons are ~84px wide at minimum and a run of
+// pills has a ~60px pitch, so a strip drawn on every such row would cover its
+// neighbours wherever it was put — geometry, not a placement bug.
+function hosts(row, strip) {
+  return strip.width <= row.width && strip.height <= row.height
+}
+
 export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
   const win = doc.defaultView
   // Every positioned thing the layer draws, whatever kind: a handle, a row
@@ -48,6 +65,16 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
   let listening = false
   let follower = null
   let highlighted = null
+  // The rows showing a strip they are too small to host: the one under the
+  // pointer, and the one holding focus. Two slots rather than one so a strip
+  // does not vanish from under the keyboard while the pointer rests elsewhere;
+  // only ever ONE is drawn (hover wins), so two strips can never collide.
+  let hoveredRow = null
+  let focusedRow = null
+  // Row element AND its strip node, both mapped to the row. The strip is drawn
+  // over the row it belongs to, so pointing at the strip has to read as
+  // pointing at the row or it would hide under the pointer that came for it.
+  let rowOwners = new Map()
   // A toggle, not a mode: the strips and the Adds go away and the handles stay,
   // so someone reading a page they are editing can see it without leaving the
   // session. Layer state rather than per-placement state, so it survives the
@@ -75,9 +102,12 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     })
   }
 
+  const revealedRow = () => hoveredRow || focusedRow
+
   function placeAll() {
     if (!win) return
     const viewport = { width: win.innerWidth, height: win.innerHeight }
+    const revealed = revealedRow()
     for (const spot of placements) {
       if (!spot.visible || (spot.control && controlsHidden)) {
         spot.node.hidden = true
@@ -87,11 +117,48 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
       spot.node.hidden = false
       const anchor = spot.el.getBoundingClientRect()
       const handle = spot.node.getBoundingClientRect()
-      const { x, y } = placeHandle({ anchor, handle, viewport })
+      // A row too small to hold its strip shows it only while that row is the
+      // one being pointed at or typed in. This deviates from §3.3's "always
+      // visible", and only for rows that cannot physically hold the control.
+      if (spot.kind === 'row' && spot.el !== revealed && !hosts(anchor, handle)) {
+        spot.node.hidden = true
+        continue
+      }
+      const prefer = spot.kind === 'handle' ? null : CONTROL_PLACEMENT
+      const { x, y } = placeHandle({ anchor, handle, viewport, ...prefer })
       spot.node.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
     }
     placeHighlight()
     follower?.()
+  }
+
+  // The row `el` belongs to, walking up from it: one Map lookup per ancestor,
+  // the same shape elementToTarget uses for targets.
+  function rowAt(el) {
+    for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+      const row = rowOwners.get(node)
+      if (row) return row
+    }
+    return null
+  }
+
+  function onFocusIn(event) {
+    const before = revealedRow()
+    focusedRow = rowAt(event.target)
+    // Focus landing on a strip's own button is the keyboard taking over, so the
+    // pointer's row must not out-vote it: otherwise tabbing to ↑ would hide the
+    // strip the focus is standing on.
+    if (focusedRow && layerEl.contains(event.target)) hoveredRow = null
+    if (revealedRow() !== before) schedule()
+  }
+
+  function onFocusOut(event) {
+    // The one case focusin cannot answer: focus left for nothing at all, so no
+    // later focusin arrives to say which row it is in now.
+    if (event.relatedTarget || !focusedRow) return
+    const before = revealedRow()
+    focusedRow = null
+    if (revealedRow() !== before) schedule()
   }
 
   // The highlight carries an explicit width/height, so it never measures itself
@@ -133,6 +200,10 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     // and a scroll event on it does not bubble to the window.
     win.addEventListener('scroll', schedule, { passive: true, capture: true })
     win.addEventListener('resize', schedule, { passive: true })
+    // focusin/focusout, not focus/blur: only these two bubble, and the strip's
+    // buttons and the page rows are in different subtrees.
+    doc.addEventListener('focusin', onFocusIn)
+    doc.addEventListener('focusout', onFocusOut)
     listening = true
   }
 
@@ -140,11 +211,15 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     if (!listening || !win) return
     win.removeEventListener('scroll', schedule, { capture: true })
     win.removeEventListener('resize', schedule)
+    doc.removeEventListener('focusin', onFocusIn)
+    doc.removeEventListener('focusout', onFocusOut)
     listening = false
   }
 
-  function addPlacement(el, node, control) {
-    const spot = { el, node, control, visible: false }
+  // `kind` is 'handle', 'row' or 'add': it decides how the node is placed, and
+  // everything but a handle is a list control that Hide controls takes away.
+  function addPlacement(el, node, kind) {
+    const spot = { el, node, kind, control: kind !== 'handle', visible: false }
     placements.push(spot)
     const riders = index.get(el)
     if (riders) riders.push(spot)
@@ -229,13 +304,16 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
       // any better than it can carry a handle, and the strip would end up at the
       // viewport clamp with nothing to belong to.
       if (!isAnchorable(el)) return
-      addPlacement(el, makeRowControls(list, i, rows.length), true)
+      const strip = makeRowControls(list, i, rows.length)
+      addPlacement(el, strip, 'row')
+      rowOwners.set(el, el)
+      rowOwners.set(strip, el)
     })
     // Deliberately NOT gated on isAnchorable, unlike the rows above. An emptied
     // list is the one most in need of an Add, and a <ul> holding nothing but its
     // hidden [cms-template] seed measures zero height — the floor would take the
     // Add away from exactly the list that cannot be grown any other way.
-    if (list.container) addPlacement(list.container, makeAdd(list), true)
+    if (list.container) addPlacement(list.container, makeAdd(list), 'add')
   }
 
   function clearEntries() {
@@ -245,6 +323,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     placements = []
     index = new Map()
     targets = new Map()
+    rowOwners = new Map()
     handleCount = 0
   }
 
@@ -262,7 +341,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
         // would cover the very control it was advertising.
         if (target.kind !== 'handle') continue
         if (!isAnchorable(target.el)) continue
-        addPlacement(target.el, makeHandle(target), false)
+        addPlacement(target.el, makeHandle(target), 'handle')
         handleCount++
       }
       for (const listSpec of lists || []) addListControls(listSpec)
@@ -296,6 +375,16 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
       return null
     },
 
+    // Where the pointer is, answered off the one pointer path the highlight
+    // already rides (inline.js bindPage). Takes the RAW element under the
+    // pointer rather than a resolved target: a strip is not a target at all,
+    // and reading it as "off the row" would hide it under the pointer.
+    setHoveredRow(el) {
+      const before = revealedRow()
+      hoveredRow = el ? rowAt(el) : null
+      if (revealedRow() !== before) schedule()
+    },
+
     showHighlight(el) {
       if (!el) return
       highlighted = el
@@ -319,6 +408,8 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
       frame = 0
       follower = null
       highlighted = null
+      hoveredRow = null
+      focusedRow = null
       highlight.remove()
       unlisten()
       clearEntries()

@@ -257,8 +257,16 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         const target = layer && layer.elementToTarget(event.target)
         if (target) layer.showHighlight(target.el)
         else layer?.hideHighlight()
+        // One pointer path, two questions. The second: a list row too small to
+        // hold its own strip shows it only while the pointer is on that row,
+        // and the raw element is what answers that — the strip is drawn over
+        // its row and is not a target, so a resolved target cannot say so.
+        layer?.setHoveredRow(event.target)
       }
-      const onPointerLeave = () => layer?.hideHighlight()
+      const onPointerLeave = () => {
+        layer?.hideHighlight()
+        layer?.setHoveredRow(null)
+      }
 
       const onClick = (event) => {
         // The editor's own chrome. A handle already activates through its own

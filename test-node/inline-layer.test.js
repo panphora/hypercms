@@ -151,12 +151,17 @@ function boot(html = MIXED) {
   if (el('.caption')) setBox(el('.caption'), CAPTION)
   if (el('.grid')) setBox(el('.grid'), GRID)
   if (el('.product-name')) setBox(el('.product-name'), PRODUCT)
-  for (const li of doc.querySelectorAll('li.tag')) setBox(li, box(0, 500, 80, 20))
+  // Roomy enough to carry a 90x28 strip, and side by side rather than stacked
+  // on one box, so every strip these rows draw is one a real row could hold.
+  // The rows too small to hold one are PILLS below, where that is the subject.
+  doc.querySelectorAll('li.tag').forEach((li, i) => setBox(li, box(i * 220, 500, 200, 40)))
   // The list anchors: each row gets its own box so a strip that lands on the
   // wrong row is visible as a wrong transform, and the <ul> gets one so the Add
   // it carries is placed against something real.
   doc.querySelectorAll('.product').forEach((row, i) => setBox(row, box(300, 400 + i * 70, 360, 60)))
   if (el('ul.tags')) setBox(el('ul.tags'), box(0, 480, 300, 60))
+  doc.querySelectorAll('ul.pills li').forEach((li, i) => setBox(li, PILL_BOXES[i]))
+  if (el('ul.pills')) setBox(el('ul.pills'), box(281, 500, 199, 20))
 
   open({ view: 'inline' })
 
@@ -1034,6 +1039,17 @@ const SEEDED = page(
   `<ul class="taglist"><li class="tag" cms-template>seed</li></ul>`
 )
 
+// The measured pill run from demo/inline.html: three <li> 20px tall on a ~60px
+// pitch, against a strip wider than any of them and taller than all of them. No
+// placement rule can draw three of these at once without one covering its
+// neighbour, which is the whole reason the hover rule exists.
+const PILL_BOXES = [box(281, 500, 59, 20), box(348, 500, 52, 20), box(407, 500, 73, 20)]
+
+const PILLS = page(
+  `{ "tags": "ul.pills li[]" }`,
+  `<ul class="pills"><li>alpha</li><li>beta</li><li>gamma</li></ul>`
+)
+
 function showControls(t) {
   t.frames.flush()
   t.io.report(true)
@@ -1062,6 +1078,38 @@ function clickRow(t, path, row, action) {
 
 function addButton(t, path) {
   return t.layerEl.querySelector(`.hcms-inline-list-add[data-hcms-list="${path}"]`)
+}
+
+// Where a strip actually landed, as a rect: the placement pass writes a
+// transform and STRIP is the box the stub hands it back.
+function stripRect(el) {
+  const m = /translate\((-?\d+)px, (-?\d+)px\)/.exec(el.style.transform)
+  assert.ok(m, `no placement on this strip: "${el.style.transform}"`)
+  const left = Number(m[1])
+  const top = Number(m[2])
+  return { left, top, right: left + STRIP.width, bottom: top + STRIP.height }
+}
+
+function visibleStrips(t) {
+  return [...t.layerEl.querySelectorAll('.hcms-inline-row-controls')].filter((el) => !el.hidden)
+}
+
+function rowsShowing(t) {
+  return visibleStrips(t).map((el) => el.getAttribute('data-hcms-row'))
+}
+
+function overlaps(a, b) {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+}
+
+// focusin/focusout rather than el.focus(): an <li> is not focusable, and these
+// are the two events a browser bubbles when focus moves.
+function focusIn(t, el) {
+  el.dispatchEvent(new t.win.FocusEvent('focusin', { bubbles: true }))
+}
+
+function focusOut(t, el) {
+  el.dispatchEvent(new t.win.FocusEvent('focusout', { bubbles: true, relatedTarget: null }))
 }
 
 function pageNames(t) {
@@ -1348,6 +1396,140 @@ test('inline lists: a failed apply rolls back to the pre-move page, not to a hal
       ['One', 'Two', 'Three'],
       'the rollback restored the order the page had before the click'
     )
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// ---- B2b-4b: where the strips actually land ---------------------------------
+
+test('inline lists: a row that can hold its strip gets it pinned inside its own box', () => {
+  const t = boot(LISTS)
+  try {
+    // The measured card: 36px tall, short of the 1.5x the adaptive placement
+    // rule wants, so without prefer: 'corner' every one of these strips lands
+    // beside its row and wholly outside it.
+    const rows = [...t.doc.querySelectorAll('.product')]
+    rows.forEach((row, i) => setBox(row, box(300, 400 + i * 70, 360, 36)))
+    showControls(t)
+
+    rows.forEach((row, i) => {
+      const el = strip(t, 'products', i)
+      assert.equal(el.hidden, false, 'a row this size carries its strip with no hover at all')
+      const at = stripRect(el)
+      const on = row.getBoundingClientRect()
+      assert.ok(at.left >= on.left, `strip ${i} starts before its row does`)
+      assert.ok(at.right <= on.right, `strip ${i} runs past its row's right edge`)
+      assert.ok(at.top >= on.top, `strip ${i} starts above its row`)
+      assert.ok(at.bottom <= on.bottom, `strip ${i} hangs below its row`)
+    })
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: a row too small for its strip shows it only while the pointer is on that row', () => {
+  const t = boot(PILLS)
+  try {
+    showControls(t)
+    const pills = [...t.doc.querySelectorAll('ul.pills li')]
+    pills.forEach((_, i) => {
+      assert.ok(STRIP.width > PILL_BOXES[i].width, `pill ${i} really is narrower than a strip`)
+    })
+    assert.deepEqual(rowsShowing(t), [], 'a row that cannot hold one draws nothing at rest')
+
+    hover(t, pills[1])
+    t.frames.flush()
+    assert.deepEqual(rowsShowing(t), ['1'], 'the row under the pointer, and only that row')
+
+    // The strip is drawn ON its row, so pointing at it is still pointing at the
+    // row: it must not go out from under the pointer that came to click it.
+    hover(t, rowButton(t, 'tags', 1, 'remove'))
+    t.frames.flush()
+    assert.deepEqual(rowsShowing(t), ['1'], 'the strip holds itself out')
+
+    fire(t, t.doc.body, 'pointerleave')
+    t.frames.flush()
+    assert.deepEqual(rowsShowing(t), [], 'and goes away when the pointer leaves the page')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: no two strips are ever out at once to cover each other', () => {
+  const t = boot(PILLS)
+  try {
+    showControls(t)
+    const pills = [...t.doc.querySelectorAll('ul.pills li')]
+
+    // Proof the fixture can catch this at all: pinned to their own corners,
+    // these three strips cannot avoid each other.
+    const together = PILL_BOXES.map((pill) => ({
+      left: pill.right - STRIP.width,
+      top: pill.top,
+      right: pill.right,
+      bottom: pill.top + STRIP.height,
+    }))
+    assert.ok(overlaps(together[0], together[1]), 'the first two would cover each other')
+    assert.ok(overlaps(together[1], together[2]), 'and so would the last two')
+
+    for (const pill of pills) {
+      hover(t, pill)
+      t.frames.flush()
+      const out = visibleStrips(t).map(stripRect)
+      assert.ok(out.length >= 1, 'hovering a row shows that row a strip')
+      for (let i = 0; i < out.length; i++) {
+        for (let j = i + 1; j < out.length; j++) {
+          assert.ok(!overlaps(out[i], out[j]), 'two strips are covering each other')
+        }
+      }
+    }
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: focus inside a short row brings its strip out, and its own buttons keep it there', () => {
+  const t = boot(PILLS)
+  try {
+    showControls(t)
+    const pill = t.doc.querySelectorAll('ul.pills li')[2]
+    assert.deepEqual(rowsShowing(t), [])
+
+    focusIn(t, pill)
+    t.frames.flush()
+    assert.deepEqual(rowsShowing(t), ['2'], 'focus in the row counts, not only the pointer')
+
+    // Tabbing on from the row into its own strip must not hide the strip the
+    // focus has just landed on.
+    const up = rowButton(t, 'tags', 2, 'move-up')
+    focusIn(t, up)
+    t.frames.flush()
+    assert.deepEqual(rowsShowing(t), ['2'], 'the strip holds itself out for its own buttons')
+
+    focusOut(t, up)
+    t.frames.flush()
+    assert.deepEqual(rowsShowing(t), [], 'and goes away when focus leaves for nothing')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline lists: the same rows, big enough to hold a strip, show it with no hover at all', () => {
+  const t = boot(PILLS)
+  try {
+    // The only thing changed from the test above is the size of the rows, so
+    // "hidden at rest" is a statement about what fits and not about the list.
+    const pills = [...t.doc.querySelectorAll('ul.pills li')]
+    pills.forEach((li, i) => setBox(li, box(i * 220, 500, 200, 40)))
+    showControls(t)
+
+    assert.deepEqual(rowsShowing(t), ['0', '1', '2'], 'every row that can hold one has one')
   } finally {
     close()
   }
