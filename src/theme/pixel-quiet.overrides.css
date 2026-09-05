@@ -658,6 +658,11 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
   background: var(--mirk-bg);
   color: var(--mirk-fg);
   box-shadow: 0 16px 40px -22px rgba(43, 36, 27, 0.55);
+  /* Above the handles. They are positioned with z-index: 1 while the popover
+     sat at auto, so a handle painted over the very field it had just opened
+     and covered the text in it. The popover is what someone is using; a handle
+     is only an offer to open one. */
+  z-index: 2;
 }
 .hcms-inline-pop[hidden] { display: none; }
 

@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { loadPage, reset } from './_helpers.js'
-import { open, close, isOpen, installStyles } from '../src/hypercms.js'
+import { open, close, isOpen, installStyles, refresh } from '../src/hypercms.js'
 
 // jsdom has no layout: every getBoundingClientRect() answers 0x0, so nothing on
 // the page clears the 8px anchor floor and the layer would draw nothing at all.
@@ -867,6 +867,123 @@ test('inline popover: the on-path walk stops at the form root and never reaches 
     }
   } finally {
     close()
+  }
+  reset(t.dom)
+})
+
+test('inline popover: an open popover survives a refresh instead of going blank', () => {
+  const t = boot(POP)
+  try {
+    const { pop, formRoot } = parts(t)
+    setBox(pop, POP_BOX)
+    clickHandle(t, 'hero')
+    assert.deepEqual(pathsShowing(formRoot, 'is-hcms-inline-active'), ['hero'])
+
+    // morphForm re-syncs every field from a form built without these classes.
+    // The leaf keeps its identity and loses only its class, so the popover
+    // stays open over nothing at all unless the reveal is re-applied.
+    const leafBefore = formRoot.querySelector('[data-hcms-path="hero"]')
+    refresh()
+
+    assert.equal(pop.hidden, false, 'the popover is still open')
+    assert.deepEqual(
+      pathsShowing(formRoot, 'is-hcms-inline-active'),
+      ['hero'],
+      'and still showing the field it was opened for'
+    )
+    assert.equal(
+      formRoot.querySelector('[data-hcms-path="hero"]'),
+      leafBefore,
+      'the same element throughout: this is a re-sync, not a rebuild'
+    )
+    for (let el = leafBefore.parentElement; ; el = el.parentElement) {
+      assert.equal(el.classList.contains('is-hcms-inline-onpath'), true, 'chain intact')
+      if (el === formRoot) break
+    }
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline popover: a refresh that removes the edited element closes the popover', () => {
+  const t = boot(POP)
+  try {
+    const { pop, formRoot } = parts(t)
+    setBox(pop, POP_BOX)
+    clickHandle(t, 'hero')
+    assert.equal(pop.hidden, false)
+
+    // A live-sync can delete the row being edited. Its rect then measures zero
+    // and the popover would place itself against the viewport clamp, floating
+    // over unrelated content with no way back to what it was editing.
+    t.doc.querySelector('.hero').remove()
+    refresh()
+
+    assert.equal(pop.hidden, true, 'the popover closed with its element')
+    assert.deepEqual(pathsShowing(formRoot, 'is-hcms-inline-active'), [])
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+test('inline popover: a refresh does not pull focus back into the popover', () => {
+  const t = boot(POP)
+  try {
+    const { pop } = parts(t)
+    setBox(pop, POP_BOX)
+    clickHandle(t, 'hero')
+    assert.equal(pop.hidden, false)
+
+    // A refresh fires on any page mutation, so it can land while someone is
+    // typing. Re-focusing the field on every one would jump the caret back to
+    // the top of it mid-sentence, which is worse than the blank popover the
+    // reveal was restored to fix.
+    t.doc.activeElement?.blur()
+    const before = t.doc.activeElement
+    refresh()
+
+    assert.equal(t.doc.activeElement, before, 'focus stayed where the person left it')
+  } finally {
+    close()
+  }
+  reset(t.dom)
+})
+
+// The popover and the handles are both positioned children of the same host, so
+// which one paints on top is decided by z-index alone. Lifted from the shipped
+// stylesheet rather than retyped, for the same reason displayRules is.
+function stackingRules() {
+  const css = fs.readFileSync(new URL('../src/theme.generated.css', import.meta.url), 'utf8')
+  const rules = ['.hcms-inline-pop', '.hcms-inline-handle'].map((sel) => {
+    const re = new RegExp(`\\${sel}\\s*\\{[^{}]*\\}`, 'g')
+    const found = (css.match(re) || []).filter((r) => r.includes('z-index'))
+    assert.equal(found.length, 1, `run npm run build:theme — no z-index rule for ${sel}`)
+    return found[0]
+  })
+  return rules.join('\n')
+}
+
+test('inline popover: the popover paints above the handles, not under them', () => {
+  installStyles(stackingRules())
+  const t = boot(POP)
+  try {
+    const { pop } = parts(t)
+    setBox(pop, POP_BOX)
+    clickHandle(t, 'hero')
+
+    const z = (el) => Number(t.win.getComputedStyle(el).zIndex)
+    const handle = t.layerEl.querySelector('.hcms-inline-handle')
+    assert.ok(Number.isFinite(z(handle)), 'the handle really does carry a z-index')
+    assert.ok(
+      z(pop) > z(handle),
+      `the popover (${z(pop)}) must paint above the handle (${z(handle)}), or a handle ` +
+      'sits over the field it just opened and covers the text in it'
+    )
+  } finally {
+    close()
+    installStyles('')
   }
   reset(t.dom)
 })

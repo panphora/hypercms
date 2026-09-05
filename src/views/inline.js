@@ -157,22 +157,10 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       if (!target || !host) return
       if (target.kind === 'text') return this.activateText(target)
 
-      const path = target.path.join('.')
-      const leaf = this.formRoot &&
-        this.formRoot.querySelector(`[data-hcms-path="${cssEscape(path)}"]`)
-      clearPathClasses(host.root)
+      const leaf = revealPath(this, host, target.path.join('.'))
       if (!leaf) {
         this.deactivate()
         return
-      }
-
-      leaf.classList.add(ACTIVE_CLASS)
-      // Every wrapper between the leaf and the form root is itself hidden by
-      // the one-field-at-a-time rule, so without this the leaf is revealed
-      // inside something that is still display: none.
-      for (let el = leaf.parentElement; el; el = el.parentElement) {
-        el.classList.add(ONPATH_CLASS)
-        if (el === this.formRoot) break
       }
 
       activeTarget = target
@@ -241,16 +229,42 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         // restore: unlike the sidebar it does not shift the page.
         reensureStyles(doc)
         refreshForm(this.ctx, { ignoreActiveValue: true })
-        this.syncTargets()
-        return
-      }
-      if (reason === 'undo') {
+      } else if (reason === 'undo') {
         refreshForm(this.ctx, { ignoreActiveValue: false })
-        this.syncTargets()
+      } else {
+        refreshForm(this.ctx)
+      }
+      this.syncTargets()
+      this.restoreActive()
+    },
+
+    // morphForm re-syncs every field from a freshly built form, and that form
+    // carries no reveal classes, so an open popover goes blank while still
+    // sitting there open. Measured in a browser: the leaf keeps its identity
+    // and loses only its class, which is why nothing here rebuilds anything.
+    // The same reason enhanceFields and applyErrorState re-run after the morph
+    // in refresh.js.
+    restoreActive() {
+      if (!host || !activeTarget || host.popEl.hidden) return
+      // The refresh can take the page element out from under an open popover:
+      // a live-sync that deletes the row being edited, say. Its rect would then
+      // measure zero and the popover would place against the viewport clamp.
+      if (!doc.contains(activeTarget.el)) {
+        this.deactivate()
         return
       }
-      refreshForm(this.ctx)
-      this.syncTargets()
+      const leaf = revealPath(this, host, activeTarget.path.join('.'))
+      if (!leaf) {
+        this.deactivate()
+        return
+      }
+      // After the classes, never before: a textarea measured while its wrapper
+      // is still display:none reports a zero scrollHeight and sizes to nothing.
+      autosizeIn(leaf)
+      this.placePopover()
+      // Deliberately no focusFirst: a refresh can land mid-typing, and moving
+      // the caret back to the top of the field on every page mutation would
+      // make the field unusable.
     },
 
     // Deliberately NOT a page field. Focusing one would scroll the page and
@@ -277,6 +291,25 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       this.popEl = null
     },
   }
+}
+
+// Show exactly one leaf: mark it active, and mark every wrapper between it and
+// the form root, each of which the one-field-at-a-time rule would otherwise
+// leave hidden around it. Returns the leaf, or null when the path is not in the
+// form. The walk stops AT the form root and never above it: <body> and <html>
+// are the author's elements, they reach the saved file, and clearPathClasses
+// only queries downward from the host so a class left up there never comes off.
+function revealPath(view, host, path) {
+  const leaf = view.formRoot &&
+    view.formRoot.querySelector(`[data-hcms-path="${cssEscape(path)}"]`)
+  clearPathClasses(host.root)
+  if (!leaf) return null
+  leaf.classList.add(ACTIVE_CLASS)
+  for (let el = leaf.parentElement; el; el = el.parentElement) {
+    el.classList.add(ONPATH_CLASS)
+    if (el === view.formRoot) break
+  }
+  return leaf
 }
 
 function clearPathClasses(root) {
