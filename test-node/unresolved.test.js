@@ -38,6 +38,11 @@ test('reports a scalar whose selector matches nothing', () => {
   assert.deepEqual(missing, ['title'])
 })
 
+test('reports a rule that only matches editor UI as unresolved page data', () => {
+  const { missing } = unresolvedFor({ tool: 'button.tool' }, '<button class="tool" editor-ui>Tools</button>')
+  assert.deepEqual(missing, ['tool'])
+})
+
 test('does not report an element that is present but empty', () => {
   const { missing } = unresolvedFor({ title: 'h1' }, '<h1></h1>')
   assert.deepEqual(missing, [])

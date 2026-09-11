@@ -25,6 +25,8 @@
 // is pinned too: [hidden] is a UA rule with no specificity, so any page rule
 // matching the element beats it and the menu would sit open forever.
 
+import { reensureStyles } from './shell.js'
+
 const TOGGLE_ID = 'hcms-toggle'
 const HOST_ATTR = 'data-hcms-toggle-host'
 const STYLE_ID = 'hcms-toggle-style'
@@ -81,6 +83,7 @@ export const TOGGLE_STYLE = `
   all: unset;
   box-sizing: border-box;
   display: var(--hcms-toggle-display, inline-flex);
+  font-family: 'Departure Mono', ui-monospace, Menlo, monospace;
   --hcms-toggle-_surface: ${SURFACE_LIGHT};
 }
 [${HOST_ATTR}][data-hcms-surface="dark"] {
@@ -96,19 +99,24 @@ export const TOGGLE_STYLE = `
   padding: 0 14px;
   min-height: 40px;
   font-family: inherit;
-  font-weight: 500;
-  line-height: 1;
-  font-size: clamp(12px, 0.85em, 15px);
+  font-weight: 400;
+  line-height: 1.5;
+  font-size: 14px;
   color: var(--hcms-toggle-color, currentColor);
-  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-  border-radius: 999px;
+  border: 2px solid;
+  border-color: var(--mirk-bevel-tl, #F0E7D8) var(--mirk-bevel-br, #E2D4BF) var(--mirk-bevel-br, #E2D4BF) var(--mirk-bevel-tl, #F0E7D8);
+  border-radius: 0;
   cursor: pointer;
-  box-shadow: 0 10px 28px -12px rgba(0, 0, 0, .35);
+  box-shadow: none;
 }
 [${HOST_ATTR}] .hcms-toggle__main:hover,
 [${HOST_ATTR}] .hcms-toggle__arrow:hover {
-  border-color: color-mix(in srgb, currentColor 45%, transparent);
-  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, .45);
+  border-color: var(--mirk-focus-color, #C7AE93);
+  box-shadow: none;
+}
+[${HOST_ATTR}] .hcms-toggle__main:active,
+[${HOST_ATTR}] .hcms-toggle__arrow:active {
+  border-color: var(--mirk-bevel-br, #E2D4BF) var(--mirk-bevel-tl, #F0E7D8) var(--mirk-bevel-tl, #F0E7D8) var(--mirk-bevel-br, #E2D4BF);
 }
 [${HOST_ATTR}] .hcms-toggle__main:focus-visible,
 [${HOST_ATTR}] .hcms-toggle__arrow:focus-visible {
@@ -119,13 +127,13 @@ export const TOGGLE_STYLE = `
 [${HOST_ATTR}][${SESSION_ATTR}="open"] .hcms-toggle__open { display: none; }
 [${HOST_ATTR}][${SESSION_ATTR}="open"] .hcms-toggle__close { display: inline; }
 [${HOST_ATTR}][${SPLIT_ATTR}] .hcms-toggle__main {
-  border-radius: 999px 0 0 999px;
+  border-radius: 0;
   padding-right: 12px;
 }
 [${HOST_ATTR}] .hcms-toggle__arrow {
   gap: 0;
   padding: 0 10px;
-  border-radius: 0 999px 999px 0;
+  border-radius: 0;
   border-left-width: 0;
 }
 [${HOST_ATTR}] .hcms-toggle__menu {
@@ -134,12 +142,12 @@ export const TOGGLE_STYLE = `
   min-width: 180px;
   padding: 4px;
   font-family: inherit;
-  font-size: clamp(12px, 0.85em, 15px);
-  line-height: 1;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--hcms-toggle-color, currentColor);
   background: ${SURFACE_VAR};
-  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-  border-radius: 12px;
+  border: 1px solid var(--mirk-input-border, #D8C8AF);
+  border-radius: var(--mirk-radius, 5px);
   box-shadow: 0 14px 34px -14px rgba(0, 0, 0, .45);
 }
 [${HOST_ATTR}] .hcms-toggle__item {
@@ -148,7 +156,7 @@ export const TOGGLE_STYLE = `
   display: block;
   width: 100%;
   padding: 9px 10px;
-  border-radius: 8px;
+  border-radius: 0;
   cursor: pointer;
 }
 [${HOST_ATTR}] .hcms-toggle__item::before {
@@ -377,13 +385,14 @@ function scheduleSurface(host) {
   }
 }
 
-export function injectToggle({ open, close, isOpen, views = VIEW_NAMES }, doc = document) {
+export function injectToggle({ open, close, isOpen, getTheme = () => null, views = VIEW_NAMES }, doc = document) {
   const existing = doc.querySelector(`[${HOST_ATTR}]`)
   if (existing) return existing
 
   if (!doc.querySelector(`[${STYLE_ATTR}]`)) {
     const style = doc.createElement('style')
     style.setAttribute(STYLE_ATTR, '')
+    style.setAttribute('editor-ui', '')
     if (!doc.getElementById(STYLE_ID)) style.id = STYLE_ID
     style.setAttribute('no-save', '')
     style.setAttribute('snapshot-remove', '')
@@ -395,15 +404,17 @@ export function injectToggle({ open, close, isOpen, views = VIEW_NAMES }, doc = 
   }
 
   const host = doc.createElement('hypercms-toggle')
+  host.className = 'hcms-shell pixel-quiet'
   // The id is the documented override handle, but it is the page's namespace:
   // if the page already owns it, go without rather than shadow their element.
   if (!doc.getElementById(TOGGLE_ID)) host.id = TOGGLE_ID
   host.setAttribute(HOST_ATTR, '')
+  host.setAttribute('editor-ui', '')
   host.setAttribute('no-save', '')
   host.setAttribute('snapshot-remove', '')
   host.setAttribute('save-ignore', '')
   host.innerHTML =
-    '<button type="button" class="hcms-toggle__main">' +
+    '<button type="button" class="hcms-toggle__main mirk-button">' +
     '<span class="hcms-toggle__open">Edit content</span>' +
     '<span class="hcms-toggle__close">Close editor</span>' +
     '</button>'
@@ -601,6 +612,9 @@ export function injectToggle({ open, close, isOpen, views = VIEW_NAMES }, doc = 
   // that handler: the event says what happened and re-asking would leave the
   // button reading "Close editor" over a closed editor.
   const setSessionState = (sessionOpen) => {
+    const theme = getTheme()
+    host.classList.toggle('light', theme === 'light')
+    host.classList.toggle('dark', theme === 'dark')
     if (sessionOpen) host.setAttribute(SESSION_ATTR, 'open')
     else host.removeAttribute(SESSION_ATTR)
   }
@@ -609,6 +623,7 @@ export function injectToggle({ open, close, isOpen, views = VIEW_NAMES }, doc = 
   doc.addEventListener('hcms:close', () => setSessionState(false))
 
   doc.body.appendChild(host)
+  reensureStyles(doc)
   scheduleSurface(host)
   return host
 }
@@ -616,7 +631,7 @@ export function injectToggle({ open, close, isOpen, views = VIEW_NAMES }, doc = 
 function makeArrow(doc) {
   const arrow = doc.createElement('button')
   arrow.type = 'button'
-  arrow.className = 'hcms-toggle__arrow'
+  arrow.className = 'hcms-toggle__arrow mirk-button'
   arrow.setAttribute('aria-haspopup', 'menu')
   arrow.setAttribute('aria-expanded', 'false')
   // The arrow is a glyph, so unlike the main button it has no visible text to

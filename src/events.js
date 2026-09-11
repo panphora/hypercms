@@ -623,7 +623,6 @@ export function commit(newData, info, ctx) {
   const writeRules = Object.hasOwn(ctx, 'writeRules') ? ctx.writeRules : ctx.pageRules
 
   const result = applyWithRollback(ctx.pageRoot, writeRules, newData, {
-    observerHandle: ctx.observerHandle,
     shellRoot: ctx.shellRoot,
     structural: !!info.structural,
     structuralPath: info.path || null,
@@ -708,7 +707,7 @@ export function writeFieldValue(el, value, formRoot, path) {
 }
 
 export function extractFormData(ctx) {
-  const raw = engine.extract(ctx.formRoot, ctx.formRules)
+  const raw = engine.extract(ctx.formRoot, ctx.formRules, { exclude: null })
   return coerceBooleans(raw, ctx.formRules)
 }
 

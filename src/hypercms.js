@@ -10,7 +10,7 @@ import {
   extractFormData,
   restampAllSiblings,
 } from './events.js'
-import { setShellStyles, markStylesBundled } from './shell.js'
+import { setShellStyles, markStylesBundled, reensureStyles } from './shell.js'
 import { createSidebarView } from './views/sidebar.js'
 import { createInlineView } from './views/inline.js'
 import {
@@ -34,6 +34,11 @@ export { findLeafField, writeFieldValue }
 
 export function installStyles(text) {
   setShellStyles(text)
+  if (typeof document !== 'undefined') {
+    const fallback = document.getElementById('hcms-shell-styles')
+    if (fallback?.tagName === 'LINK') fallback.remove()
+    reensureStyles(document)
+  }
 }
 
 export function markBundledStyles(doc) {
@@ -319,6 +324,7 @@ maybeInjectToggle({
   open,
   close,
   isOpen,
+  getTheme: () => state.opts?.theme,
   // The same map open() resolves a view name against, so the split button
   // offers exactly the views this build can actually render.
   views: Object.keys(VIEWS),

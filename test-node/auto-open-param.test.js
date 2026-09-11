@@ -144,13 +144,11 @@ test('auto-open event path: dispatching hyperclay:mutation-ready opens without w
 
   // Install Mutation and fire the event the way mutation.js does.
   dom.window.hyperclay.Mutation = mutationStub()
-  const t0 = Date.now()
   dom.window.document.dispatchEvent(
     new dom.window.CustomEvent('hyperclay:mutation-ready', { detail: {} })
   )
   // The event handler fires synchronously, so open happens with no poll delay.
   assert.equal(isOpen(), true, 'event handler opened the shell')
-  assert.ok(Date.now() - t0 < 100, 'opened well under one backstop tick (250ms)')
 
   close()
   dom.window.close()

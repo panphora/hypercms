@@ -21,6 +21,12 @@ function box(left, top, width, height) {
 function setBox(el, b) {
   el.__box = b
   el.getBoundingClientRect = () => (el.hidden ? ZERO : el.__box)
+  const group = el.closest('.hcms-inline-item-controls')
+  if (group) group.getBoundingClientRect = () => {
+    if (group.hidden) return ZERO
+    const sizes = [...group.children].filter((child) => !child.hidden).map((child) => child.getBoundingClientRect())
+    return box(0, 0, sizes.reduce((width, size) => width + size.width, Math.max(0, sizes.length - 1) * 2), Math.max(0, ...sizes.map((size) => size.height)))
+  }
   return el
 }
 
@@ -170,7 +176,8 @@ function boot(html = MIXED) {
   const countEl = host.querySelector('.hcms-inline-count')
   for (const handle of layerEl.querySelectorAll('.hcms-inline-handle')) setBox(handle, HANDLE)
   for (const strip of layerEl.querySelectorAll('.hcms-inline-row-controls')) setBox(strip, STRIP)
-  for (const add of layerEl.querySelectorAll('.hcms-inline-list-add')) setBox(add, ADD)
+  for (const settings of layerEl.querySelectorAll('.hcms-inline-settings')) setBox(settings, HANDLE)
+  for (const add of doc.querySelectorAll('.hcms-inline-list-add')) setBox(add, ADD)
 
   return { dom, win, doc, frames, io, host, layerEl, countEl }
 }
@@ -178,6 +185,69 @@ function boot(html = MIXED) {
 function handles(layerEl) {
   return [...layerEl.querySelectorAll('.hcms-inline-handle')]
 }
+
+test('inline layer: gear is last in the item container and Add lives after the real rows', () => {
+  const t = boot(page('{"links":[".product",{"url":"@href"}]}', '<nav><a class="product" href="/one">One</a><a class="product" href="/two">Two</a></nav>'))
+  try {
+    setBox(t.doc.querySelector('nav'), box(300, 400, 360, 130))
+    t.io.report(true)
+    t.frames.flush()
+    const edit = t.layerEl.querySelector('[data-hcms-target="links.0.url"]')
+    const row = t.layerEl.querySelector('[data-hcms-row="0"]')
+    const group = edit.parentElement
+    assert.equal(group, row.parentElement)
+    assert.equal(group.className, 'hcms-inline-item-controls')
+    assert.equal(group.lastElementChild.className, 'hcms-inline-settings')
+    const dots = [...group.lastElementChild.querySelectorAll('svg circle')]
+    assert.equal(dots.length, 3)
+    assert.deepEqual(dots.map((dot) => dot.getAttribute('cx')), ['6', '12', '18'])
+    assert.ok(dots.every((dot) => dot.getAttribute('r') === '1.5' && dot.getAttribute('cy') === '12'))
+    assert.equal(group.lastElementChild.querySelector('[role="menu"]').hidden, true)
+    assert.equal(row.querySelector('[data-hcms-list-action="remove"]'), null)
+    assert.equal(edit.style.transform, '')
+    assert.equal(row.style.transform, '')
+    const icon = edit.querySelector('svg')
+    assert.equal(icon.getAttribute('width'), '24')
+    assert.equal(icon.getAttribute('viewBox'), '6 0 18 18')
+    assert.equal(icon.getAttribute('aria-hidden'), 'true')
+    assert.ok(!icon.querySelector('path').getAttribute('d').includes('M5 3h6v2H5'))
+    const add = t.doc.querySelector('.hcms-inline-list-add').parentElement
+    assert.notEqual(add, group)
+    assert.equal(add.previousElementSibling, t.doc.querySelectorAll('.product')[1])
+    assert.equal(add.style.transform, '')
+  } finally {
+    close()
+    reset(t.dom)
+  }
+})
+
+test('inline layer: each Add occupies its own list flow and follows the average row size', () => {
+  const t = boot(page('{"a":["nav.a .product",{"url":"@href"}],"b":["nav.b .product",{"url":"@href"}]}', '<nav class="a"><a class="product" href="/1">One</a><a class="product" href="/2">Two</a></nav><nav class="b"><a class="product" href="/3">Three</a><a class="product" href="/4">Four</a></nav>'))
+  try {
+    const rows = [...t.doc.querySelectorAll('.product')]
+    rows.forEach((row, i) => setBox(row, box(300, 200 + i * 45, 360, 40)))
+    setBox(t.doc.querySelector('nav.a'), box(300, 200, 360, 90))
+    setBox(t.doc.querySelector('nav.b'), box(300, 290, 360, 90))
+    t.io.report(true)
+    t.frames.flush()
+    const add = t.doc.querySelector('.hcms-inline-list-add[data-hcms-list="b"]')
+    const group = add.parentElement
+    assert.notEqual(group, t.layerEl.querySelector('[data-hcms-target="b.0.url"]').parentElement)
+    assert.equal(group.parentElement, t.doc.querySelector('nav.b'))
+    assert.equal(group.previousElementSibling, rows[3])
+    assert.equal(group.style.width, '360px')
+    assert.equal(group.style.height, '48px')
+    assert.equal(group.hidden, false)
+    setBox(t.doc.querySelector('nav.b'), box(300, -500, 360, 1200))
+    rows.slice(2).forEach((row, i) => setBox(row, box(300, -500 + i * 45, 360, 40)))
+    t.win.dispatchEvent(new t.win.Event('scroll'))
+    t.frames.flush()
+    assert.equal(group.style.transform, '', 'Add stays in document flow rather than being pinned to the viewport')
+  } finally {
+    close()
+    reset(t.dom)
+  }
+})
 
 test('inline layer: one handle per non-text target, and none for a text target', () => {
   const t = boot()
@@ -206,6 +276,36 @@ test('inline layer: one handle per non-text target, and none for a text target',
   reset(t.dom)
 })
 
+test('inline layer: revealing a short row toolbar keeps the edit button under the pointer', () => {
+  const t = boot(page('{"links":[".product",{"url":"@href"}]}', '<nav><a class="product" href="/one">One</a><a class="product" href="/two">Two</a></nav>'))
+  try {
+    const row = t.doc.querySelector('.product')
+    setBox(row, box(300, 400, 100, 20))
+    t.io.report(true)
+    t.frames.flush()
+    const edit = t.layerEl.querySelector('[data-hcms-target="links.0.url"]')
+    const strip = t.layerEl.querySelector('[data-hcms-row="0"]')
+    const left = () => {
+      const group = edit.parentElement
+      let x = Number(/translate\((-?\d+)px/.exec(group.style.transform)[1])
+      for (const member of group.children) {
+        if (member === edit) return x
+        if (!member.hidden) x += member.getBoundingClientRect().width + 2
+      }
+    }
+    assert.equal(strip.hidden, true)
+    const before = left()
+    assert.equal(before, 404, 'the pencil stays beside a short row rather than covering its text')
+    row.dispatchEvent(new t.win.MouseEvent('pointerover', { bubbles: true }))
+    t.frames.flush()
+    assert.equal(strip.hidden, false)
+    assert.equal(left(), before, 'revealing actions must not replace the edit button with Remove under the pointer')
+  } finally {
+    close()
+    reset(t.dom)
+  }
+})
+
 test('inline layer: a target below the anchor floor gets no handle', () => {
   const t = boot()
   try {
@@ -226,19 +326,15 @@ test('inline layer: a handle is hidden until its intersection record says it is 
   try {
     t.frames.flush()
     for (const h of handles(t.layerEl)) {
-      assert.equal(h.hidden, true, 'nothing is drawn before the observer has reported')
+      assert.ok(h.closest('[hidden]'), 'nothing is drawn before the observer has reported')
     }
 
-    // The anchors, never the handles — and since B2b-4 that includes the anchors
-    // the list controls ride: each row of the tags list, then the <ul> the Add
-    // sits on. One observer covers every kind of control the layer draws.
     assert.deepEqual(
       t.io.current.observed,
       [
         t.doc.querySelector('.hero'),
         t.doc.querySelector('.link'),
         ...t.doc.querySelectorAll('li.tag'),
-        t.doc.querySelector('ul'),
       ],
       'the observer watches the anchors, not the handles'
     )
@@ -251,11 +347,69 @@ test('inline layer: a handle is hidden until its intersection record says it is 
     // with it rather than floating over whatever is visible in its place.
     t.io.report(false)
     t.frames.flush()
-    for (const h of handles(t.layerEl)) assert.equal(h.hidden, true)
+    for (const h of handles(t.layerEl)) assert.ok(h.closest('[hidden]'))
   } finally {
     close()
   }
   reset(t.dom)
+})
+
+test('inline layer: an unchanged refresh retains controls, visibility, and observation', () => {
+  const t = boot(page(
+    '{"links":[".product",{"url":"@href"}]}',
+    '<nav><a class="product" href="/one">One</a><a class="product" href="/two">Two</a></nav>'
+  ))
+  try {
+    t.io.report(true)
+    t.frames.flush()
+    const observer = t.io.current
+    const handle = t.layerEl.querySelector('[data-hcms-target="links.0.url"]')
+    const strip = t.layerEl.querySelector('[data-hcms-list="links"][data-hcms-row="0"]')
+    const add = t.doc.querySelector('.hcms-inline-list-add[data-hcms-list="links"]')
+    const group = handle.parentElement
+
+    refresh()
+    t.frames.flush()
+
+    assert.equal(t.io.current, observer, 'the IntersectionObserver is retained')
+    assert.equal(t.layerEl.querySelector('[data-hcms-target="links.0.url"]'), handle)
+    assert.equal(t.layerEl.querySelector('[data-hcms-list="links"][data-hcms-row="0"]'), strip)
+    assert.equal(t.doc.querySelector('.hcms-inline-list-add[data-hcms-list="links"]'), add)
+    assert.equal(handle.parentElement, group, 'the grouped toolbar container is retained')
+    assert.equal(group.hidden, false, 'known visibility survives without a new observer record')
+    assert.equal(observer.observed.length, 2, 'only the two real rows need overlay observation')
+  } finally {
+    close()
+    reset(t.dom)
+  }
+})
+
+test('inline layer: new row controls inherit a retained anchor visibility and handle', () => {
+  const t = boot(page('{"url":".product@href"}', '<nav><a class="product" href="/one">One</a></nav>'))
+  try {
+    t.io.report(true)
+    t.frames.flush()
+    const handle = t.layerEl.querySelector('[data-hcms-target="url"]')
+    const group = handle.parentElement
+    const observer = t.io.current
+
+    t.doc.querySelector('[data-rules-name="cms"]').textContent =
+      '{"links":[".product",{"url":"@href"}]}'
+    refresh()
+    t.frames.flush()
+
+    assert.equal(t.layerEl.querySelector('[data-hcms-target="links.0.url"]'), handle)
+    assert.equal(handle.parentElement, group)
+    assert.ok(group.querySelector('[data-hcms-row="0"]'))
+    assert.ok(t.doc.querySelector('.hcms-inline-list-add[data-hcms-list="links"]'))
+    assert.equal(group.querySelector('.hcms-inline-list-add'), null)
+    assert.equal(group.hidden, false, 'new members use the anchor visibility already reported')
+    assert.equal(t.io.current, observer)
+    assert.equal(observer.observed.length, 1)
+  } finally {
+    close()
+    reset(t.dom)
+  }
 })
 
 test('inline layer: a scroll inside an overflow container re-places the handles', () => {
@@ -270,8 +424,8 @@ test('inline layer: a scroll inside an overflow container re-places the handles'
     t.io.report(true)
     t.frames.flush()
     const [hero, link] = handles(t.layerEl)
-    assert.equal(hero.style.transform, HERO_AT)
-    assert.equal(link.style.transform, LINK_AT)
+    assert.equal(hero.parentElement.style.transform, HERO_AT)
+    assert.equal(link.parentElement.style.transform, LINK_AT)
 
     // The page scrolls the panel, not the window: the hero moves 80px up and
     // the scroll event fires on the div, which does not bubble to the window.
@@ -280,8 +434,8 @@ test('inline layer: a scroll inside an overflow container re-places the handles'
     assert.equal(t.frames.pending.size, 1, 'the capture-phase listener heard it')
 
     t.frames.flush()
-    assert.equal(hero.style.transform, 'translate(222px, 14px)')
-    assert.equal(link.style.transform, LINK_AT, 'the anchor that did not move did not move')
+    assert.equal(hero.parentElement.style.transform, 'translate(222px, 14px)')
+    assert.equal(link.parentElement.style.transform, LINK_AT, 'the anchor that did not move did not move')
   } finally {
     close()
   }
@@ -295,25 +449,25 @@ test('inline layer: a resize re-places the handles too', () => {
     t.io.report(true)
     t.frames.flush()
     const [hero] = handles(t.layerEl)
-    assert.equal(hero.style.transform, HERO_AT)
+    assert.equal(hero.parentElement.style.transform, HERO_AT)
 
     setBox(t.doc.querySelector('.hero'), box(900, 100, 200, 120))
     t.win.dispatchEvent(new t.win.Event('resize'))
     t.frames.flush()
     // Clamped to the viewport: a card flush against the right edge keeps its
     // handle on screen. 1024 - 24 - 8.
-    assert.equal(hero.style.transform, 'translate(992px, 94px)')
+    assert.equal(hero.parentElement.style.transform, 'translate(992px, 94px)')
   } finally {
     close()
   }
   reset(t.dom)
 })
 
-test('inline layer: the count names how many editable areas there are', () => {
+test('inline layer: area count is removed and the controls toggle is hidden', () => {
   const t = boot()
   try {
-    assert.equal(t.countEl.textContent, '2 editable areas')
-    assert.equal(t.countEl.hidden, false)
+    assert.equal(t.countEl, null)
+    assert.equal(t.host.querySelector('[data-hcms-controls-toggle]').hidden, true)
   } finally {
     close()
   }
@@ -321,8 +475,7 @@ test('inline layer: the count names how many editable areas there are', () => {
 
   const one = boot(page(`{ "hero": ".hero@src" }`, '<img class="hero" src="hero.png">'))
   try {
-    assert.equal(one.countEl.textContent, '1 editable area')
-    assert.equal(one.countEl.hidden, false)
+    assert.equal(one.countEl, null)
   } finally {
     close()
   }
@@ -333,8 +486,7 @@ test('inline layer: the count names how many editable areas there are', () => {
     // Handles, not raw children: the layer also owns the reusable hover
     // highlight, which is chrome and must never read as an editable area.
     assert.equal(handles(none.layerEl).length, 0)
-    assert.equal(none.countEl.textContent, '0 editable areas')
-    assert.equal(none.countEl.hidden, true, 'a page of pure text says nothing rather than "0"')
+    assert.equal(none.countEl, null)
   } finally {
     close()
   }
@@ -386,7 +538,7 @@ test('inline layer: a window without requestAnimationFrame places synchronously 
   const dom = loadPage(MIXED)
   const win = dom.window
   const doc = win.document
-  stubIntersection(win)
+  const io = stubIntersection(win)
   // The degradation toggle.js already applies in scheduleSurface. A non-visual
   // jsdom has no rAF, and an unguarded schedule() threw out of mount().
   delete win.requestAnimationFrame
@@ -403,6 +555,37 @@ test('inline layer: a window without requestAnimationFrame places synchronously 
 
   const layerEl = doc.querySelector('hypercms-inline .hcms-inline-layer')
   assert.equal(handles(layerEl).length, 2, 'the handles are still drawn')
+  io.report(true)
+  const first = layerEl.querySelector('[data-hcms-target="hero"]')
+  assert.equal(first.closest('.hcms-inline-item-controls').hidden, false)
+  refresh()
+  assert.equal(layerEl.querySelector('[data-hcms-target="hero"]'), first)
+  assert.equal(first.closest('.hcms-inline-item-controls').hidden, false, 'fallback visibility applies on every reconcile')
+  close()
+  reset(dom)
+})
+
+test('inline layer: a window without IntersectionObserver keeps reconciled controls visible', () => {
+  if (isOpen()) close()
+  const dom = loadPage(NATIVE)
+  const win = dom.window
+  const doc = win.document
+  delete win.IntersectionObserver
+  delete win.requestAnimationFrame
+  delete win.cancelAnimationFrame
+  setBox(doc.querySelector('.hero'), HERO)
+  setBox(doc.querySelector('.email'), box(40, 300, 220, 32))
+
+  open({ view: 'inline' })
+  const layerEl = doc.querySelector('hypercms-inline .hcms-inline-layer')
+  const handle = layerEl.querySelector('[data-hcms-target="hero"]')
+  const group = handle.parentElement
+  assert.equal(group.hidden, false)
+
+  refresh()
+  assert.equal(layerEl.querySelector('[data-hcms-target="hero"]'), handle)
+  assert.equal(group.hidden, false, 'fallback visibility is re-applied during reconciliation')
+
   close()
   reset(dom)
 })
@@ -508,6 +691,48 @@ test('inline popover: activating reveals exactly one leaf, through its whole anc
     close()
   }
   reset(t.dom)
+})
+
+test('inline popover: a link opens both item fields, keeps other rows, and closes without closing CMS', () => {
+  const t = boot(page('{"links":[".product",{"label":"span","url":"@href"}]}', '<nav><a class="product" href="/one"><span>One</span></a><a class="product" href="/two"><span>Two</span></a></nav>'))
+  try {
+    const { pop, formRoot } = parts(t)
+    const handle = clickHandle(t, 'links.0.url')
+    const active = () => pathsShowing(formRoot, 'is-hcms-inline-active')
+    assert.deepEqual(active(), ['links.0.label', 'links.0.url'])
+    assert.equal(formRoot.querySelector('[data-hcms-path="links.0"]').hasAttribute('draggable'), false)
+    const field = (path) => formRoot.querySelector(`[data-hcms-path="${path}"] textarea`)
+    field('links.0.label').value = 'My work'
+    field('links.0.label').dispatchEvent(new t.win.Event('input', { bubbles: true }))
+    field('links.0.url').value = '/work'
+    field('links.0.url').dispatchEvent(new t.win.Event('input', { bubbles: true }))
+    assert.equal(t.doc.querySelector('.product span').textContent, 'My work')
+    assert.equal(t.doc.querySelector('.product').getAttribute('href'), '/work')
+    assert.equal(t.doc.querySelectorAll('.product')[1].outerHTML, '<a class="product" href="/two"><span>Two</span></a>')
+    refresh()
+    assert.deepEqual(active(), ['links.0.label', 'links.0.url'])
+    assert.equal(field('links.0.label').value, 'My work')
+    pop.querySelector('[aria-label="Close field editor"]').click()
+    assert.equal(pop.hidden, true)
+    assert.equal(isOpen(), true)
+    assert.equal(t.doc.activeElement, handle)
+  } finally {
+    close()
+    reset(t.dom)
+  }
+})
+
+test('inline popover: item field reveal excludes nested lists and other rows', () => {
+  const t = boot(page('{"links":[".product",{"label":"span","url":"@href","children":[".child",{"label":"@title","url":"@href"}]}]}', '<div><a class="product" href="/one"><span>One</span><i class="child" href="/child" title="Child"></i></a><a class="product" href="/two"><span>Two</span></a></div>'))
+  try {
+    const { formRoot } = parts(t)
+    assert.ok(formRoot.querySelector('[data-hcms-path="links.0.children.0.label"]'))
+    clickHandle(t, 'links.0.url')
+    assert.deepEqual(pathsShowing(formRoot, 'is-hcms-inline-active'), ['links.0.label', 'links.0.url'])
+  } finally {
+    close()
+    reset(t.dom)
+  }
 })
 
 test('inline popover: the popover is unhidden BEFORE it is measured', () => {
@@ -930,6 +1155,31 @@ test('inline popover: an open popover survives a refresh instead of going blank'
   reset(t.dom)
 })
 
+test('inline popover: a shared image element keeps the active projection through refresh', () => {
+  const t = boot(page(
+    '{"source":".hero@src","description":".hero@alt"}',
+    '<img class="hero" src="hero.png" alt="Hero">'
+  ))
+  try {
+    const { pop, formRoot } = parts(t)
+    setBox(pop, POP_BOX)
+    clickHandle(t, 'source')
+    assert.deepEqual(pathsShowing(formRoot, 'is-hcms-inline-active'), ['source'])
+
+    refresh()
+
+    assert.equal(pop.hidden, false)
+    assert.deepEqual(
+      pathsShowing(formRoot, 'is-hcms-inline-active'),
+      ['source'],
+      'the src projection does not switch to the alt projection on the same element'
+    )
+  } finally {
+    close()
+    reset(t.dom)
+  }
+})
+
 test('inline popover: a refresh that removes the edited element closes the popover', () => {
   const t = boot(POP)
   try {
@@ -980,7 +1230,7 @@ test('inline popover: a refresh does not pull focus back into the popover', () =
 // stylesheet rather than retyped, for the same reason displayRules is.
 function stackingRules() {
   const css = fs.readFileSync(new URL('../src/theme.generated.css', import.meta.url), 'utf8')
-  const rules = ['.hcms-inline-pop', '.hcms-inline-handle'].map((sel) => {
+  const rules = ['.hcms-inline-pop', '.hcms-inline-item-controls'].map((sel) => {
     const re = new RegExp(`\\${sel}\\s*\\{[^{}]*\\}`, 'g')
     const found = (css.match(re) || []).filter((r) => r.includes('z-index'))
     assert.equal(found.length, 1, `run npm run build:theme — no z-index rule for ${sel}`)
@@ -998,7 +1248,7 @@ test('inline popover: the popover paints above the handles, not under them', () 
     clickHandle(t, 'hero')
 
     const z = (el) => Number(t.win.getComputedStyle(el).zIndex)
-    const handle = t.layerEl.querySelector('.hcms-inline-handle')
+    const handle = t.layerEl.querySelector('.hcms-inline-item-controls')
     assert.ok(Number.isFinite(z(handle)), 'the handle really does carry a z-index')
     assert.ok(
       z(pop) > z(handle),
@@ -1063,7 +1313,9 @@ function strip(t, path, row) {
 }
 
 function rowButton(t, path, row, action) {
-  const el = strip(t, path, row)
+  const el = action === 'remove'
+    ? t.layerEl.querySelector(`.hcms-inline-settings[data-hcms-list="${path}"][data-hcms-row="${row}"]`)
+    : strip(t, path, row)
   assert.ok(el, `no strip for ${path}.${row}`)
   const button = el.querySelector(`[data-hcms-list-action="${action}"]`)
   assert.ok(button, `no ${action} button on ${path}.${row}`)
@@ -1072,18 +1324,19 @@ function rowButton(t, path, row, action) {
 
 function clickRow(t, path, row, action) {
   const button = rowButton(t, path, row, action)
+  if (action === 'remove') button.closest('.hcms-inline-settings').querySelector('[aria-haspopup="menu"]').click()
   fire(t, button, 'click')
   return button
 }
 
 function addButton(t, path) {
-  return t.layerEl.querySelector(`.hcms-inline-list-add[data-hcms-list="${path}"]`)
+  return t.doc.querySelector(`.hcms-inline-list-add[data-hcms-list="${path}"]`)
 }
 
 // Where a strip actually landed, as a rect: the placement pass writes a
 // transform and STRIP is the box the stub hands it back.
 function stripRect(el) {
-  const m = /translate\((-?\d+)px, (-?\d+)px\)/.exec(el.style.transform)
+  const m = /translate\((-?\d+)px, (-?\d+)px\)/.exec(el.parentElement.style.transform)
   assert.ok(m, `no placement on this strip: "${el.style.transform}"`)
   const left = Number(m[1])
   const top = Number(m[2])
@@ -1161,7 +1414,35 @@ test('inline lists: ↑ and ↓ move the FORM row, and the page rows follow on t
   reset(t.dom)
 })
 
-test('inline lists: ✕ routes through requestRemove, so an object array still asks first', async () => {
+test('inline lists: a retained row button uses its current index after reorder', () => {
+  const t = boot(LISTS)
+  try {
+    showControls(t)
+    const row = t.doc.querySelectorAll('.product')[1]
+    const controls = strip(t, 'products', 1)
+    const button = rowButton(t, 'products', 1, 'move-up')
+    const group = controls.parentElement
+
+    fire(t, button, 'click')
+
+    assert.deepEqual(pageNames(t), ['Two', 'One', 'Three'])
+    assert.equal(strip(t, 'products', 0), controls)
+    assert.equal(controls.parentElement, group)
+    assert.equal(button, controls.querySelector('[data-hcms-list-action="move-up"]'))
+    assert.equal(button.disabled, true, 'the retained first-row button has current availability')
+    assert.equal(button.hidden, false)
+    assert.equal(button.getAttribute('aria-label'), 'Move up products.0')
+
+    fire(t, button, 'click')
+    assert.deepEqual(pageNames(t), ['Two', 'One', 'Three'], 'the stale listener does not move another row')
+    assert.equal(row, t.doc.querySelectorAll('.product')[0])
+  } finally {
+    close()
+    reset(t.dom)
+  }
+})
+
+test('inline lists: gear then Delete opens the existing removal confirmation', async () => {
   const t = boot(LISTS)
   try {
     showControls(t)
@@ -1187,6 +1468,62 @@ test('inline lists: ✕ routes through requestRemove, so an object array still a
   reset(t.dom)
 })
 
+test('inline settings: menu survives refresh, dismisses with Escape or outside press, and gear stays last', () => {
+  const t = boot(LISTS)
+  try {
+    showControls(t)
+    const settings = t.layerEl.querySelector('.hcms-inline-settings')
+    const gear = settings.querySelector('[aria-haspopup="menu"]')
+    const menu = settings.querySelector('[role="menu"]')
+    assert.equal(settings.parentElement.lastElementChild, settings)
+    assert.equal(menu.hidden, true)
+    gear.click()
+    assert.equal(menu.hidden, false)
+    assert.equal(gear.getAttribute('aria-expanded'), 'true')
+    assert.equal(t.doc.activeElement.textContent, 'Delete')
+    const focused = t.doc.activeElement
+    const arrow = new t.win.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+    focused.dispatchEvent(arrow)
+    assert.equal(arrow.defaultPrevented, true)
+    assert.equal(t.doc.activeElement, focused)
+    refresh()
+    t.frames.flush()
+    assert.equal(menu.hidden, false)
+    assert.equal(t.doc.activeElement, focused)
+    focused.dispatchEvent(new t.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    assert.equal(menu.hidden, true)
+    assert.equal(t.doc.activeElement, gear)
+    assert.equal(isOpen(), true)
+    gear.dispatchEvent(new t.win.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    assert.equal(menu.hidden, false)
+    t.doc.body.dispatchEvent(new t.win.Event('pointerdown', { bubbles: true }))
+    assert.equal(menu.hidden, true)
+  } finally {
+    close()
+    reset(t.dom)
+  }
+})
+
+test('inline settings: retained Delete uses the moved row, not its previous index', () => {
+  const t = boot(LISTS)
+  try {
+    showControls(t)
+    const row = t.doc.querySelectorAll('.product')[1]
+    const settings = t.layerEl.querySelector('.hcms-inline-settings[data-hcms-row="1"]')
+    clickRow(t, 'products', 1, 'move-up')
+    refresh()
+    assert.equal(settings.getAttribute('data-hcms-row'), '0')
+    t.win.confirm = () => true
+    settings.querySelector('[aria-haspopup="menu"]').click()
+    settings.querySelector('[role="menuitem"]').click()
+    assert.equal(row.isConnected, false)
+    assert.deepEqual(pageNames(t), ['One', 'Three'])
+  } finally {
+    close()
+    reset(t.dom)
+  }
+})
+
 test('inline lists: Add appends through onAdd, and the new row gets its own controls on the next refresh', () => {
   const t = boot(LISTS)
   try {
@@ -1206,12 +1543,12 @@ test('inline lists: Add appends through onAdd, and the new row gets its own cont
 
     assert.ok(strip(t, 'products', 3), 'the new row carries its own strip')
     assert.equal(
-      rowButton(t, 'products', 3, 'move-down').hidden,
+      rowButton(t, 'products', 3, 'move-down').disabled,
       true,
       'the new row is the last one now'
     )
     assert.equal(
-      rowButton(t, 'products', 2, 'move-down').hidden,
+      rowButton(t, 'products', 2, 'move-down').disabled,
       false,
       'and the row that used to be last can move down'
     )
@@ -1245,41 +1582,58 @@ test('inline lists: a list emptied down to its [cms-template] seed still offers 
   reset(t.dom)
 })
 
-test('inline lists: the first row has no ↑ and the last has no ↓', () => {
+test('inline lists: both arrows stay visible, with unavailable moves disabled', () => {
   const t = boot(LISTS)
   try {
     showControls(t)
 
-    assert.equal(rowButton(t, 'products', 0, 'move-up').hidden, true, 'the first cannot move up')
-    assert.equal(rowButton(t, 'products', 0, 'move-down').hidden, false)
-    assert.equal(rowButton(t, 'products', 1, 'move-up').hidden, false, 'a middle row does both')
-    assert.equal(rowButton(t, 'products', 1, 'move-down').hidden, false)
-    assert.equal(rowButton(t, 'products', 2, 'move-up').hidden, false)
-    assert.equal(rowButton(t, 'products', 2, 'move-down').hidden, true, 'the last cannot move down')
+    assert.equal(rowButton(t, 'products', 0, 'move-up').disabled, true, 'the first cannot move up')
+    assert.equal(rowButton(t, 'products', 0, 'move-down').disabled, false)
+    assert.equal(rowButton(t, 'products', 1, 'move-up').disabled, false, 'a middle row does both')
+    assert.equal(rowButton(t, 'products', 1, 'move-down').disabled, false)
+    assert.equal(rowButton(t, 'products', 2, 'move-up').disabled, false)
+    assert.equal(rowButton(t, 'products', 2, 'move-down').disabled, true, 'the last cannot move down')
 
-    // Remove is on every row, so "hidden" above is about the move rule and not
-    // about the strip being drawn wrong.
     for (const row of [0, 1, 2]) {
+      for (const action of ['move-up', 'move-down']) {
+        assert.equal(rowButton(t, 'products', row, action).hidden, false)
+      }
       assert.equal(rowButton(t, 'products', row, 'remove').hidden, false)
     }
+    const before = pageNames(t)
+    rowButton(t, 'products', 0, 'move-up').click()
+    fire(t, rowButton(t, 'products', 2, 'move-down'), 'click')
+    assert.deepEqual(pageNames(t), before, 'disabled controls do not reorder on native or dispatched clicks')
 
     // The same rule on a scalar list of two, where first and last are the only
     // rows there are.
-    assert.equal(rowButton(t, 'tags', 0, 'move-up').hidden, true)
-    assert.equal(rowButton(t, 'tags', 0, 'move-down').hidden, false)
-    assert.equal(rowButton(t, 'tags', 1, 'move-up').hidden, false)
-    assert.equal(rowButton(t, 'tags', 1, 'move-down').hidden, true)
+    assert.equal(rowButton(t, 'tags', 0, 'move-up').disabled, true)
+    assert.equal(rowButton(t, 'tags', 0, 'move-down').disabled, false)
+    assert.equal(rowButton(t, 'tags', 1, 'move-up').disabled, false)
+    assert.equal(rowButton(t, 'tags', 1, 'move-down').disabled, true)
   } finally {
     close()
   }
   reset(t.dom)
 })
 
+test('inline lists: a one-item list keeps both arrows visible and disabled', () => {
+  const t = boot(page('{"links":[".product",{"url":"@href"}]}', '<nav><a class="product" href="/one">One</a></nav>'))
+  try {
+    showControls(t)
+    for (const action of ['move-up', 'move-down']) {
+      const button = rowButton(t, 'links', 0, action)
+      assert.equal(button.disabled, true)
+      assert.equal(button.hidden, false)
+    }
+  } finally { close(); reset(t.dom) }
+})
+
 test('inline lists: Hide controls puts the strips and the Adds away and leaves the handles alone', () => {
   const t = boot(MIXED)
   try {
     showControls(t)
-    const controls = () => [...t.layerEl.querySelectorAll('.hcms-inline-row-controls, .hcms-inline-list-add')]
+    const controls = () => [...t.doc.querySelectorAll('.hcms-inline-row-controls, [data-hcms-ghost]')]
     assert.ok(controls().length >= 3, 'the tags list drew two strips and an Add')
     for (const el of controls()) assert.equal(el.hidden, false)
     for (const handle of handles(t.layerEl)) assert.equal(handle.hidden, false)
@@ -1295,6 +1649,12 @@ test('inline lists: Hide controls puts the strips and the Adds away and leaves t
     assert.equal(toggle.getAttribute('aria-pressed'), 'true')
     assert.equal(toggle.querySelector('.mirk-button__label').textContent, 'Show controls')
 
+    const retained = controls()[0]
+    refresh()
+    t.frames.flush()
+    assert.equal(controls()[0], retained)
+    for (const el of controls()) assert.equal(el.hidden, true, 'refresh preserves hidden controls')
+
     // A toggle, not a mode: pressing it again brings them back where they were.
     fire(t, toggle, 'click')
     t.frames.flush()
@@ -1307,7 +1667,7 @@ test('inline lists: Hide controls puts the strips and the Adds away and leaves t
   reset(t.dom)
 })
 
-test('inline lists: the controls survive a refresh, rebuilt against the page as it now is', () => {
+test('inline lists: the controls survive a refresh, reconciled against the page as it now is', () => {
   const t = boot(LISTS)
   try {
     showControls(t)
@@ -1315,7 +1675,7 @@ test('inline lists: the controls survive a refresh, rebuilt against the page as 
     assert.equal(strip(t, 'products', 3), null)
 
     // A page-side change the session did not make — a live-sync, or another
-    // script. refreshForm re-syncs the form; the controls have to be rebuilt
+    // script. refreshForm re-syncs the form; the controls have to be reconciled
     // with it or the fourth row has no way to be moved or removed at all.
     const grid = t.doc.querySelector('.grid')
     const fourth = t.doc.createElement('article')
@@ -1328,7 +1688,7 @@ test('inline lists: the controls survive a refresh, rebuilt against the page as 
 
     assert.ok(strip(t, 'products', 3), 'the row that appeared has controls')
     assert.equal(
-      rowButton(t, 'products', 2, 'move-down').hidden,
+      rowButton(t, 'products', 2, 'move-down').disabled,
       false,
       'and the row that was last is no longer the last'
     )
@@ -1453,7 +1813,7 @@ test('inline lists: a row too small for its strip shows it only while the pointe
   const t = boot(PILLS)
   try {
     showControls(t)
-    const pills = [...t.doc.querySelectorAll('ul.pills li')]
+    const pills = [...t.doc.querySelectorAll('ul.pills li:not([data-hcms-ghost])')]
     pills.forEach((_, i) => {
       assert.ok(STRIP.width > PILL_BOXES[i].width, `pill ${i} really is narrower than a strip`)
     })
@@ -1482,7 +1842,7 @@ test('inline lists: no two strips are ever out at once to cover each other', () 
   const t = boot(PILLS)
   try {
     showControls(t)
-    const pills = [...t.doc.querySelectorAll('ul.pills li')]
+    const pills = [...t.doc.querySelectorAll('ul.pills li:not([data-hcms-ghost])')]
 
     // Proof the fixture can catch this at all: pinned to their own corners,
     // these three strips cannot avoid each other.

@@ -1,8 +1,11 @@
 import { engine } from 'hyper-html-api'
+import { morph } from 'hyper-morph'
 import { fromString as pathFromString, getRuleAtPath } from './path.js'
 import { rowIdentityHooks } from './row-identity.js'
 
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
+const ROLLBACK_UI = 'data-hcms-rollback-ui'
+let rollbackUiId = 0
 
 // Engine reads/writes against pageRoot pass skip + templateAttr so the
 // engine never traverses into the form's own DOM, and so [cms-template]
@@ -15,42 +18,41 @@ const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 // rollback restores only the failing subtree; listeners and state elsewhere
 // on the page survive.
 export function applyWithRollback(pageRoot, pageRules, newData, options = {}) {
-  const { observerHandle, shellRoot, structural, structuralPath, formRoot } = options
+  return applyPage(pageRoot, pageRules, newData, options)
+}
+
+function applyPage(pageRoot, pageRules, newData, options) {
+  const { shellRoot, structural, structuralPath, formRoot } = options
   // The form's own row elements are the only stable handle across an apply, so
   // when we have the form we let it say which page row each item is. Without it
   // the engine matches by content, which is exact except between two rows that
   // read identically.
   const engineOpts = formRoot ? { ...ENGINE_OPTS, ...rowIdentityHooks(formRoot) } : ENGINE_OPTS
-  observerHandle?.pause?.()
-  try {
-    if (!structural) {
-      try {
-        engine.apply(pageRoot, pageRules, newData, engineOpts)
-        return { ok: true }
-      } catch (err) {
-        return { ok: false, error: err }
-      }
-    }
-
-    // Structural path: snapshot the smallest container that the change
-    // touches, falling back to non-shell page content if we can't resolve
-    // a specific container.
-    const target = resolveStructuralTarget(pageRoot, pageRules, structuralPath)
-    const subtreeSnapshot = target ? captureChildren(target) : null
-    const pageSnapshot = target ? null : captureNonShellSnapshot(pageRoot, shellRoot)
+  if (!structural) {
     try {
       engine.apply(pageRoot, pageRules, newData, engineOpts)
       return { ok: true }
     } catch (err) {
-      if (subtreeSnapshot) {
-        restoreChildren(target, subtreeSnapshot)
-      } else if (pageSnapshot) {
-        restoreNonShellSnapshot(pageRoot, shellRoot, pageSnapshot)
-      }
       return { ok: false, error: err }
     }
-  } finally {
-    observerHandle?.resume?.()
+  }
+
+  // Structural path: snapshot the smallest container that the change
+  // touches, falling back to non-shell page content if we can't resolve
+  // a specific container.
+  const target = resolveStructuralTarget(pageRoot, pageRules, structuralPath)
+  const subtreeSnapshot = target ? captureChildren(target) : null
+  const pageSnapshot = target ? null : captureNonShellSnapshot(pageRoot, shellRoot)
+  try {
+    engine.apply(pageRoot, pageRules, newData, engineOpts)
+    return { ok: true }
+  } catch (err) {
+    if (subtreeSnapshot) {
+      restoreChildren(target, subtreeSnapshot)
+    } else if (pageSnapshot) {
+      restoreNonShellSnapshot(pageRoot, shellRoot, pageSnapshot)
+    }
+    return { ok: false, error: err }
   }
 }
 
@@ -126,42 +128,67 @@ function resolveContainerByPath(pageRoot, pageRules, arrPath) {
 }
 
 function captureChildren(parent) {
-  const clones = []
+  const nodes = []
+  const retained = []
   for (const child of Array.from(parent.childNodes)) {
-    clones.push(child.cloneNode(true))
+    nodes.push(cloneForRollback(child, retained))
   }
-  return clones
+  return { nodes, retained }
 }
 
-function restoreChildren(parent, clones) {
-  while (parent.firstChild) parent.removeChild(parent.firstChild)
-  for (const clone of clones) parent.appendChild(clone)
+function restoreChildren(parent, snapshot) {
+  const source = parent.cloneNode(false)
+  for (const clone of snapshot.nodes) source.appendChild(clone)
+  morph(parent, Array.from(source.childNodes), rollbackMorphOptions())
+  restoreRetainedUi(parent, snapshot.retained)
 }
 
 function captureNonShellSnapshot(pageRoot, shellRoot) {
-  const clones = []
+  const nodes = []
+  const retained = []
   for (const child of Array.from(pageRoot.childNodes)) {
     if (child === shellRoot || (shellRoot && child.contains?.(shellRoot))) continue
-    clones.push(child.cloneNode(true))
+    nodes.push(cloneForRollback(child, retained))
   }
-  return clones
+  return { nodes, retained }
 }
 
-function restoreNonShellSnapshot(pageRoot, shellRoot, clones) {
-  for (const child of Array.from(pageRoot.childNodes)) {
-    if (child === shellRoot || (shellRoot && child.contains?.(shellRoot))) continue
-    pageRoot.removeChild(child)
+function restoreNonShellSnapshot(pageRoot, shellRoot, snapshot) {
+  const source = pageRoot.cloneNode(false)
+  for (const clone of snapshot.nodes) source.appendChild(clone)
+  morph(pageRoot, Array.from(source.childNodes), rollbackMorphOptions())
+  restoreRetainedUi(pageRoot, snapshot.retained)
+}
+
+function cloneForRollback(source, retained) {
+  const clone = source.cloneNode(false)
+  if (source.nodeType === 1 && source.matches('[editor-ui],[clay~="editor-ui"]')) {
+    const id = String(++rollbackUiId)
+    clone.setAttribute(ROLLBACK_UI, id)
+    retained.push({ id, node: source })
   }
-  const host = findShellHostChild(pageRoot, shellRoot)
-  for (const clone of clones) {
-    pageRoot.insertBefore(clone, host || null)
+  const sourceChildren = source.nodeType === 1 && source.tagName === 'TEMPLATE' ? source.content : source
+  const cloneChildren = clone.nodeType === 1 && clone.tagName === 'TEMPLATE' ? clone.content : clone
+  for (const child of Array.from(sourceChildren.childNodes || [])) {
+    cloneChildren.appendChild(cloneForRollback(child, retained))
+  }
+  return clone
+}
+
+function restoreRetainedUi(root, retained) {
+  for (const { id, node } of retained) {
+    const placeholder = root.querySelector(`[${ROLLBACK_UI}="${id}"]`)
+    if (placeholder === node) node.removeAttribute(ROLLBACK_UI)
+    else if (node.isConnected) placeholder?.remove()
+    else placeholder?.replaceWith(node)
   }
 }
 
-function findShellHostChild(pageRoot, shellRoot) {
-  if (!shellRoot) return null
-  for (const child of Array.from(pageRoot.childNodes)) {
-    if (child === shellRoot || child.contains?.(shellRoot)) return child
+function rollbackMorphOptions() {
+  return {
+    morphStyle: 'innerHTML',
+    policy: 'raw',
+    restoreFocus: false,
+    scripts: { handle: false, merge: false },
   }
-  return null
 }

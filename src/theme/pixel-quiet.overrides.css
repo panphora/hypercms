@@ -1,7 +1,7 @@
 /* =====================================================================
    Pixel Quiet — hypercms theme overrides (hypercms-owned).
 
-   Adapted from cms-sidebar/pixel-quiet/overrides.css. Two jobs:
+   Adapted from ARCHIVE_PROJECTS/cms-sidebar/pixel-quiet/overrides.css. Two jobs:
      1. Retune --mirk-* tokens, scoped to .hcms-shell.pixel-quiet (never :root).
      2. Author the panel geometry + the functional chrome the static mockup
         doesn't have (error banner, add/remove/move controls, the engine's
@@ -650,9 +650,11 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
   position: absolute;
   top: 0;
   left: 0;
-  width: max-content;
-  max-width: min(360px, calc(100vw - 24px));
-  padding: 10px;
+  box-sizing: border-box;
+  width: min(340px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  padding: 16px;
   border-radius: 8px;
   border: 1px solid var(--mirk-input-border);
   background: var(--mirk-bg);
@@ -665,69 +667,146 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
   z-index: 2;
 }
 .hcms-inline-pop[hidden] { display: none; }
+.hcms-inline-pop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+.hcms-shell .hcms-inline-pop-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 4px;
+}
 
-.hcms-inline-handle {
+.hcms-inline-item-controls {
   position: absolute;
   top: 0;
   left: 0;
   z-index: 1;
   will-change: transform;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
+.hcms-inline-item-controls[hidden],
 .hcms-inline-handle[hidden] { display: none; }
-
-/* The list controls: one ↑ ↓ ✕ strip per row, one Add per list. Positioned the
-   same way a handle is and by the same pass, so they carry the same absolute
-   origin and the same will-change. */
-.hcms-inline-row-controls {
+.hcms-inline-item-controls.has-open-settings { z-index: 3; }
+.hcms-inline-settings { position: relative; display: flex; flex: none; }
+.hcms-inline-settings[hidden],
+.hcms-inline-settings-menu[hidden] { display: none; }
+.hcms-inline-settings-menu {
   position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 1;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 120px;
+  padding: 4px;
+  border: 1px solid var(--mirk-input-border);
+  border-radius: 5px;
+  background: var(--mirk-bg);
+  box-shadow: 0 8px 24px #0003;
+}
+.hcms-inline-settings-menu button {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--mirk-destructive);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hcms-inline-settings-menu button:hover,
+.hcms-inline-settings-menu button:focus-visible {
+  background: var(--mirk-bevel-bg);
+  outline: 1px solid var(--mirk-focus-color);
+}
+
+/* Buttons flow within the positioned item container. */
+.hcms-inline-row-controls {
   display: flex;
   gap: 2px;
-  will-change: transform;
 }
 .hcms-inline-row-controls[hidden] { display: none; }
 
-.hcms-inline-list-add {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 1;
-  will-change: transform;
-}
 .hcms-inline-list-add[hidden] { display: none; }
 
+.hcms-shell.hcms-inline-ghost {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  max-width: 100%;
+  min-width: 0;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 1px dashed color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 3%, transparent);
+  color: inherit;
+  list-style: none;
+}
+.hcms-shell.hcms-inline-ghost[hidden] { display: none; }
+tr.hcms-shell.hcms-inline-ghost { display: table-row; }
+.hcms-inline-ghost-cell { padding: 0; text-align: center; vertical-align: middle; }
+
+.hcms-shell .hcms-inline-handle,
+.hcms-shell .hcms-inline-list-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 4px;
+  line-height: 1;
+}
+.hcms-inline-handle .mirk-button__label,
+.hcms-inline-list-button .mirk-button__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
+}
+.hcms-inline-icon { display: block; width: 24px; height: 24px; flex: none; }
+.hcms-inline-handle .hcms-inline-icon { width: 20.4px; height: 20.4px; transform: translateY(-1px); }
+.hcms-inline-list-add .hcms-inline-icon { width: 16.8px; height: 16.8px; }
+.hcms-shell .hcms-inline-list-add { padding-inline: 10px; }
+
 .hcms-inline-list-button {
-  min-width: 28px;
-  min-height: 28px;
+  flex: none;
 }
 .hcms-inline-list-button[hidden] { display: none; }
+.hcms-shell .hcms-inline-list-button:disabled {
+  opacity: 1;
+  color: #626B96;
+  background: var(--mirk-bevel-bg);
+  border-color: var(--mirk-bevel-tl) var(--mirk-bevel-br) var(--mirk-bevel-br) var(--mirk-bevel-tl);
+}
+.hcms-shell .hcms-inline-list-button:disabled .mirk-button__label { translate: none; }
 
 /* A finger is not a mouse pointer: on touch the same three controls get the
    44px target the platform guidelines ask for. */
 @media (pointer: coarse) {
-  .hcms-inline-list-button {
+  .hcms-shell .hcms-inline-handle,
+  .hcms-shell .hcms-inline-list-button {
     min-width: 44px;
     min-height: 44px;
   }
 }
 
 .hcms-inline-toggle { align-self: center; }
-.hcms-inline-count {
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 13px;
-  border: 1px solid var(--mirk-input-border);
-  background: var(--mirk-bg);
-  color: var(--mirk-fg);
-  align-self: center;
-}
-.hcms-inline-count[hidden] { display: none; }
+.hcms-inline-toggle[hidden] { display: none; }
 
-/* The sidebar handoff: the count of ruled fields with no place on the page,
-   and the one tap out to the view that can edit them. Same pill as the count
-   above, because it is the same kind of statement about this session. */
+/* Fields with no visible anchor can still be edited through the sidebar. */
 .hcms-inline-handoff {
   display: flex;
   align-items: center;
@@ -742,11 +821,56 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
 }
 .hcms-inline-handoff[hidden] { display: none; }
 
-/* One field at a time. Scoped to the inline host: [data-hcms-shell] is on BOTH
+/* Selected fields only. Scoped to the inline host: [data-hcms-shell] is on BOTH
    hosts, so an unscoped rule hides the sidebar's whole form too. */
 .hcms-inline .hcms-form [data-hcms-path] { display: none; }
 .hcms-inline .hcms-form [data-hcms-path].is-hcms-inline-onpath,
 .hcms-inline .hcms-form [data-hcms-path].is-hcms-inline-active { display: block; }
+
+.hcms-inline .hcms-form .is-hcms-inline-onpath,
+.hcms-inline .hcms-form {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+}
+.hcms-inline-pop .hcms-object-title,
+.hcms-inline-pop .hcms-array-header,
+.hcms-inline-pop .hcms-drag-handle,
+.hcms-inline-pop [data-hcms-action="add"],
+.hcms-inline-pop [data-hcms-action="remove"],
+.hcms-inline-pop [data-hcms-action="move-up"],
+.hcms-inline-pop [data-hcms-action="move-down"],
+.hcms-inline-pop .hcms-card-controls { display: none; }
+.hcms-inline .hcms-form .hcms-field.is-hcms-inline-active {
+  display: flex;
+  gap: 8px;
+  padding: 0;
+  margin: 0 0 16px;
+  border: 0;
+  min-width: min(260px, 100%);
+}
+.hcms-inline .hcms-form .hcms-field.is-hcms-inline-active:last-child { margin-bottom: 0; }
+.hcms-shell.pixel-quiet .hcms-inline-pop .mirk-input,
+.hcms-shell.pixel-quiet .hcms-inline-pop .mirk-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: min(260px, 100%);
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--mirk-input-border);
+  background: var(--mirk-input-bg);
+}
+.hcms-inline-pop .mirk-input:focus-visible,
+.hcms-inline-pop .mirk-textarea:focus-visible {
+  outline: 2px solid var(--mirk-focus-color);
+  outline-offset: 2px;
+}
 
 .hcms-inline-highlight {
   position: absolute;

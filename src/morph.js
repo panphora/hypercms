@@ -6,5 +6,6 @@ export function morphForm(formRoot, newFragment, { ignoreActiveValue = true } = 
     ignoreActiveValue,
     restoreFocus: true,
     formStateSync: 'property',
+    policy: 'raw',
   })
 }

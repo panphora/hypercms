@@ -39,20 +39,17 @@ test('installObserver hands the hub\'s change records straight through to onRefr
   })
 })
 
-test('pause() suppresses the refresh and resume() restores it', () => {
+test('installObserver forwards each batch and exposes only lifecycle cleanup', () => {
   withHub((captured) => {
     let calls = 0
     const handle = installObserver({ onRefresh: () => { calls++ } })
 
     captured.callback([])
-    assert.equal(calls, 1)
-
-    handle.pause()
     captured.callback([])
-    assert.equal(calls, 1, 'paused: no refresh')
-
-    handle.resume()
-    captured.callback([])
-    assert.equal(calls, 2, 'resumed: refreshes again')
+    assert.equal(calls, 2)
+    assert.equal(handle.pause, undefined)
+    assert.equal(handle.resume, undefined)
+    handle.unsubscribe()
+    assert.equal(captured.unsubscribed, true)
   })
 })

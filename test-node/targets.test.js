@@ -165,3 +165,11 @@ test('resolveTargets: a bare rule on a button resolves to a handle, not a caret'
   assert.deepEqual(shape(targets), [{ path: ['cta'], kind: 'handle', icon: 'pencil' }])
   dom.window.close()
 })
+
+test('resolveTargets preserves surrounding selector context while filtering UI', () => {
+  const dom = new JSDOM('<h2>Title</h2><ul><li>A</li><li editor-ui>Add</li></ul><p>Tail</p>')
+  const ul = dom.window.document.querySelector('ul')
+  const { targets } = resolveTargets(ul, { last: 'ul:has(+ p) li:last-child' })
+  assert.equal(targets.length, 1)
+  assert.equal(targets[0].el.textContent, 'A')
+})

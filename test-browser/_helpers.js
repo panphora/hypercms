@@ -53,7 +53,7 @@ export function teardownCms() {
   }
 }
 
-export const field = (formRoot, path) => formRoot.querySelector(`[data-hcms-path="${path}"] input`)
+export const field = (formRoot, path) => formRoot.querySelector(`[data-hcms-path="${path}"] input, [data-hcms-path="${path}"] textarea, [data-hcms-path="${path}"] select`)
 export const cardCount = (formRoot) => formRoot.querySelectorAll('[data-hcms-card]').length
 export const productCount = (page) => page.querySelectorAll('.product').length
 export const pageName = (page, i) => page.querySelectorAll('.product .product-name')[i]?.textContent

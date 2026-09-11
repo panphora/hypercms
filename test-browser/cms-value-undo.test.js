@@ -287,10 +287,10 @@ const teardownArray = () => {
 
 const pname = (page, i) => page.querySelectorAll('#products .product .pname')[i]
 
-describe('hypercms array-item @value edits skip the recordValue path (documented limitation)', () => {
+describe('hypercms array-item @value edits skip the recordValue path', () => {
   afterEach(teardownArray)
 
-  it('single-field item: value APPLIES to the page, other row untouched, ONE step from engine node-clone (FINDING: not zero)', async () => {
+  it('single-field item: value applies without recording a structural clone', async () => {
     const { page, formRoot, changes } = await mountArrayPage(ARRAY_VALUE_PAGE_HTML)()
     expect(pname(page, 0).value).to.equal('P1')
     expect(pname(page, 1).value).to.equal('P2')
@@ -307,38 +307,23 @@ describe('hypercms array-item @value edits skip the recordValue path (documented
     expect(pname(page, 1).value).to.equal('P2')                 // the OTHER row is untouched
 
     await new Promise((r) => setTimeout(r, 120))
-    // INTENDED contract is undo.history.length === 0. ACTUAL is 1 because the
-    // single-field edit drops listDiff similarity below threshold, so the engine
-    // clones a replacement node and the observer records that childList mutation.
-    // Asserting ACTUAL with this note (per ground rules) rather than the intended
-    // zero, since the divergence is real and surfaced as a finding.
-    expect(undo.history.length).to.equal(1)                     // DIVERGES from intended (0); engine node-clone is observed
-    expect(undo.history.map((c) => c.label)).to.deep.equal(['Edit'])
+    expect(undo.history.length).to.equal(0)
     expect(changes.at(-1)).to.deep.equal({ products: [{ name: 'P1-edited' }, { name: 'P2' }] })
   })
 
-  it('single-field item: UNDO of the clone reverts cleanly (page + form restored, no orphan row, history empty)', async () => {
+  it('single-field item: undo has no structural clone to revert', async () => {
     const { page, formRoot, changes } = await mountArrayPage(ARRAY_VALUE_PAGE_HTML)()
     type(field(formRoot, 'products.0.name'), 'P1-edited')
     await waitFor(() => pname(page, 0).value === 'P1-edited')
-    await waitFor(() => undo.history.length === 1)
+    await new Promise((r) => setTimeout(r, 120))
+    expect(undo.history.length).to.equal(0)
 
     undo.undo()
-    // page value restored on the re-attached original row
-    await waitFor(() => pname(page, 0).value === 'P1')
-    expect(pname(page, 0).value).to.equal('P1')
-    expect(pname(page, 1).value).to.equal('P2')                  // the other row is intact
-    // the cloned replacement is gone: exactly two rows, no orphan/duplicate
+    expect(pname(page, 0).value).to.equal('P1-edited')
+    expect(pname(page, 1).value).to.equal('P2')
     expect(page.querySelectorAll('#products .product').length).to.equal(2)
-    // the focused form field re-syncs to the reverted value (ignoreActiveValue:false on undo)
-    await waitFor(() => field(formRoot, 'products.0.name').value === 'P1')
-    expect(field(formRoot, 'products.0.name').value).to.equal('P1')
-    // history is back to baseline and the re-fired onChange carries the reverted data
     expect(undo.history.length).to.equal(0)
-    await waitFor(() => {
-      const last = changes.at(-1)
-      return !!last && JSON.stringify(last) === JSON.stringify({ products: [{ name: 'P1' }, { name: 'P2' }] })
-    })
+    expect(changes.at(-1)).to.deep.equal({ products: [{ name: 'P1-edited' }, { name: 'P2' }] })
   })
 
   it('multi-field item, one-field edit: value APPLIES in place, other row untouched, ZERO undo steps (recordValue skip isolated)', async () => {

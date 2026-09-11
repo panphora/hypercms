@@ -52,6 +52,7 @@ export function mountShell({
   const titleId = `hcms-shell-title-${++titleIdCounter}`
   const root = doc.createElement('div')
   root.setAttribute('data-hcms-shell', '')
+  root.setAttribute('editor-ui', '')
   root.setAttribute('save-remove', '')
   root.setAttribute('save-ignore', '')
   root.setAttribute('tabindex', '-1')
@@ -200,11 +201,15 @@ function ensureStyles(doc) {
     // No bundled CSS and no resolvable co-located theme (e.g. the IIFE bundle,
     // where import.meta is undefined). Warn loudly rather than mount a silently
     // unstyled shell — the host must call installStyles(themeText) before opening.
-    console.warn(
-      'hypercms: shell stylesheet not applied — cssText is empty and the ' +
-      'co-located theme fallback is unavailable. Call installStyles(themeText) ' +
-      'before opening the CMS.'
-    )
+    const warn = () => {
+      if (!link.isConnected) return
+      console.warn(
+        'hypercms: shell stylesheet not applied — cssText is empty and the ' +
+        'co-located theme fallback is unavailable. Call installStyles(themeText) ' +
+        'before opening the CMS.'
+      )
+    }
+    doc.defaultView?.queueMicrotask ? doc.defaultView.queueMicrotask(warn) : warn()
   }
 }
 

@@ -110,25 +110,3 @@ test('applyWithRollback: subtree-only snapshot preserves listeners on unrelated 
   btn.click()
   assert.equal(clicks, 1, 'listener on unrelated node survived structural rollback')
 })
-
-test('applyWithRollback: observer pause/resume invoked', () => {
-  const root = setupPage()
-  const calls = []
-  const handle = {
-    pause: () => calls.push('pause'),
-    resume: () => calls.push('resume'),
-  }
-  applyWithRollback(root, { title: '.title' }, { title: 'X' }, { observerHandle: handle })
-  assert.deepEqual(calls, ['pause', 'resume'])
-})
-
-test('applyWithRollback: observer resumed even on error', () => {
-  const root = setupPage()
-  const calls = []
-  const handle = {
-    pause: () => calls.push('pause'),
-    resume: () => calls.push('resume'),
-  }
-  applyWithRollback(root, { title: '.title' }, { title: { bad: true } }, { observerHandle: handle })
-  assert.deepEqual(calls, ['pause', 'resume'])
-})

@@ -4,11 +4,11 @@
 // Three ways to change one field, chosen per target: text is edited in place
 // through richclay bound to the page element, a native control on the page is
 // left alone to be used, and everything else gets a handle that opens the
-// popover holding that field's real form control.
+// popover holding the selected item's real form controls.
 //
 // The form is NOT a second representation of the data. It is the same form the
 // sidebar builds, mounted inside the inline host with every field hidden; the
-// popover shows one field at a time by revealing it in place. Nothing is ever
+// popover reveals the selected field and its item siblings in place. Nothing is ever
 // moved in or out of the form tree, so engine.extract(formRoot, formRules) can
 // never be missing a path. That is the failure mode of the obvious alternative,
 // relocating a field node into a popover and back.
@@ -37,6 +37,8 @@ import { refreshForm } from '../refresh.js'
 import { clearSessionOpen, markSessionOpen, reensureStyles } from '../shell.js'
 import { isAnchorable } from '../anchor.js'
 import { resolveTargets } from '../targets.js'
+import { createContentView } from '../lib/content-dom.js'
+import { morph } from 'hyper-morph'
 import { place } from '../place.js'
 import { platform } from '../platform.js'
 import {
@@ -51,11 +53,11 @@ import {
 } from '../richclay-bridge.js'
 import { installSnapshotHook } from '../hooks.js'
 import { createInlineLayer } from './inline-layer.js'
+import { inlineIcon } from '../inline-icons.js'
 
 const HOST_TAG = 'hypercms-inline'
 
-// The one revealed field, and the wrappers it hides behind. Both are cleared
-// before every activation, so at most one path is ever showing.
+// Revealed fields and their ancestors, cleared before each activation.
 const ACTIVE_CLASS = 'is-hcms-inline-active'
 const ONPATH_CLASS = 'is-hcms-inline-onpath'
 
@@ -111,7 +113,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     // and that reaches the saved file. Someone who clicks a heading, reads it
     // and presses Escape has changed nothing and must not have changed their
     // document either, so an untouched session puts this back verbatim.
-    const originalHTML = inherited.originalHTML ?? el.innerHTML
+    const originalHTML = inherited.originalHTML ?? createContentView(el, { capability: 'history' }).html()
     const richClayIsOurs = inherited.richClayIsOurs ?? !el.hasAttribute('data-richclay')
     // richclay's constructor returns the existing instance for an element that
     // already has one (richclay.js:85-86), so on a page where the author mounted
@@ -126,7 +128,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     // the author's file. richclay stamps no-undo on what it activates, so from
     // the bind until unbind this is the only record the page's undo stack gets.
     // Never inherited: a rebind's baseline is the value on the page now.
-    const oldValue = readPageValue(el, prop)
+    const oldValue = readPageValue(el, prop, 'history')
     const editor = construct(ctx, RichClay, el, prop, richClayIsOurs)
     if (!editor) return null
 
@@ -181,7 +183,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         // What this person produced, captured while the DOM still holds it.
         // recordUndo reads this rather than the element, because at the one
         // boundary that matters the element no longer holds their work.
-        binding.lastEdited = readPageValue(el, binding.prop)
+        binding.lastEdited = readPageValue(el, binding.prop, 'history')
         acceptInlineTextChange(ctx, binding)
       }
       squire.addEventListener('input', onInput)
@@ -205,15 +207,13 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     formRoot: null,
     errorEl: null,
     noticeEl: null,
-    countEl: null,
     handoffEl: null,
     handoffCountEl: null,
 
     popEl: null,
 
-    // The form's own rich-text fields are never focused in this view — a rich
-    // target is edited on the page element itself — so mounting richclay on
-    // them buys nothing and costs five document-level capture listeners each.
+    // Page targets own richclay instances. Popover siblings use their native
+    // form controls without mounting another richclay instance per field.
     enhanceFormRichText: false,
 
     // The wider upgrade, not the sidebar's. Every text projection this view
@@ -232,7 +232,6 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       this.formRoot = host.formRoot
       this.errorEl = host.errorEl
       this.noticeEl = host.noticeEl
-      this.countEl = host.countEl
       this.handoffEl = host.handoffEl
       this.handoffCountEl = host.handoffCountEl
       this.popEl = host.popEl
@@ -261,13 +260,14 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         onListAction: (op) => this.listAction(op),
       })
       layer.setFollower(() => this.placePopover())
+      host.closeEl.addEventListener('click', () => this.deactivate())
       host.toggleEl.addEventListener('click', (event) => {
         event.preventDefault()
         event.stopPropagation()
         this.toggleControls()
       })
       // There is no drawer. What a field with no visual representation gets is
-      // the count above and this one tap out to the view that edits everything.
+      // this one tap out to the view that edits everything.
       // The switch carries the session's options across (hypercms.js open()), so
       // the sidebar comes up on the same page root with the same callbacks.
       host.handoffEl.querySelector('[data-hcms-open-view]').addEventListener('click', (event) => {
@@ -428,7 +428,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       }
     },
 
-    // Reveal the form leaf for this target, over the target. Nothing moves in
+    // Reveal this target's form fields over the target. Nothing moves in
     // or out of the form tree — the leaf is shown where it already lives — so
     // engine.extract(formRoot) can never be missing a path.
     activate(target, handle) {
@@ -453,7 +453,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       // it at the clamp instead of beside its anchor — the same trap as the 0px
       // textarea below, which was sized while the popover had no height.
       host.popEl.hidden = false
-      autosizeIn(leaf)
+      host.formRoot.querySelectorAll(`.${ACTIVE_CLASS}`).forEach(autosizeIn)
       this.placePopover()
       focusFirst(leaf)
     },
@@ -518,7 +518,10 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       // at the target that now stands for the element it is anchored over, or
       // the popover keeps editing the row that inherited its old index.
       if (activeTarget) {
-        const fresh = byEl.get(activeTarget.el)
+        const candidates = byEl.get(activeTarget.el) || []
+        const fresh = candidates.find((target) => sameTargetBinding(target, activeTarget)) ||
+          candidates.find((target) => target.path.join('.') === activeTarget.path.join('.')) ||
+          (candidates.length === 1 ? candidates[0] : null)
         // Gone from the rules, so the popover would keep writing its old path
         // from an element nothing reads. Close it rather than leave it editing a
         // field that is not there any more.
@@ -526,11 +529,6 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         else this.deactivate()
       }
       sweepOrphanEditors(this.ctx, bindings, doc)
-      const n = layer.count
-      if (this.countEl) {
-        this.countEl.textContent = `${n} editable ${n === 1 ? 'area' : 'areas'}`
-        this.countEl.hidden = n === 0
-      }
       // Every ruled field with no anchorable element, whatever its kind: a
       // permanently hidden metadata span and a target inside a closed tab are
       // byte-identical to the browser, so this is a live count and not a
@@ -653,7 +651,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       }
       // After the classes, never before: a textarea measured while its wrapper
       // is still display:none reports a zero scrollHeight and sizes to nothing.
-      autosizeIn(leaf)
+      host.formRoot.querySelectorAll(`.${ACTIVE_CLASS}`).forEach(autosizeIn)
       this.placePopover()
       // Deliberately no focusFirst: a refresh can land mid-typing, and moving
       // the caret back to the top of the field on every page mutation would
@@ -693,63 +691,54 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
 
 // Build the editor, or answer null when this element cannot carry one.
 //
-// The pause is around the construction and nothing else, and it is not
-// belt-and-braces: richclay writes contenteditable, data-richclay and a class
-// onto an authored page element, and those three DO reach the mutation hub
-// (measured, plan §6). Un-paused they read as a page edit and drive a full form
-// refresh; unsuppressed they land on the page's undo stack as three attribute
-// writes nobody made.
+// RichClay writes contenteditable, data-richclay and a class onto an authored
+// page element. Undo suppression keeps those runtime attributes off the undo
+// stack. The mutation observer can schedule one refresh, which must converge.
 function construct(ctx, RichClay, el, prop, richClayIsOurs) {
-  const handle = ctx && ctx.observerHandle
-  handle?.pause()
-  try {
-    return suppressUndo(() => {
-      let editor = null
-      try {
-        editor = new RichClay(el, {
-          inline: true,
-          hyperclay: false,
-          // Formatting is offered only where the rule can keep it. A textContent
-          // projection commits the element's text, so a bold applied through this
-          // toolbar would be flattened by the very next commit — the button would
-          // be promising something the rule cannot hold. That is every scalar
-          // array row (enhance.js never upgrades a "[]" rule) and everything at
-          // all under richText: false. richclay reads false as "no toolbar"
-          // (resolveToolbarControls, richclay.js:1007).
-          toolbar: prop === 'innerHTML' ? TOOLBAR : false,
-          // A heading is one line by definition; without this, Enter in it
-          // creates a second block inside the <h1>.
-          ...(HEADING.test(el.tagName) ? { singleLine: true } : null),
-        })
-      } catch (err) {
-        console.warn('[hypercms] richclay activation failed; the field falls back to the popover', err)
-        return null
-      }
-      // richclay's own verdict, which it delivers by returning an instance that
-      // never activates: TABLE and its row parts, SCRIPT/STYLE/TEXTAREA/TITLE/
-      // IFRAME/NOSCRIPT/XMP, TEMPLATE, and anything outside the HTML namespace.
-      // Without this check the person clicks one of those and nothing happens.
-      if (editor.unsupported || !editor.active) {
-        // Only tear down an instance this call is responsible for. On an
-        // element the author opted in on, richclay owns the mount and the
-        // instance is theirs; destroying it takes away an editor hypercms
-        // did not create and cannot put back.
-        if (richClayIsOurs) { try { editor.destroy() } catch (_) {} }
-        return null
-      }
-      // An editor can be active while its element is inert. A live-sync morph
-      // strips contenteditable and the runtime attributes off the element and
-      // leaves the instance believing it never stopped, so on the rebind that
-      // follows, this call is the only thing that makes the element editable
-      // again. reattach answers for itself whether anything needs doing, so a
-      // healthy editor costs one comparison. Absent on an older richclay, where
-      // the element stays inert and there is nothing hypercms can do about it.
-      if (typeof editor.reattach === 'function') editor.reattach()
-      return editor
-    })
-  } finally {
-    handle?.resume()
-  }
+  return suppressUndo(() => {
+    let editor = null
+    try {
+      editor = new RichClay(el, {
+        inline: true,
+        hyperclay: false,
+        // Formatting is offered only where the rule can keep it. A textContent
+        // projection commits the element's text, so a bold applied through this
+        // toolbar would be flattened by the very next commit — the button would
+        // be promising something the rule cannot hold. That is every scalar
+        // array row (enhance.js never upgrades a "[]" rule) and everything at
+        // all under richText: false. richclay reads false as "no toolbar"
+        // (resolveToolbarControls, richclay.js:1007).
+        toolbar: prop === 'innerHTML' ? TOOLBAR : false,
+        // A heading is one line by definition; without this, Enter in it
+        // creates a second block inside the <h1>.
+        ...(HEADING.test(el.tagName) ? { singleLine: true } : null),
+      })
+    } catch (err) {
+      console.warn('[hypercms] richclay activation failed; the field falls back to the popover', err)
+      return null
+    }
+    // richclay's own verdict, which it delivers by returning an instance that
+    // never activates: TABLE and its row parts, SCRIPT/STYLE/TEXTAREA/TITLE/
+    // IFRAME/NOSCRIPT/XMP, TEMPLATE, and anything outside the HTML namespace.
+    // Without this check the person clicks one of those and nothing happens.
+    if (editor.unsupported || !editor.active) {
+      // Only tear down an instance this call is responsible for. On an
+      // element the author opted in on, richclay owns the mount and the
+      // instance is theirs; destroying it takes away an editor hypercms
+      // did not create and cannot put back.
+      if (richClayIsOurs) { try { editor.destroy() } catch (_) {} }
+      return null
+    }
+    // An editor can be active while its element is inert. A live-sync morph
+    // strips contenteditable and the runtime attributes off the element and
+    // leaves the instance believing it never stopped, so on the rebind that
+    // follows, this call is the only thing that makes the element editable
+    // again. reattach answers for itself whether anything needs doing, so a
+    // healthy editor costs one comparison. Absent on an older richclay, where
+    // the element stays inert and there is nothing hypercms can do about it.
+    if (typeof editor.reattach === 'function') editor.reattach()
+    return editor
+  })
 }
 
 // Mirror the page element into the form leaf, then commit like any other edit.
@@ -770,8 +759,9 @@ function acceptInlineTextChange(ctx, { path, el, prop }) {
 // text projection (hyper-html-api dom.js text()), so a raw textContent read puts
 // a value in the form that the page can never extract, the mirror disagrees on
 // every commit, and the engine rewrites the text node the caret is sitting in.
-function readPageValue(el, prop) {
-  return prop === 'innerHTML' ? el.innerHTML : (el.textContent || '').trim()
+function readPageValue(el, prop, capability = 'data') {
+  const view = createContentView(el, { capability })
+  return prop === 'innerHTML' ? view.html() : view.text().trim()
 }
 
 // One primitive per edit session, at the boundary that closes it. Everything in
@@ -802,12 +792,31 @@ function recordUndo(binding) {
   //
   // A record against an element the morph took off the page would be an entry
   // that replays into nothing and still costs an undo press, so it is skipped.
-  if (u.isPaused) queueMicrotask(() => { if (el.isConnected) u.recordValue(el, { prop, oldValue, newValue }) })
-  else u.recordValue(el, { prop, oldValue, newValue })
+  const options = {
+    prop,
+    oldValue,
+    newValue,
+    read: target => readPageValue(target, prop, 'history'),
+    write: (target, value) => replaceContent(target, prop, value),
+  }
+  if (u.isPaused) queueMicrotask(() => { if (el.isConnected) u.recordValue(el, options) })
+  else u.recordValue(el, options)
 }
 
-// Close one binding. The undo record comes first: recordValue is a no-op while
-// the recorder is paused, and destroy has to run inside a pause.
+function replaceContent(target, prop, value) {
+  const source = target.cloneNode(false)
+  if (prop === 'innerHTML') source.innerHTML = value
+  else source.textContent = value
+  morph(target, Array.from(source.childNodes), {
+    morphStyle: 'innerHTML',
+    policy: 'history',
+    restoreFocus: false,
+    scripts: { handle: false, merge: false },
+  })
+}
+
+// Close one binding. The undo record comes first because teardown suppresses
+// undo while it removes editor runtime state.
 //
 // `restore` is what separates ending a session from repairing one. Ending it
 // puts the author's markup back when nobody typed; repairing after a morph must
@@ -817,40 +826,33 @@ function unbind(ctx, binding, { restore = true, record = true } = {}) {
   if (record) recordUndo(binding)
   binding.detachInput?.()
   binding.detachBlur?.()
-  const handle = ctx && ctx.observerHandle
-  handle?.pause()
-  try {
-    suppressUndo(() => {
-      if (!binding.adopted) {
-        try { binding.editor.destroy() } catch (err) {
-          console.warn('[hypercms] richclay teardown failed; editor state may reach the save', err)
-        }
-        // destroy() takes data-richclay off only on richclay 0.5.0, which tracks
-        // who wrote it. Neither vendored 0.4.0 copy removes that attribute
-        // anywhere, so without this the mount selector stays on the live element
-        // and the next save carries it into the author's file, exactly what the
-        // clone-side removal exists to prevent. Never on an element the author
-        // opted in on: there the attribute is theirs.
-        if (binding.richClayIsOurs) binding.el.removeAttribute('data-richclay')
+  suppressUndo(() => {
+    if (!binding.adopted) {
+      try { binding.editor.destroy() } catch (err) {
+        console.warn('[hypercms] richclay teardown failed; editor state may reach the save', err)
       }
-      // The bridge only unmarks the snapshot clone. Left on the live element,
-      // the marker would tell the next snapshot to strip an element hypercms no
-      // longer owns, and the provenance flag beside it would reach the file.
-      binding.el.removeAttribute(BOUND_ATTR)
-      binding.el.removeAttribute(RC_OWNED_ATTR)
-      binding.el.removeAttribute(BOUND_ID_ATTR)
-      releaseBinding(binding.boundId)
-      // Nobody typed, so the only difference between this element and the one
-      // the author wrote is the editor's own normalisation. Put their markup
-      // back. Inside the pause and the undo suppression with the teardown, so
-      // the restore is not itself an edit.
-      if (restore && binding.restorable()) {
-        binding.el.innerHTML = binding.originalHTML
-      }
-    })
-  } finally {
-    handle?.resume()
-  }
+      // destroy() takes data-richclay off only on richclay 0.5.0, which tracks
+      // who wrote it. Neither vendored 0.4.0 copy removes that attribute
+      // anywhere, so without this the mount selector stays on the live element
+      // and the next save carries it into the author's file, exactly what the
+      // clone-side removal exists to prevent. Never on an element the author
+      // opted in on: there the attribute is theirs.
+      if (binding.richClayIsOurs) binding.el.removeAttribute('data-richclay')
+    }
+    // The bridge only unmarks the snapshot clone. Left on the live element,
+    // the marker would tell the next snapshot to strip an element hypercms no
+    // longer owns, and the provenance flag beside it would reach the file.
+    binding.el.removeAttribute(BOUND_ATTR)
+    binding.el.removeAttribute(RC_OWNED_ATTR)
+    binding.el.removeAttribute(BOUND_ID_ATTR)
+    releaseBinding(binding.boundId)
+    // Nobody typed, so the only difference between this element and the one
+    // the author wrote is the editor's own normalisation. Put their markup
+    // back. Undo suppression keeps the restore from becoming an edit.
+    if (restore && binding.restorable()) {
+      replaceContent(binding.el, 'innerHTML', binding.originalHTML)
+    }
+  })
 }
 
 // The click that opens a text target lands before the element is editable, so
@@ -877,10 +879,15 @@ function focusEditor(binding) {
 // in that element on the next keystroke, including the node under the caret.
 function reconcileBindings(view, bindings, targets, doc) {
   const byEl = new Map()
-  for (const target of targets) byEl.set(target.el, target)
+  for (const target of targets) {
+    const candidates = byEl.get(target.el)
+    if (candidates) candidates.push(target)
+    else byEl.set(target.el, [target])
+  }
 
   for (const [el, binding] of [...bindings]) {
-    const target = byEl.get(el)
+    const candidates = byEl.get(el) || []
+    const target = candidates.find((candidate) => projectionOf(candidate) === binding.prop) || candidates[0]
     if (!target) {
       // The rules no longer name this element. Left bound it stays editable with
       // nowhere of its own to write, and every keystroke commits the old path,
@@ -911,6 +918,10 @@ function reconcileBindings(view, bindings, targets, doc) {
   return byEl
 }
 
+function sameTargetBinding(left, right) {
+  return left.el === right.el && left.kind === right.kind && left.attr === right.attr
+}
+
 // A text target is either a bare rule (textContent) or one prepareRules rebound
 // to @innerHTML. Nothing else is ever text.
 function projectionOf(target) {
@@ -922,31 +933,32 @@ function projectionOf(target) {
 function sweepOrphanEditors(ctx, bindings, doc) {
   for (const el of ctx.pageRoot.querySelectorAll(`[${BOUND_ATTR}]`)) {
     if (bindings.has(el)) continue
-    const handle = ctx.observerHandle
-    handle?.pause()
-    try {
-      suppressUndo(() => stripOrphanEditorState(el, doc.defaultView))
-    } finally {
-      handle?.resume()
-    }
+    suppressUndo(() => stripOrphanEditorState(el, doc.defaultView))
   }
 }
 
-// Show exactly one leaf: mark it active, and mark every wrapper between it and
-// the form root, each of which the one-field-at-a-time rule would otherwise
-// leave hidden around it. Returns the leaf, or null when the path is not in the
-// form. The walk stops AT the form root and never above it: <body> and <html>
-// are the author's elements, they reach the saved file, and clearPathClasses
-// only queries downward from the host so a class left up there never comes off.
+// Keep the complete form mounted for extraction, but reveal only the selected
+// field and its item siblings. Nested lists keep their own editing scope.
 function revealPath(view, host, path) {
   const leaf = view.formRoot &&
     view.formRoot.querySelector(`[data-hcms-path="${cssEscape(path)}"]`)
   clearPathClasses(host.root)
   if (!leaf) return null
-  leaf.classList.add(ACTIVE_CLASS)
-  for (let el = leaf.parentElement; el; el = el.parentElement) {
-    el.classList.add(ONPATH_CLASS)
-    if (el === view.formRoot) break
+  const item = leaf.closest('[data-hcms-card]')
+  const fields = item
+    ? [...item.querySelectorAll('[data-hcms-shape="scalar"][data-hcms-path]')]
+      .filter((field) => field.closest('[data-hcms-card]') === item &&
+        field.closest('[data-hcms-shape="object-array"], [data-hcms-shape="scalar-array"]') === item.parentElement.closest('[data-hcms-shape="object-array"]'))
+    : [leaf]
+  if (!fields.includes(leaf)) fields.push(leaf)
+  for (const field of fields) {
+    field.classList.add(ACTIVE_CLASS)
+    field.removeAttribute('draggable')
+    for (let el = field.parentElement; el; el = el.parentElement) {
+      el.classList.add(ONPATH_CLASS)
+      el.removeAttribute('draggable')
+      if (el === view.formRoot) break
+    }
   }
   return leaf
 }
@@ -993,6 +1005,7 @@ function mountInlineHost(doc, theme) {
   // content. Reused rather than renamed: it is already honored in seven places
   // across six files, and each of them covers this host for free.
   root.setAttribute('data-hcms-shell', '')
+  root.setAttribute('editor-ui', '')
 
   // Both spellings of "never persist this", because the two clients each have a
   // path that knows only one of them. clayjs strips [no-save] and [save-remove]
@@ -1017,21 +1030,28 @@ function mountInlineHost(doc, theme) {
 
   root.innerHTML = `
     <div class="hcms-inline-bar">
-      <div class="hcms-inline-count" hidden></div>
       <div class="hcms-inline-handoff" hidden>
         <span class="hcms-inline-handoff-count"></span>
         <button type="button" class="hcms-inline-handoff-open mirk-button mirk-button--small" data-hcms-open-view="sidebar">
           <span class="mirk-button__label">Edit in the sidebar</span>
         </button>
       </div>
-      <button type="button" class="hcms-inline-toggle mirk-button mirk-button--small" data-hcms-controls-toggle aria-pressed="false">
+      <button type="button" class="hcms-inline-toggle mirk-button mirk-button--small" data-hcms-controls-toggle aria-pressed="false" hidden>
         <span class="mirk-button__label">Hide controls</span>
       </button>
       <div class="hcms-inline-notice" role="status" hidden></div>
       <div class="hcms-inline-error" role="alert" hidden></div>
     </div>
     <div class="hcms-inline-layer"></div>
-    <div class="hcms-inline-pop" hidden><div data-hcms-form-root class="hcms-form"></div></div>
+    <div class="hcms-inline-pop" role="dialog" aria-label="Edit content" hidden>
+      <div class="hcms-inline-pop-header">
+        <span>Edit content</span>
+        <button type="button" class="hcms-inline-pop-close mirk-button mirk-button--small" aria-label="Close field editor">
+          <span class="mirk-button__label">${inlineIcon('remove')}</span>
+        </button>
+      </div>
+      <div data-hcms-form-root class="hcms-form"></div>
+    </div>
   `
 
   doc.body.appendChild(root)
@@ -1041,11 +1061,11 @@ function mountInlineHost(doc, theme) {
     formRoot: root.querySelector('[data-hcms-form-root]'),
     noticeEl: root.querySelector('.hcms-inline-notice'),
     errorEl: root.querySelector('.hcms-inline-error'),
-    countEl: root.querySelector('.hcms-inline-count'),
     handoffEl: root.querySelector('.hcms-inline-handoff'),
     handoffCountEl: root.querySelector('.hcms-inline-handoff-count'),
     layerEl: root.querySelector('.hcms-inline-layer'),
     popEl: root.querySelector('.hcms-inline-pop'),
+    closeEl: root.querySelector('.hcms-inline-pop-close'),
     toggleEl: root.querySelector('[data-hcms-controls-toggle]'),
     destroy() { root.remove() },
   }

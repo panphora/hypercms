@@ -101,7 +101,7 @@ function teardown() {
   if (window.hyperclay) delete window.hyperclay.Mutation
 }
 
-const fieldInput = (formRoot, path, sel = 'input') => formRoot.querySelector(`[data-hcms-path="${path}"] ${sel}`)
+const fieldInput = (formRoot, path, sel = 'textarea') => formRoot.querySelector(`[data-hcms-path="${path}"] ${sel}`)
 const fire = (el, type) => el.dispatchEvent(new Event(type, { bubbles: true }))
 
 describe('hypercms × Pixel Quiet — render', () => {
@@ -118,10 +118,10 @@ describe('hypercms × Pixel Quiet — render', () => {
     expect(shell.querySelector('.hcms-shell-body [data-hcms-form-root]')).to.exist
   })
 
-  it('renders the default scalars as mirk-input', () => {
-    expect(fieldInput(formRoot, 'title')).to.have.class('mirk-input')
+  it('renders the default scalars as mirk textareas', () => {
+    expect(fieldInput(formRoot, 'title')).to.have.class('mirk-textarea')
     expect(fieldInput(formRoot, 'title').value).to.equal('Hyperclay')
-    expect(fieldInput(formRoot, 'tagline')).to.have.class('mirk-input')
+    expect(fieldInput(formRoot, 'tagline')).to.have.class('mirk-textarea')
   })
 
   it('renders the per-field mirk components (toggle / select / radio / chips)', () => {

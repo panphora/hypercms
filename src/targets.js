@@ -8,7 +8,7 @@
 // inline view needs the resolved element and the real row index, because it puts
 // a control on each one.
 
-import domAdapter from 'hyper-html-api/dom'
+import { createDomAdapter } from 'hyper-html-api/dom'
 import { ruleAttrIndex } from 'hyper-html-api/engine'
 
 const FIND_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
@@ -48,24 +48,29 @@ const NON_TEXT_TAGS = new Set([
 ])
 
 export function resolveTargets(root, rules) {
+  return resolvePageTargets(root, rules)
+}
+
+function resolvePageTargets(root, rules) {
   const targets = []
   const lists = []
-  walk(root, rules, [], targets, lists)
+  const adapter = createDomAdapter(root)
+  walk(adapter, root, rules, [], targets, lists)
   return { targets, lists }
 }
 
-function walk(ctx, rule, path, targets, lists) {
+function walk(adapter, ctx, rule, path, targets, lists) {
   if (typeof rule === 'string') {
     // A scalar array ("ul.tags li[]"): every match is its own editable item, and
     // the run of them is a list that can be added to and removed from.
     if (rule.endsWith('[]')) {
       const selector = rule.slice(0, -2)
       if (!selector) return
-      const items = find(ctx, selector)
+      const items = find(adapter, ctx, selector)
       items.forEach((el, i) => {
         targets.push(describe([...path, i], el, rule, null))
       })
-      lists.push(makeList(ctx, path, selector, items, true))
+      lists.push(makeList(adapter, ctx, path, selector, items, true))
       return
     }
     const at = ruleAttrIndex(rule)
@@ -73,7 +78,7 @@ function walk(ctx, rule, path, targets, lists) {
     const selector = at === -1 ? rule : rule.slice(0, at)
     // "." and a bare "@attr" both address the context node itself, so they can
     // never fail to resolve and there is nothing to query.
-    const el = !selector || selector === '.' ? ctx : find(ctx, selector)[0]
+    const el = !selector || selector === '.' ? ctx : find(adapter, ctx, selector)[0]
     if (el) targets.push(describe(path, el, rule, attr))
     return
   }
@@ -81,24 +86,24 @@ function walk(ctx, rule, path, targets, lists) {
   if (Array.isArray(rule)) {
     const [selector, shape] = rule
     if (typeof selector !== 'string' || !selector) return
-    const items = find(ctx, selector)
-    items.forEach((el, i) => walk(el, shape, [...path, i], targets, lists))
-    lists.push(makeList(ctx, path, selector, items, typeof shape === 'string'))
+    const items = find(adapter, ctx, selector)
+    items.forEach((el, i) => walk(adapter, el, shape, [...path, i], targets, lists))
+    lists.push(makeList(adapter, ctx, path, selector, items, typeof shape === 'string'))
     return
   }
 
   if (rule && typeof rule === 'object') {
-    for (const [key, sub] of Object.entries(rule)) walk(ctx, sub, [...path, key], targets, lists)
+    for (const [key, sub] of Object.entries(rule)) walk(adapter, ctx, sub, [...path, key], targets, lists)
   }
 }
 
 // `container` is where a new row goes. With rows present it is their shared
 // parent; with none it comes from the seed, which is why an emptied list can
 // still be grown back.
-function makeList(ctx, path, selector, items, scalar) {
+function makeList(adapter, ctx, path, selector, items, scalar) {
   let container = items[0] ? items[0].parentElement : null
   if (!container) {
-    const seed = find(ctx, selector, SEED_OPTS)[0]
+    const seed = find(adapter, ctx, selector, SEED_OPTS)[0]
     container = seed ? seed.parentElement : null
   }
   return { path, items, container, scalar }
@@ -131,9 +136,9 @@ function iconOf(el, attr) {
   return 'pencil'
 }
 
-function find(ctx, selector, opts = FIND_OPTS) {
+function find(adapter, ctx, selector, opts = FIND_OPTS) {
   try {
-    return domAdapter.find(ctx, selector, opts)
+    return adapter.find(ctx, selector, opts)
   } catch (_) {
     // unresolved.js already turns an invalid selector into a named
     // InvalidRuleSelector before the first extract, so by the time the inline

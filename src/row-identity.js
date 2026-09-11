@@ -8,12 +8,10 @@
  * form can, because it holds a handle the engine never sees, its own row
  * elements.
  *
- * Those elements are stable across the operations that matter. A keystroke
- * never rebuilds the form (applyWithRollback pauses the mutation observer
- * around apply), and add, remove and move mutate the form DOM in place rather
- * than re-rendering it. By the time commit() runs the form is already in its
- * new shape, so walking its rows in order gives the new item order with each
- * row still carrying the page node it came from. The permutation falls out.
+ * Those elements are stable across the operation itself. Add, remove and move
+ * mutate the form DOM in place before commit() writes the page. Walking its
+ * rows then gives the new item order with each row still carrying the page node
+ * it came from. The permutation falls out.
  *
  * refreshForm does re-render the form, through hyper-morph, when the page
  * changes underneath us (livesync, undo, another session). Rows rebuilt there

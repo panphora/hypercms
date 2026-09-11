@@ -312,3 +312,13 @@ test('extractFormData: round-trips data through the form rules', () => {
   assert.equal(data.title, 'Hello')
   assert.deepEqual(data.tags, ['x', 'y'])
 })
+
+test('extractFormData: reads the CMS form through the explicit raw DOM view', () => {
+  const { ctx } = setupCtx({
+    pageRules: { title: '.title' },
+    data: { title: 'Hello' },
+    pageHTML: '<h1 class="title">Hello</h1>',
+  })
+  ctx.formRoot.setAttribute('editor-ui', '')
+  assert.deepEqual(extractFormData(ctx), { title: 'Hello' })
+})

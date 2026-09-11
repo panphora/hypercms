@@ -1,4 +1,4 @@
-import domAdapter from 'hyper-html-api/dom'
+import { createDomAdapter } from 'hyper-html-api/dom'
 import { ruleAttrIndex, DOM_PROPERTIES_READ_ONLY_SET } from 'hyper-html-api/engine'
 
 const PREFIX = '[hypercms]'
@@ -29,7 +29,7 @@ export function findUnresolved(root, rules) {
   const missing = []
   const twins = []
   const readOnly = []
-  walk(root, rules, [], missing, twins, readOnly)
+  walk(createDomAdapter(root), root, rules, [], missing, twins, readOnly)
   return { missing: unique(missing), twins: uniqueTwins(twins), readOnly: unique(readOnly) }
 }
 
@@ -66,13 +66,13 @@ function strip(rule) {
   return rule
 }
 
-function walk(ctx, rule, path, missing, twins, readOnly) {
+function walk(adapter, ctx, rule, path, missing, twins, readOnly) {
   if (typeof rule === 'string') {
     const selector = selectorOf(rule)
     // Resolve the selector even for a read-only rule, so an invalid one still
     // becomes InvalidRuleSelector here rather than a raw SyntaxError out of the
     // extract that follows.
-    const matches = selector ? find(ctx, selector, FIND_OPTS, path) : []
+    const matches = selector ? find(adapter, ctx, selector, FIND_OPTS, path) : []
     // Reported on its own and never also as missing: the selector may well
     // match, and the reason the edit cannot land is the property, not the
     // element.
@@ -82,7 +82,7 @@ function walk(ctx, rule, path, missing, twins, readOnly) {
     }
     if (!selector) return
     if (rule.endsWith('[]')) {
-      if (matches.length === 0 && find(ctx, selector, SEED_OPTS, path).length === 0) {
+      if (matches.length === 0 && find(adapter, ctx, selector, SEED_OPTS, path).length === 0) {
         missing.push(pathStr(path))
       }
       return
@@ -95,25 +95,25 @@ function walk(ctx, rule, path, missing, twins, readOnly) {
   if (Array.isArray(rule)) {
     const [selector, shape] = rule
     if (typeof selector !== 'string' || !selector) return
-    const matches = find(ctx, selector, FIND_OPTS, path)
+    const matches = find(adapter, ctx, selector, FIND_OPTS, path)
     if (matches.length === 0) {
-      if (find(ctx, selector, SEED_OPTS, path).length === 0) missing.push(pathStr(path))
+      if (find(adapter, ctx, selector, SEED_OPTS, path).length === 0) missing.push(pathStr(path))
       return
     }
     // Rows collapse to one '*' segment, so a field broken on every row is
     // reported once rather than once per row.
-    for (const node of matches) walk(node, shape, [...path, '*'], missing, twins, readOnly)
+    for (const node of matches) walk(adapter, node, shape, [...path, '*'], missing, twins, readOnly)
     return
   }
 
   if (rule && typeof rule === 'object') {
-    for (const [key, sub] of Object.entries(rule)) walk(ctx, sub, [...path, key], missing, twins, readOnly)
+    for (const [key, sub] of Object.entries(rule)) walk(adapter, ctx, sub, [...path, key], missing, twins, readOnly)
   }
 }
 
-function find(ctx, selector, opts, path) {
+function find(adapter, ctx, selector, opts, path) {
   try {
-    return domAdapter.find(ctx, selector, opts)
+    return adapter.find(ctx, selector, opts)
   } catch (err) {
     throw new InvalidRuleSelector(pathStr(path), selector, err)
   }

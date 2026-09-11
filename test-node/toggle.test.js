@@ -75,6 +75,28 @@ function spyApi(overrides = {}) {
   }
 }
 
+test('injectToggle: follows the active session theme instead of the OS default', () => {
+  const dom = setupDom()
+  try {
+    let theme = 'light'
+    const host = injectToggle(spyApi({ getTheme: () => theme }), dom.window.document)
+    assert.equal(host.classList.contains('light'), true)
+    assert.equal(host.classList.contains('dark'), false)
+    theme = 'dark'
+    dom.window.document.dispatchEvent(new dom.window.Event('hcms:open'))
+    assert.equal(host.classList.contains('dark'), true)
+    assert.equal(host.classList.contains('light'), false)
+    theme = undefined
+    dom.window.document.dispatchEvent(new dom.window.Event('hcms:close'))
+    assert.equal(host.classList.contains('light'), false)
+    assert.equal(host.classList.contains('dark'), false)
+  } finally {
+    dom.window.close()
+    delete globalThis.window
+    delete globalThis.document
+  }
+})
+
 test('injectToggle: builds the button with the strip attributes, once', () => {
   const dom = setupDom()
   const api = spyApi()
@@ -102,7 +124,9 @@ test('injectToggle: builds the button with the strip attributes, once', () => {
   assert.ok(style.hasAttribute('snapshot-remove'))
   assert.ok(style.hasAttribute('save-ignore'))
   assert.equal(dom.window.document.head.firstChild, style, 'style is prepended, not appended')
-  assert.equal(dom.window.document.head.children.length, 2, 'and the page keeps what it had')
+  assert.equal(dom.window.document.head.children.length, 3, 'the toggle installs its shared Mirk theme and preserves the page head')
+  assert.ok(btn.classList.contains('pixel-quiet'))
+  assert.ok(main.classList.contains('mirk-button'))
   assert.equal(injectToggle(api, dom.window.document), btn, 'second call returns the same node')
   assert.equal(dom.window.document.querySelectorAll('[data-hcms-toggle-host]').length, 1)
   assert.equal(dom.window.document.querySelectorAll('#hcms-toggle-style').length, 1)

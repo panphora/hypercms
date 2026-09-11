@@ -1,6 +1,5 @@
-// The visible layer of the inline view: one handle per non-text target, one
-// ↑ ↓ ✕ strip per list row and one Add per list, drawn over the page and kept in
-// step with it.
+// Each item has one positioned container for its edit and row-action buttons.
+// List Add controls live in an excluded placeholder after the real rows.
 //
 // Two mechanisms, kept deliberately separate, because merging them was the first
 // draft's mistake (plan §3.1.2 and §3.5). An IntersectionObserver answers "is
@@ -18,14 +17,13 @@
 
 import { placeHandle } from '../place.js'
 import { isAnchorable } from '../anchor.js'
+import { inlineIcon } from '../inline-icons.js'
+import { createInlineGhosts } from './inline-ghosts.js'
 
-// The strip, in the order it reads. Spelled out as data because the first/last
-// rule below is about which of these three a row gets, and a rule is easier to
-// see against a list than against three blocks of markup.
+// Move actions retain the first/last-row availability rules.
 const ROW_ACTIONS = [
-  ['move-up', '↑', 'Move up'],
-  ['move-down', '↓', 'Move down'],
-  ['remove', '✕', 'Remove'],
+  ['move-up', 'Move up'],
+  ['move-down', 'Move down'],
 ]
 
 // A list control is pinned INSIDE its anchor's top-right corner. 'corner'
@@ -37,10 +35,7 @@ const ROW_ACTIONS = [
 // a strip pinned to the card's top-right, inside it.
 const CONTROL_PLACEMENT = { prefer: 'corner', inset: 0 }
 
-// Can this row carry its own strip? Measured against the row's real box, never
-// guessed from its tag. Three buttons are ~84px wide at minimum and a run of
-// pills has a ~60px pitch, so a strip drawn on every such row would cover its
-// neighbours wherever it was put — geometry, not a placement bug.
+// Measure the complete toolbar, including the pencil, against the row's box.
 function hosts(row, strip) {
   return strip.width <= row.width && strip.height <= row.height
 }
@@ -53,14 +48,13 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
   // Anchor element -> the placements riding on it. One element can carry two:
   // in a scalar array of images, every row is also a handle target.
   let index = new Map()
-  // The count is the number of HANDLES, which is what the session bar reports as
-  // editable areas. A strip is not an area of its own; it operates on one.
   let handleCount = 0
   // Every resolved target, keyed by the page element it sits on — not just the
   // ones that got a handle. The highlight and the page-level click have to
   // reach a text or a native target too, and neither of those has an entry.
   let targets = new Map()
   let observer = null
+  let observedAnchors = new Set()
   let frame = 0
   let listening = false
   let follower = null
@@ -78,8 +72,15 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
   // A toggle, not a mode: the strips and the Adds go away and the handles stay,
   // so someone reading a page they are editing can see it without leaving the
   // session. Layer state rather than per-placement state, so it survives the
-  // rebuild every refresh does.
+  // target reconciliation on every refresh.
   let controlsHidden = false
+  let openSettings = null
+  const ghosts = createInlineGhosts({
+    doc,
+    themeRoot: layerEl.closest('[data-hcms-shell]'),
+    onResize: schedule,
+    onAdd: (list) => onListAction?.({ action: 'add', list, index: list.items.length }),
+  })
 
   // ONE reusable outline, moved to whatever is hovered. Marking each target
   // with an attribute instead would write editor state into an authored
@@ -106,27 +107,58 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
 
   function placeAll() {
     if (!win) return
+    ghosts.update()
     const viewport = { width: win.innerWidth, height: win.innerHeight }
     const revealed = revealedRow()
     for (const spot of placements) {
-      if (!spot.visible || (spot.control && controlsHidden)) {
+      if (!spot.visible) {
         spot.node.hidden = true
         continue
       }
+      for (const member of spot.members) member.node.hidden = controlsHidden && member.kind !== 'handle'
       // hidden must come off BEFORE measuring: a hidden node has a zero rect.
       spot.node.hidden = false
       const anchor = spot.el.getBoundingClientRect()
-      const handle = spot.node.getBoundingClientRect()
+      let handle = spot.node.getBoundingClientRect()
+      const fullWidth = handle.width
+      const tooSmall = spot.kind === 'row' && !hosts(anchor, handle)
       // A row too small to hold its strip shows it only while that row is the
       // one being pointed at or typed in. This deviates from §3.3's "always
       // visible", and only for rows that cannot physically hold the control.
-      if (spot.kind === 'row' && spot.el !== revealed && !hosts(anchor, handle)) {
+      if (tooSmall && spot.el !== revealed) {
+        for (const member of spot.members) {
+          if (member.kind === 'row') member.node.hidden = true
+        }
+        handle = spot.node.getBoundingClientRect()
+      }
+      if (spot.members.every((member) => member.node.hidden)) {
         spot.node.hidden = true
         continue
       }
       const prefer = spot.kind === 'handle' ? null : CONTROL_PLACEMENT
-      const { x, y } = placeHandle({ anchor, handle, viewport, ...prefer })
+      let { x, y } = placeHandle({ anchor, handle, viewport, ...prefer })
+      const pencil = spot.members.find((member) => member.kind === 'handle')
+      if (tooSmall && pencil) {
+        const pencilBox = pencil.node.getBoundingClientRect()
+        const position = placeHandle({ anchor, handle: pencilBox, viewport })
+        const afterPencil = spot.members.slice(spot.members.indexOf(pencil) + 1)
+          .filter((member) => !member.node.hidden)
+          .reduce((width, member) => width + member.node.getBoundingClientRect().width + 2, 0)
+        x = Math.max(8 + fullWidth, Math.min(viewport.width - 8, position.x + pencilBox.width + afterPencil)) - handle.width
+        y = position.y
+      }
       spot.node.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
+    }
+    if (openSettings) {
+      if (!openSettings.node.isConnected || openSettings.node.closest('[hidden]')) closeSettings()
+      else {
+        const rect = openSettings.button.getBoundingClientRect()
+        const menu = openSettings.menu.getBoundingClientRect()
+        openSettings.menu.style.left = `${Math.max(8, rect.right - menu.width) - rect.left}px`
+        openSettings.menu.style.right = 'auto'
+        openSettings.menu.style.top = rect.bottom + 6 + menu.height > viewport.height - 8 ? 'auto' : 'calc(100% + 6px)'
+        openSettings.menu.style.bottom = rect.bottom + 6 + menu.height > viewport.height - 8 ? 'calc(100% + 6px)' : 'auto'
+      }
     }
     placeHighlight()
     follower?.()
@@ -135,6 +167,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
   // The row `el` belongs to, walking up from it: one Map lookup per ancestor,
   // the same shape elementToTarget uses for targets.
   function rowAt(el) {
+    if (el?.closest?.('[data-hcms-ghost]')) return null
     for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
       const row = rowOwners.get(node)
       if (row) return row
@@ -143,6 +176,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
   }
 
   function onFocusIn(event) {
+    if (openSettings && !openSettings.node.contains(event.target)) closeSettings()
     const before = revealedRow()
     focusedRow = rowAt(event.target)
     // Focus landing on a strip's own button is the keyboard taking over, so the
@@ -171,26 +205,33 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     highlight.style.transform = `translate(${Math.round(rect.left)}px, ${Math.round(rect.top)}px)`
   }
 
-  function observe() {
+  function syncObservation() {
     if (!win || typeof win.IntersectionObserver !== 'function') {
-      // Degraded, not broken: treat everything as visible and let the placement
-      // pass and place.js's viewport clamp do what they can.
       for (const spot of placements) spot.visible = true
       return
     }
-    observer = new win.IntersectionObserver((records) => {
-      let changed = false
-      for (const record of records) {
-        for (const spot of index.get(record.target) || []) {
-          if (spot.visible !== record.isIntersecting) {
-            spot.visible = record.isIntersecting
-            changed = true
+    if (!observer) {
+      observer = new win.IntersectionObserver((records) => {
+        let changed = false
+        for (const record of records) {
+          for (const spot of index.get(record.target) || []) {
+            if (spot.visible !== record.isIntersecting) {
+              spot.visible = record.isIntersecting
+              changed = true
+            }
           }
         }
-      }
-      if (changed) schedule()
-    }, { threshold: 0 })
-    for (const el of index.keys()) observer.observe(el)
+        if (changed) schedule()
+      }, { threshold: 0 })
+    }
+    const next = new Set(index.keys())
+    for (const el of observedAnchors) {
+      if (!next.has(el)) observer.unobserve(el)
+    }
+    for (const el of next) {
+      if (!observedAnchors.has(el)) observer.observe(el)
+    }
+    observedAnchors = next
   }
 
   function listen() {
@@ -204,6 +245,8 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     // buttons and the page rows are in different subtrees.
     doc.addEventListener('focusin', onFocusIn)
     doc.addEventListener('focusout', onFocusOut)
+    doc.addEventListener('pointerdown', onOutsideSettings, true)
+    doc.addEventListener('keydown', onSettingsKeyDown, true)
     listening = true
   }
 
@@ -213,115 +256,321 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     win.removeEventListener('resize', schedule)
     doc.removeEventListener('focusin', onFocusIn)
     doc.removeEventListener('focusout', onFocusOut)
+    doc.removeEventListener('pointerdown', onOutsideSettings, true)
+    doc.removeEventListener('keydown', onSettingsKeyDown, true)
     listening = false
   }
 
-  // `kind` is 'handle', 'row' or 'add': it decides how the node is placed, and
-  // everything but a handle is a list control that Hide controls takes away.
-  function addPlacement(el, node, kind) {
-    const spot = { el, node, kind, control: kind !== 'handle', visible: false }
-    placements.push(spot)
-    const riders = index.get(el)
-    if (riders) riders.push(spot)
-    else index.set(el, [spot])
-    layerEl.appendChild(node)
-    return spot
+  function targetIdentity(target) {
+    return `${target.kind}\0${target.attr || ''}`
+  }
+
+  function sameList(left, right) {
+    return left.container === right.container &&
+      left.scalar === right.scalar
+  }
+
+  function sameMember(member, spec) {
+    if (member.kind !== spec.kind) return false
+    if (member.kind === 'handle') return targetIdentity(member.target) === targetIdentity(spec.target)
+    if (member.kind === 'row') return member.row === spec.row && sameList(member.list, spec.list)
+    return sameList(member.list, spec.list)
+  }
+
+  function updateHandle(member, target) {
+    member.target = target
+    const path = target.path.join('.')
+    member.node.setAttribute('data-hcms-target', path)
+    if (target.icon) member.node.setAttribute('data-hcms-icon', target.icon)
+    else member.node.removeAttribute('data-hcms-icon')
+    member.node.setAttribute('aria-label', `Edit ${path}`)
   }
 
   function makeHandle(target) {
-    const path = target.path.join('.')
     const button = doc.createElement('button')
     button.type = 'button'
     button.className = 'hcms-inline-handle mirk-button mirk-button--small'
-    button.setAttribute('data-hcms-target', path)
-    // The icon kind is carried as data rather than as a different glyph: one
-    // mark reads as one affordance, and CSS can differentiate later without
-    // changing the markup.
-    if (target.icon) button.setAttribute('data-hcms-icon', target.icon)
-    button.setAttribute('aria-label', `Edit ${path}`)
-    button.innerHTML = '<span class="mirk-button__label">✎</span>'
+    button.innerHTML = `<span class="mirk-button__label">${inlineIcon('edit')}</span>`
+    const member = { node: button, kind: 'handle', target }
+    updateHandle(member, target)
     button.addEventListener('click', (event) => {
       event.preventDefault()
       event.stopPropagation()
-      onActivate?.(target, button)
+      onActivate?.(member.target, button)
     })
-    return button
+    return member
   }
 
-  function makeListButton(action, glyph, label) {
+  function makeListButton(action, label) {
     const button = doc.createElement('button')
     button.type = 'button'
     button.className = 'hcms-inline-list-button mirk-button mirk-button--small'
     button.setAttribute('data-hcms-list-action', action)
     button.setAttribute('aria-label', label)
-    button.innerHTML = `<span class="mirk-button__label">${glyph}</span>`
+    button.innerHTML = `<span class="mirk-button__label">${inlineIcon(action)}${action === 'add' ? '<span>Add</span>' : ''}</span>`
     return button
   }
 
   // One row's strip. The index is stamped here because the first-row and
-  // last-row visibility rules below need the position the layer was built with.
+  // last-row availability rules below need the position the layer was built with.
   // The action deliberately does NOT trust it: listAction re-resolves the row
   // from the element it is handed, because a refresh trails a structural change
   // by an observer batch, and a second click inside that window would otherwise
   // act on whatever had taken this row's number.
-  function makeRowControls(list, row, rowIndex, count) {
+  function updateRowControls(member, { list, row, rowIndex, count }) {
     const path = list.path.join('.')
+    member.list = list
+    member.row = row
+    member.index = rowIndex
+    member.count = count
+    member.node.setAttribute('data-hcms-list', path)
+    member.node.setAttribute('data-hcms-row', String(rowIndex))
+    for (const button of member.node.querySelectorAll('[data-hcms-list-action]')) {
+      const action = button.getAttribute('data-hcms-list-action')
+      const label = ROW_ACTIONS.find(([name]) => name === action)?.[1] || action
+      button.setAttribute('aria-label', `${label} ${path}.${rowIndex}`)
+      button.disabled = (action === 'move-up' && rowIndex === 0) ||
+        (action === 'move-down' && rowIndex === count - 1)
+    }
+  }
+
+  function makeRowControls(list, row, rowIndex, count) {
     const strip = doc.createElement('div')
     strip.className = 'hcms-inline-row-controls'
-    strip.setAttribute('data-hcms-list', path)
-    strip.setAttribute('data-hcms-row', String(rowIndex))
-    for (const [action, glyph, label] of ROW_ACTIONS) {
-      const button = makeListButton(action, glyph, `${label} ${path}.${rowIndex}`)
-      // The same rule updateArrayButtonsVisibility applies to the sidebar's own
-      // buttons (events.js:855), rather than a second rule that could disagree
-      // with it: the first row cannot move up, the last cannot move down.
-      if (action === 'move-up' && rowIndex === 0) button.hidden = true
-      if (action === 'move-down' && rowIndex === count - 1) button.hidden = true
+    const member = { node: strip, kind: 'row', list, row, index: rowIndex, count }
+    for (const [action, label] of ROW_ACTIONS) {
+      const button = makeListButton(action, label)
       button.addEventListener('click', (event) => {
         event.preventDefault()
         event.stopPropagation()
-        onListAction?.({ action, list, index: rowIndex, row })
+        if (button.disabled) return
+        onListAction?.({
+          action,
+          list: member.list,
+          index: member.index,
+          row: member.row,
+        })
       })
       strip.appendChild(button)
     }
-    return strip
+    updateRowControls(member, { list, row, rowIndex, count })
+    return member
   }
 
-  function makeAdd(list) {
-    const path = list.path.join('.')
-    const button = makeListButton('add', '+ Add', `Add to ${path || 'the list'}`)
-    button.classList.add('hcms-inline-list-add')
-    button.setAttribute('data-hcms-list', path)
+  function closeSettings(restoreFocus = false) {
+    if (!openSettings) return
+    const member = openSettings
+    openSettings = null
+    member.menu.hidden = true
+    member.button.setAttribute('aria-expanded', 'false')
+    member.node.parentElement?.classList.remove('has-open-settings')
+    if (restoreFocus && member.button.isConnected) member.button.focus({ preventScroll: true })
+  }
+
+  function onOutsideSettings(event) {
+    if (openSettings && !openSettings.node.contains(event.target)) closeSettings()
+  }
+
+  function onSettingsKeyDown(event) {
+    if (!openSettings) return
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeSettings(true)
+    } else if (event.key === 'Tab') closeSettings(true)
+    else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) && openSettings.menu.contains(event.target)) {
+      event.preventDefault()
+      openSettings.menu.querySelector('[role="menuitem"]').focus({ preventScroll: true })
+    }
+  }
+
+  function updateSettings(member, { list, row, rowIndex }) {
+    Object.assign(member, { list, row, index: rowIndex })
+    member.node.setAttribute('data-hcms-list', list.path.join('.'))
+    member.node.setAttribute('data-hcms-row', String(rowIndex))
+    member.button.setAttribute('aria-label', `Settings ${list.path.join('.')}.${rowIndex}`)
+  }
+
+  function makeSettings(spec) {
+    const node = doc.createElement('div')
+    node.className = 'hcms-inline-settings'
+    const button = makeListButton('settings', 'Settings')
+    button.setAttribute('aria-haspopup', 'menu')
+    button.setAttribute('aria-expanded', 'false')
+    const menu = doc.createElement('div')
+    menu.className = 'hcms-inline-settings-menu'
+    menu.setAttribute('role', 'menu')
+    menu.setAttribute('aria-label', 'Item settings')
+    menu.hidden = true
+    const remove = doc.createElement('button')
+    remove.type = 'button'
+    remove.setAttribute('role', 'menuitem')
+    remove.setAttribute('data-hcms-list-action', 'remove')
+    remove.textContent = 'Delete'
+    menu.appendChild(remove)
+    node.append(button, menu)
+    const member = { node, button, menu, kind: 'settings' }
+    updateSettings(member, spec)
+    const show = () => {
+      closeSettings()
+      openSettings = member
+      menu.hidden = false
+      button.setAttribute('aria-expanded', 'true')
+      node.parentElement.classList.add('has-open-settings')
+      remove.focus({ preventScroll: true })
+      schedule()
+    }
     button.addEventListener('click', (event) => {
       event.preventDefault()
       event.stopPropagation()
-      onListAction?.({ action: 'add', list, index: list.items.length })
+      if (openSettings === member) closeSettings(true)
+      else show()
     })
-    return button
+    button.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        show()
+      }
+    })
+    remove.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      closeSettings(true)
+      onListAction?.({ action: 'remove', list: member.list, index: member.index, row: member.row })
+    })
+    return member
   }
 
-  function addListControls(list) {
+  function updateMember(member, spec) {
+    if (member.kind === 'handle') updateHandle(member, spec.target)
+    else if (member.kind === 'row') updateRowControls(member, spec)
+    else if (member.kind === 'settings') updateSettings(member, spec)
+  }
+
+  function addDesired(desired, desiredIndex, el, spec, category) {
+    let spot = desiredIndex.get(el)?.find((candidate) => candidate.category === category)
+    if (!spot) {
+      spot = { el, category, members: [] }
+      desired.push(spot)
+      const riders = desiredIndex.get(el)
+      if (riders) riders.push(spot)
+      else desiredIndex.set(el, [spot])
+    }
+    spot.members.push(spec)
+  }
+
+  function addListControls(desired, desiredIndex, list) {
     const rows = list.items || []
     rows.forEach((el, i) => {
-      // The same floor the handles clear. A row below it cannot carry a strip
-      // any better than it can carry a handle, and the strip would end up at the
-      // viewport clamp with nothing to belong to.
       if (!isAnchorable(el)) return
-      const strip = makeRowControls(list, el, i, rows.length)
-      addPlacement(el, strip, 'row')
-      rowOwners.set(el, el)
-      rowOwners.set(strip, el)
+      addDesired(desired, desiredIndex, el, {
+        kind: 'row', list, row: el, rowIndex: i, count: rows.length,
+      }, 'item')
+      addDesired(desired, desiredIndex, el, {
+        kind: 'settings', list, row: el, rowIndex: i,
+      }, 'item')
     })
-    // Deliberately NOT gated on isAnchorable, unlike the rows above. An emptied
-    // list is the one most in need of an Add, and a <ul> holding nothing but its
-    // hidden [cms-template] seed measures zero height — the floor would take the
-    // Add away from exactly the list that cannot be grown any other way.
-    if (list.container) addPlacement(list.container, makeAdd(list), 'add')
+  }
+
+  function reconcileMembers(spot, specs) {
+    const unused = new Set(spot.members)
+    const next = []
+    for (const spec of specs) {
+      const member = spot.members.find((candidate) => unused.has(candidate) && sameMember(candidate, spec)) ||
+        (spec.kind === 'handle'
+          ? makeHandle(spec.target)
+          : spec.kind === 'row'
+            ? makeRowControls(spec.list, spec.row, spec.rowIndex, spec.count)
+            : makeSettings(spec))
+      unused.delete(member)
+      updateMember(member, spec)
+      if (controlsHidden && member.kind !== 'handle') member.node.hidden = true
+      next.push(member)
+    }
+    for (const member of unused) {
+      if (member === openSettings) closeSettings()
+      member.node.remove()
+    }
+    next.sort((left, right) => ['row', 'handle', 'settings'].indexOf(left.kind) - ['row', 'handle', 'settings'].indexOf(right.kind))
+    next.forEach((member, i) => {
+      if (spot.node.children[i] !== member.node) spot.node.insertBefore(member.node, spot.node.children[i] || null)
+    })
+    spot.members = next
+  }
+
+  function reconcile(targetList, lists) {
+    const desired = []
+    const desiredIndex = new Map()
+    const nextTargets = new Map()
+    let nextHandleCount = 0
+    for (const target of targetList || []) {
+      if (!nextTargets.has(target.el)) nextTargets.set(target.el, target)
+      if (target.kind !== 'handle' || !isAnchorable(target.el)) continue
+      addDesired(desired, desiredIndex, target.el, { kind: 'handle', target }, 'item')
+      nextHandleCount++
+    }
+    for (const list of lists || []) addListControls(desired, desiredIndex, list)
+
+    const unused = new Set(placements)
+    const visibility = new Map()
+    for (const spot of placements) {
+      if (!visibility.has(spot.el)) visibility.set(spot.el, spot.visible)
+    }
+    const next = []
+    for (const wanted of desired) {
+      let spot = placements.find((candidate) =>
+        unused.has(candidate) && candidate.el === wanted.el && candidate.category === wanted.category)
+      if (!spot) {
+        const container = doc.createElement('div')
+        container.className = 'hcms-inline-item-controls'
+        container.setAttribute('role', 'group')
+        spot = {
+          el: wanted.el,
+          node: container,
+          category: wanted.category,
+          kind: wanted.category === 'add' ? 'add' : 'handle',
+          members: [],
+          visible: visibility.get(wanted.el) ?? false,
+        }
+        layerEl.appendChild(container)
+      }
+      unused.delete(spot)
+      spot.el = wanted.el
+      spot.category = wanted.category
+      reconcileMembers(spot, wanted.members)
+      spot.kind = spot.members.some((member) => member.kind === 'row')
+        ? 'row'
+        : spot.members.some((member) => member.kind === 'handle') ? 'handle' : 'add'
+      spot.node.setAttribute('aria-label', spot.category === 'add' ? 'List controls' : 'Item controls')
+      next.push(spot)
+    }
+    for (const spot of unused) spot.node.remove()
+
+    placements = next
+    index = new Map()
+    rowOwners = new Map()
+    for (const spot of placements) {
+      const riders = index.get(spot.el)
+      if (riders) riders.push(spot)
+      else index.set(spot.el, [spot])
+      for (const member of spot.members) {
+        if (member.kind !== 'row' && member.kind !== 'settings') continue
+        rowOwners.set(member.row, member.row)
+        rowOwners.set(member.node, member.row)
+        rowOwners.set(spot.node, member.row)
+      }
+    }
+    if (hoveredRow && !rowOwners.has(hoveredRow)) hoveredRow = null
+    if (focusedRow && !rowOwners.has(focusedRow)) focusedRow = null
+    targets = nextTargets
+    handleCount = nextHandleCount
   }
 
   function clearEntries() {
+    closeSettings()
     observer?.disconnect()
     observer = null
+    observedAnchors = new Set()
     for (const spot of placements) spot.node.remove()
     placements = []
     index = new Map()
@@ -332,23 +581,9 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
 
   return {
     setTargets(list, lists) {
-      clearEntries()
-      for (const target of list || []) {
-        // Indexed whatever its kind, because the highlight and the click reach
-        // every target; the handle below is the part only 'handle' gets.
-        targets.set(target.el, target)
-        // Only the 'handle' kind gets one, which is what the kind name says. A
-        // text target's affordance is the caret richclay puts in it, and a
-        // native target already carries its own control: targets.js is explicit
-        // that a native gets "nothing at all". A handle over a live <input>
-        // would cover the very control it was advertising.
-        if (target.kind !== 'handle') continue
-        if (!isAnchorable(target.el)) continue
-        addPlacement(target.el, makeHandle(target), 'handle')
-        handleCount++
-      }
-      for (const listSpec of lists || []) addListControls(listSpec)
-      observe()
+      reconcile(list, lists)
+      ghosts.setLists(lists)
+      syncObservation()
       listen()
       schedule()
     },
@@ -362,8 +597,13 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     // gives them their coordinates back.
     setControlsHidden(hidden) {
       controlsHidden = !!hidden
+      ghosts.setHidden(controlsHidden)
       if (controlsHidden) {
-        for (const spot of placements) if (spot.control) spot.node.hidden = true
+        closeSettings()
+        for (const spot of placements) {
+          for (const member of spot.members) if (member.kind !== 'handle') member.node.hidden = true
+          if (spot.members.every((member) => member.node.hidden)) spot.node.hidden = true
+        }
       }
       schedule()
     },
@@ -371,6 +611,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     // The nearest target containing `el`, walking up from it. One Map lookup
     // per ancestor rather than a scan of the target list per pointer event.
     elementToTarget(el) {
+      if (el?.closest?.('[data-hcms-ghost]')) return null
       for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
         const target = targets.get(node)
         if (target) return target
@@ -407,6 +648,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     },
 
     destroy() {
+      ghosts.destroy()
       if (frame && win) win.cancelAnimationFrame(frame)
       frame = 0
       follower = null

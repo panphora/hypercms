@@ -11,13 +11,13 @@ scoped so nothing leaks onto the host page.
   are local and unpushed — see **Post-ship refinements**.
 - Publishes for hyperclayjs / `@panphora/hyper-cms` remain parked on the `/_/` deploy (project memory).
 
-Goal restated: the Pixel Quiet mockup (`cms-sidebar/pixel-quiet/index.html`) is static, hand-authored
+Goal restated: the Pixel Quiet mockup (`ARCHIVE_PROJECTS/cms-sidebar/pixel-quiet/index.html`) is static, hand-authored
 HTML. hypercms *generates* its form from a page's rules plus templates and binds/saves it. This work
 bridged the two: the engine emits mirk markup, the shell adopts the pixel-quiet geometry, and the
 bundled shell CSS became scoped mirk plus the pixel-quiet token retune.
 
-Sources: look = `cms-sidebar/pixel-quiet/{index.html,overrides.css}`; class mapping + rationale =
-`cms-sidebar/cms-sidebar-plan.md`; the phase roadmap that asked for this = `cms-sidebar/pixel-quiet-plan.md` (Phase 4).
+Sources: look = `ARCHIVE_PROJECTS/cms-sidebar/pixel-quiet/{index.html,overrides.css}`; class mapping + rationale =
+`ARCHIVE_PROJECTS/cms-sidebar/cms-sidebar-plan.md`; the phase roadmap that asked for this = `ARCHIVE_PROJECTS/cms-sidebar/pixel-quiet-plan.md` (Phase 4).
 
 ## What shipped
 

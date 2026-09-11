@@ -7,7 +7,7 @@ import { JSDOM } from 'jsdom'
 // form state — if those reference the previous realm, the check silently
 // fails and form values don't morph.
 const FORCE_REFRESH = [
-  'Node', 'Element', 'HTMLElement', 'HTMLTemplateElement', 'Document',
+  'Node', 'Element', 'HTMLElement', 'HTMLTemplateElement', 'Document', 'DOMParser',
   'DocumentFragment', 'Event', 'CustomEvent', 'NodeList', 'HTMLCollection',
   'MutationObserver', 'Text', 'Comment', 'CSS',
   // Form-state-relevant classes for hyper-morph cross-realm checks:
@@ -16,8 +16,8 @@ const FORCE_REFRESH = [
   'HTMLButtonElement', 'HTMLFormElement', 'HTMLLabelElement',
 ]
 
-export function loadPage(html) {
-  const dom = new JSDOM(html, { url: 'http://localhost/', pretendToBeVisual: true })
+export function loadPage(html, options = {}) {
+  const dom = new JSDOM(html, { url: 'http://localhost/', pretendToBeVisual: true, ...options })
   // jsdom implements no window.CSS at all, and hyper-morph calls CSS.escape the
   // moment a morph has to move an element by id — which a full-document morph
   // over a page carrying ids does. Without this the morph throws

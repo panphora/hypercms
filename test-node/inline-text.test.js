@@ -1333,12 +1333,13 @@ test('F2: an open popover follows its row through a move', () => {
     const ctx = state.ctx
     const rowTwo = t.doc.querySelectorAll('.product')[1]
     ctx.view.activate(targetNamed(ctx, 'products.1.sku'))
-    assert.equal(activePath(t), 'products.1.sku', 'the popover opened over the middle row')
+    const shown = () => [...t.doc.querySelectorAll('.is-hcms-inline-active')].map((el) => el.getAttribute('data-hcms-path'))
+    assert.deepEqual(shown(), ['products.1.name', 'products.1.sku'], 'the popover opened both fields of the middle row')
 
     ctx.view.listAction({ action: 'move-up', list: listNamed(ctx, 'products'), index: 1, row: rowTwo })
     refresh()
 
-    assert.equal(activePath(t), 'products.0.sku', 'and it is still editing the row it was anchored over')
+    assert.deepEqual(shown(), ['products.0.name', 'products.0.sku'], 'both fields still belong to the row it was anchored over')
   } finally {
     close()
   }
@@ -1613,25 +1614,20 @@ test('F11: a row the engine cloned off a bound one does not stay editable', () =
   reset(t.dom)
 })
 
-test('F11: the clone a rolled-back apply put on the page does not stay editable', () => {
+test('F11: rollback preserves the live rich-text binding and node identity', () => {
   const t = boot(EMPTY_LIST)
   try {
     const title = t.doc.querySelector('.title')
     click(t, title)
     assert.equal(title.getAttribute('data-hcms-bound'), 'rich')
 
-    // Nothing to clone, so the apply raises EmptyListInsert and the rollback
-    // restores clones of every non-shell child (apply-loop.js:145).
+    // Nothing to clone, so the apply raises EmptyListInsert. The history-policy
+    // rollback restores authored content without replacing live editor UI.
     api.addItem('products')
     const replacement = t.doc.querySelector('.title')
-    assert.notEqual(replacement, title, 'the rollback replaced the heading with a clone')
-    assert.equal(replacement.getAttribute('data-hcms-bound'), 'rich', 'and the clone carries the marker')
-
-    refresh()
-
-    assert.equal(replacement.hasAttribute('contenteditable'), false)
-    assert.equal(replacement.hasAttribute('no-undo'), false)
-    assert.equal(replacement.hasAttribute('data-hcms-bound'), false)
+    assert.equal(replacement, title, 'rollback retained the editor-owned node')
+    assert.equal(replacement.getAttribute('data-hcms-bound'), 'rich')
+    assert.equal(replacement.hasAttribute('contenteditable'), true)
   } finally {
     close()
   }
