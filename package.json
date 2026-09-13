@@ -24,6 +24,7 @@
     "./theme.css": "./src/theme.generated.css"
   },
   "files": [
+    "packed-contract.json",
     "LICENSE",
     "README.md",
     "src/**/*.js",
