@@ -1,5 +1,34 @@
 # hypercms changelog
 
+## [0.11.0] - 2026-09-19
+
+### Added
+- Inline CMS editor mode — edit list rows and text directly on the page
+- Inline view — reorder, remove, and add list rows from the page
+- Inline text editing in place with richclay
+- Hover highlight, click routing, and a field popover for inline view
+- Split button, view memory, and handoff to the sidebar
+- Packed contract for generated theme styles, shipped in the package
+
+### Changed
+- Pin row strips inside their row, revealing them one at a time when they cannot fit
+- Place the handle beside a small anchor instead of over it
+- Keep the inline popover revealed and above the handles
+- Improve toggle styling
+- Sync package-lock to published dependencies
+
+### Fixed
+- Inline text now survives a live-sync morph
+- The author's markup is preserved in the save clone and no longer rewritten when nobody edited
+- Strip `hcms-session-open` from the save clone
+- Undo no longer reverts a peer's edit, and session chrome stays off sync frames
+- Put the caret where the person pressed
+- The demo no longer loads two richclay runtimes
+- Repair an editor whose element a morph left inert
+- Thirty defects found across four rounds of review and browser testing
+
+
+
 ## [Unreleased]
 
 ### Changed
