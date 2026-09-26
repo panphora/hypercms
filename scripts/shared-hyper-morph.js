@@ -60,7 +60,7 @@ function findPackage(importer) {
 }
 
 async function expectedStandalone(morphRoot) {
-  const source = path.join(morphRoot, 'src', 'index.js')
+  const source = path.join(morphRoot, 'src', 'hyper-morph.js')
   if (!fs.existsSync(source)) throw new Error(`HyperMorph source is missing at ${source}`)
   const requireFromMorph = createRequire(path.join(morphRoot, 'package.json'))
   let esbuild

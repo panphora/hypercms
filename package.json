@@ -34,7 +34,7 @@
   "scripts": {
     "build:theme": "node scripts/build-theme.js",
     "build:js": "node scripts/build-js.js --standalone",
-    "build:preview": "node scripts/build-js.js --standalone --hyper-morph-source=../hyper-morph/src/index.js --hyper-html-api-source=../hyper-html-api",
+    "build:preview": "node scripts/build-js.js --standalone --hyper-morph-source=../hyper-morph/src/hyper-morph.js --hyper-html-api-source=../hyper-html-api",
     "build": "npm run build:theme && npm run build:js",
     "prepublishOnly": "npm run build",
     "copy-to-hyperclayjs": "npm run build && node scripts/copy-to-hyperclayjs.js",
@@ -48,7 +48,7 @@
   },
   "dependencies": {
     "hyper-html-api": "^0.8.1",
-    "hyper-morph": "^1.0.0"
+    "hyper-morph": "^0.5.0"
   },
   "devDependencies": {
     "@open-wc/testing": "^4.0.0",

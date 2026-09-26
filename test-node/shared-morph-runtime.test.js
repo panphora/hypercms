@@ -9,7 +9,7 @@ import { loadPage, reset } from './_helpers.js'
 
 const root = path.dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
 const workspace = path.dirname(root)
-const hyperMorphSource = path.join(workspace, 'hyper-morph', 'src', 'index.js')
+const hyperMorphSource = path.join(workspace, 'hyper-morph', 'src', 'hyper-morph.js')
 const entry = path.join(root, 'test-node', 'fixtures', 'shared-runtime-entry.js')
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
