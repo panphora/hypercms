@@ -14,7 +14,7 @@ import { assertSharedHyperMorph } from '../scripts/shared-hyper-morph.js'
 const root = path.dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
 const workspace = path.dirname(root)
 const morphRoot = path.join(workspace, 'hyper-morph')
-const morphSource = path.join(morphRoot, 'src', 'hyper-morph.js')
+const morphSource = path.join(morphRoot, 'src', 'index.js')
 const morphVendor = path.join(workspace, 'clayjs', 'src', 'vendor', 'hyper-morph.vendor.js')
 
 function fixtureHtml() {
