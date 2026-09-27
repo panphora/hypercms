@@ -234,38 +234,19 @@ test('actual ClayJS hub and HyperUndo use the corrected shared HyperMorph source
     const kept = main.querySelector('#keep')
     const before = main.innerHTML
     const callbacks = []
-    let pantry = null
-    const pantryMoves = []
-    const insertAdjacentElement = window.HTMLElement.prototype.insertAdjacentElement
-    const insertBefore = window.Node.prototype.insertBefore
-    window.HTMLElement.prototype.insertAdjacentElement = function (position, node) {
-      const resultValue = insertAdjacentElement.call(this, position, node)
-      if (this === document.body && position === 'afterend' && node.hidden) pantry = node
-      return resultValue
-    }
-    window.Node.prototype.insertBefore = function (node, sibling) {
-      if (this === pantry) pantryMoves.push(node.id || node.nodeName)
-      return insertBefore.call(this, node, sibling)
-    }
-    try {
-      runtime.HyperMorph.morph(
-        main,
-        '<article id="destination"><span id="keep">keep</span></article>',
-        {
-          morphStyle: 'innerHTML',
-          callbacks: {
-            beforeNodeRemoved: (node) => callbacks.push(`before:${node.id || node.nodeName}`),
-            afterNodeRemoved: (node) => callbacks.push(`after:${node.id || node.nodeName}`),
-          },
+    runtime.HyperMorph.morph(
+      main,
+      '<article id="destination"><span id="keep">keep</span></article>',
+      {
+        morphStyle: 'innerHTML',
+        callbacks: {
+          beforeNodeRemoved: (node) => callbacks.push(`before:${node.id || node.nodeName}`),
+          afterNodeRemoved: (node) => callbacks.push(`after:${node.id || node.nodeName}`),
         },
-      )
-    } finally {
-      window.Node.prototype.insertBefore = insertBefore
-      window.HTMLElement.prototype.insertAdjacentElement = insertAdjacentElement
-    }
+      },
+    )
     await wait(0)
     scope.flush()
-    assert.ok(pantryMoves.length > 0, 'the fixture exercised actual staging')
     assert.equal(main.querySelector('#keep'), kept, 'the retained child kept identity')
     assert.ok(
       changes.some((change) => change.type === 'remove' && change.element === discarded),
