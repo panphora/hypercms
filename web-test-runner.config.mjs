@@ -18,7 +18,7 @@ export default {
       inject: {
         importMap: {
           imports: {
-            'hyper-morph': '/hyper-morph/src/hyper-morph.js',
+            'hyper-morph': '/hyper-morph/src/index.js',
           },
         },
       },
