@@ -1,5 +1,14 @@
 # hypercms changelog
 
+## [0.11.1] - 2026-09-27
+
+### Changed
+- Build and test against hyper-morph 1.0
+- Sync ecosystem dependencies to their latest versions
+- Remove the staging-pantry check from the shared runtime test, since hyper-morph 1.0 moves kept nodes without a pantry
+
+
+
 ## [0.11.0] - 2026-09-19
 
 ### Added
