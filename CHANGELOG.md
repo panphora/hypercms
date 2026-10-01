@@ -1,5 +1,12 @@
 # hypercms changelog
 
+## [0.11.2] - 2026-10-01
+
+### Fixed
+- A descendant's own region marker is now checked on the element itself in content-dom.js (synced from ClayJS)
+
+
+
 ## [0.11.1] - 2026-09-27
 
 ### Changed
