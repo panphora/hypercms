@@ -1,5 +1,15 @@
 # hypercms changelog
 
+## [0.11.3] - 2026-10-03
+
+### Changed
+- Updated ecosystem dependencies to their latest versions
+
+### Fixed
+- State copying now works for file, checkbox, and option inputs
+
+
+
 ## [0.11.2] - 2026-10-01
 
 ### Fixed
