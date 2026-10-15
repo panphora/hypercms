@@ -1,5 +1,15 @@
 # hypercms changelog
 
+## [0.11.4] - 2026-10-15
+
+### Changed
+- Updated content-dom.js and region-capabilities.js to match ClayJS
+
+### Fixed
+- A select with an excluded option now keeps its selection in the content view
+
+
+
 ## [0.11.3] - 2026-10-03
 
 ### Changed
