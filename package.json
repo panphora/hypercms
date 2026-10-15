@@ -48,7 +48,7 @@
   },
   "dependencies": {
     "hyper-html-api": "^0.10.1",
-    "hyper-morph": "^1.6.2"
+    "hyper-morph": "^1.6.3"
   },
   "devDependencies": {
     "@open-wc/testing": "^4.0.0",
