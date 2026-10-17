@@ -1,5 +1,12 @@
 # hypercms changelog
 
+## [0.11.5] - 2026-10-17
+
+### Changed
+- Updated ecosystem dependencies and package-lock to the latest published versions
+
+
+
 ## [0.11.4] - 2026-10-15
 
 ### Changed
