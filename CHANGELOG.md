@@ -74,6 +74,8 @@
 
 ## [Unreleased]
 
+## [0.11.6] - 2026-10-22
+
 ### Changed
 - The floating edit button now takes the page's font and ink, and paints itself on
   an opaque surface picked for contrast against that ink, so it reads correctly on
