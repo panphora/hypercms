@@ -96,12 +96,25 @@ The full grammar lives in the [hyper-html-api docs](https://github.com/panphora/
 | Object array | `"products": [".product", { "name": ".name" }]` | list of cards |
 | Nested | object arrays inside object arrays | recurses |
 
+## Choosing the view
+
+A page declares which editor it opens in, on its rules tag:
+
+```html
+<script data-rules-name="cms" data-rules-version="1" data-cms-view="inline" type="application/json">…</script>
+```
+
+`inline` edits text where it sits on the page and opens small popovers for everything else.
+`sidebar` (also what you get with no attribute) opens the form in a side panel. The floating
+toggle opens and closes whichever view the page declares; it does not switch between them.
+`cms.open({ view: 'inline' })` still overrides the declaration for one session.
+
 ## Field controls
 
 How the sidebar picks a control for each leaf, in order:
 
-1. If the page element the rule points at carries `data-hcms-component`, that control wins. Explicit beats inferred. Values: `checkbox`, `toggle`, `select`, `radio`, `textarea`, `number`, `image`, `file` on scalar fields, `chips` on list containers.
-2. Otherwise a rule ending in `@src` gets the **image upload** control, and a rule ending in `@checked` gets a **checkbox**.
+1. If the page element the rule points at carries `data-hcms-component`, that control wins. Explicit beats inferred. Values: `checkbox`, `toggle`, `select`, `radio`, `textarea`, `number`, `image`, `file`, `color`, `font`, `variant` on scalar fields, `chips` on list containers.
+2. Otherwise a rule ending in `@src` gets the **image upload** control, a rule ending in `@checked` gets a **checkbox**, a rule ending in `@--color` or `@--color-<name>` gets the **color** control, and a rule ending in `@--font` or `@--font-<name>` gets the **font** control.
 3. Otherwise the rule's shape picks one of the defaults below, unless a [custom template](#custom-form-templates) overrides it.
 
 A custom `<template data-hcms-tpl>` matching the field's path always outranks a named component (the author's template is the stronger signal); when that happens the sidebar logs a `console.info` naming the shadowed component.
@@ -193,6 +206,76 @@ Never inferred — opt in with `data-hcms-component="file"` on the element. A ba
 A "Choose" button uploads the file, writes the URL into the `a href`, and shows the decoded filename as the link text; × clears both.
 
 Use it for: a resume PDF, a downloadable spec or whitepaper, a press kit — links whose target the owner should replace by picking a file.
+
+### Page style: colors, fonts and layouts (`color`, `font`, `variant`)
+
+These three controls change how a page looks rather than what it says. They write CSS custom
+properties or attributes, and the page's own CSS decides what those do.
+
+**The `@--name` rule form** reads and writes one CSS custom property in an element's `style`
+attribute, leaving every other declaration alone:
+
+```html
+<html style="--color-accent: #0284c7; --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif">
+<style>
+  a, .button { color: var(--color-accent); }
+  body { font-family: var(--font-body); }
+</style>
+```
+
+```json
+{ "theme": { "accent": "html@--color-accent", "body": "html@--font-body" } }
+```
+
+Writes through the guarded paths (`writeDocument`, `applyData`, the JSON API) accept a custom
+property only when its value is plain: at most 200 characters, no `;`, braces, angle brackets or
+backslash, and no `url()`, `image()` or similar functions.
+
+**Several controls on one element.** Attributes scoped to a property name apply to that rule
+only, so one element can carry a layout choice and a background color:
+
+```html
+<section id="features" data-layout="3" style="--color-section-bg: #f8fafc"
+  data-hcms-component:data-layout="variant"
+  data-hcms-options:data-layout="1:cols-1 2:cols-2 3:cols-3"
+  data-hcms-options:--color-section-bg="slate-50 slate-100 sky-50 custom">
+```
+
+`data-hcms-component:<prop>`, `data-hcms-options:<prop>` and `data-hcms-crop:<prop>` win over the
+plain attribute for the rule ending in `@<prop>`. A plain attribute never applies to an `@--name`
+rule.
+
+**Color** (`color`, inferred for `@--color` and `@--color-*`). A swatch grid of the full
+Tailwind palette (26 hues by 11 shades) plus a custom picker. `data-hcms-options` narrows it:
+color ids (`sky-600`), whole hues (`sky`), whole shades (`500`), plain CSS colors, and `custom`
+to keep the custom picker, which a narrowed list hides unless you add it. A clear button empties
+the property so the page falls back to its own CSS.
+
+**Font** (`font`, inferred for `@--font` and `@--font-*`). A list of 40 Google Fonts, each shown
+in its own face, plus the system stacks. `data-hcms-options` narrows it: font slugs (`inter`),
+groups (`sans`, `serif`, `display`, `mono`), and `system`. The CMS keeps one
+`<link data-hcms-fonts>` in the head that loads exactly the families the page's font fields hold,
+and removes it when none do.
+
+**Variant** (`variant`, never inferred). A row of icon tiles, one per option, backed by native
+radios. Each `data-hcms-options` token is `value:icon` or a bare value; the icons are `cols-1`,
+`cols-2`, `cols-3`, `cols-4`, `media-left`, `media-right`, `media-top`, `list`, `cards`,
+`centered`, `card-flat` and `card-raised`. Choosing one writes only the attribute, so the layout
+lives in your CSS:
+
+```css
+#features { display: grid; gap: 1.5rem; }
+#features[data-layout="2"] { grid-template-columns: repeat(2, 1fr); }
+#features[data-layout="3"] { grid-template-columns: repeat(3, 1fr); }
+```
+
+**Where they show up.** In the sidebar, style fields bound to `html`, `body` or `:root` gather
+in a **Page style** group at the top, and inside every other group and card the style fields
+come first. In the inline view they are never hover targets: a section's style fields open from
+a **Style** chip in its top-left corner, a list row's from **Style** in its gear menu, and the
+page's from the **Page style** button in the bar.
+
+Living example: `demo/theme.html`.
 
 ### Everything else: custom templates
 
@@ -287,7 +370,7 @@ cms.api.removeItem(itemPath)          // drop an item by index
 
 | Option | Default | Effect |
 |---|---|---|
-| `pageRoot` | `document.body` | Where extract/apply run. |
+| `pageRoot` | `document` | Where extract/apply run. The whole document by default, so a rule can bind `html` or `body` themselves. Events still report `document.body` as `pageRoot`. |
 | `mountTo` | `document.body` | Where the shell DOM mounts. Can be a descendant of pageRoot. |
 | `side` | `'right'` | `'right'` or `'left'`. |
 | `overlay` | `false` | If true, sidebar covers the page; if false, page content gets a padding offset. |

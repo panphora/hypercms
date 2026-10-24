@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<!--
+  Theme fixture: the color, font and variant controls on a real page, for
+  verifying the real bundle in a real browser.
+
+  The script paths are absolute from the hyper workspace root, because the page
+  loads clayjs from its own repo rather than a copy. Serve the workspace, not
+  this repo:
+
+      npx http-server ~/Documents/GitHub/hyper -p 5694 -c-1
+      open http://localhost:5694/hypercms/demo/theme.html
+
+  Run `npm run build` in hypercms first, or dist/hypercms.min.js will be stale.
+  Loads clay.js WITHOUT the cms plugin on purpose: that plugin pulls in clayjs's
+  own vendored copy of hypercms, which is not the build under test.
+
+  richclay comes from clayjs's vendored copy, and NEVER load a second standalone
+  richclay beside it. Two runtimes are two classes with two instance caches, and
+  both watch the document: the marker one of them writes makes the other mount a
+  second editor on the same element with its own default options, which renders a
+  toolbar hypercms asked not to have and resets the caret to the start of the
+  text on every click.
+-->
+<html lang="en" style="--color-accent: #0284c7; --color-bg: #f8fafc; --font-heading: 'Playfair Display', ui-serif, Georgia, serif; --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif">
+<head>
+<meta charset="UTF-8">
+<title>hypercms — theme fixture</title>
+<link rel="stylesheet" href="/richclay/richclay.css">
+<link data-hcms-fonts rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&amp;family=Playfair+Display:ital,wght@0,400..900;1,400..900&amp;display=swap">
+<style>
+  body { background: var(--color-bg); font-family: var(--font-body); max-width: 880px; margin: 0 auto; padding: 0 1rem 4rem; color: #1f2532; }
+  h1, h2 { font-family: var(--font-heading); }
+  a, .button { color: var(--color-accent); }
+  .hero { padding: 3.5rem 0 2rem; }
+  .hero h1 { font-size: 2.75rem; line-height: 1.1; margin: 0 0 .75rem; }
+  .hero p { font-size: 1.15rem; margin: 0; color: #475064; max-width: 40rem; }
+  .button { display: inline-block; margin-top: 1.5rem; padding: .55rem 1.1rem; border: 1px solid currentColor; border-radius: 6px; text-decoration: none; }
+  #features { display: grid; gap: 1.5rem; padding: 2rem 0; }
+  #features[data-layout="1"] { grid-template-columns: repeat(1, 1fr); }
+  #features[data-layout="2"] { grid-template-columns: repeat(2, 1fr); }
+  #features[data-layout="3"] { grid-template-columns: repeat(3, 1fr); }
+  .card { background: #fff; border-radius: 10px; padding: 1.1rem 1.25rem; }
+  .card h3 { margin: 0 0 .4rem; font-size: 1rem; }
+  .card p { margin: 0; color: #475064; font-size: .95rem; }
+  .card[data-card-style="raised"], #features[data-card-style="raised"] .card { box-shadow: 0 10px 24px rgba(15, 23, 42, .09); }
+  .card[data-card-style="flat"], #features[data-card-style="flat"] .card { border: 1px solid #d8dde6; }
+</style>
+
+<script data-rules-name="cms" data-rules-version="1" data-cms-view="inline" type="application/json">
+{
+  "theme": {
+    "accent": "html@--color-accent",
+    "background": "html@--color-bg",
+    "heading": "html@--font-heading",
+    "body": "html@--font-body"
+  },
+  "hero": { "title": ".hero h1", "intro": ".hero p" },
+  "features": {
+    "layout": "#features@data-layout",
+    "cardStyle": "#features@data-card-style",
+    "items": ["#features .card", { "title": "h3", "text": "p" }]
+  }
+}
+</script>
+</head>
+<body>
+
+<div class="hero">
+  <h1>A page that dresses itself</h1>
+  <p>Pick a color, a typeface and a layout. Each control writes one CSS custom property or one attribute, and the page's own CSS does the rest.</p>
+  <a class="button" href="https://example.com">Try it</a>
+</div>
+
+<section id="features" data-layout="3" data-card-style="raised"
+  data-hcms-component:data-layout="variant"
+  data-hcms-options:data-layout="1:cols-1 2:cols-2 3:cols-3"
+  data-hcms-component:data-card-style="variant"
+  data-hcms-options:data-card-style="flat:card-flat raised:card-raised">
+  <div class="card">
+    <h3>One property each</h3>
+    <p>Colors and fonts read and write a single custom property in the style attribute, leaving the rest alone.</p>
+  </div>
+  <div class="card">
+    <h3>Layout in your CSS</h3>
+    <p>A variant choice writes only the attribute. The grid lives in the stylesheet above.</p>
+  </div>
+  <div class="card">
+    <h3>Inline where it sits</h3>
+    <p>This page declares the inline view: style chips open from each section's corner.</p>
+  </div>
+</section>
+
+<!-- hypercms needs a mutation hub; clayjs is the one the platform ships. edit
+     mode is forced so the toggle and the edit-only paths are live on a fixture
+     with no owner cookie. -->
+<script>window.clayEditMode = true</script>
+<script src="/clayjs/public/v1/clay.js?plugins=sortable,undo"></script>
+<script src="/hypercms/dist/hypercms.min.js"></script>
+</body>
+</html>
