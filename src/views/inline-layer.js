@@ -40,7 +40,7 @@ function hosts(row, strip) {
   return strip.width <= row.width && strip.height <= row.height
 }
 
-export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
+export function createInlineLayer({ doc, layerEl, onActivate, onListAction, onStyle }) {
   const win = doc.defaultView
   // Every positioned thing the layer draws, whatever kind: a handle, a row
   // strip, a list's Add. One array, because all three are placed by one pass.
@@ -133,6 +133,14 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
       }
       if (spot.members.every((member) => member.node.hidden)) {
         spot.node.hidden = true
+        continue
+      }
+      // A Style chip sits inside its element's top-left corner, clear of the
+      // row strips and handles that take the top-right.
+      if (spot.kind === 'style') {
+        const x = Math.max(8, Math.min(anchor.left, viewport.width - handle.width - 8))
+        const y = Math.max(8, Math.min(anchor.top, viewport.height - handle.height - 8))
+        spot.node.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
         continue
       }
       const prefer = spot.kind === 'handle' ? null : CONTROL_PLACEMENT
@@ -272,6 +280,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
 
   function sameMember(member, spec) {
     if (member.kind !== spec.kind) return false
+    if (member.kind === 'style') return true
     if (member.kind === 'handle') return targetIdentity(member.target) === targetIdentity(spec.target)
     if (member.kind === 'row') return member.row === spec.row && sameList(member.list, spec.list)
     return sameList(member.list, spec.list)
@@ -297,6 +306,21 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
       event.preventDefault()
       event.stopPropagation()
       onActivate?.(member.target, button)
+    })
+    return member
+  }
+
+  function makeStyleChip(spec) {
+    const button = doc.createElement('button')
+    button.type = 'button'
+    button.className = 'hcms-inline-style-chip mirk-button mirk-button--small'
+    button.setAttribute('aria-label', 'Edit style')
+    button.innerHTML = '<span class="mirk-button__label">Style</span>'
+    const member = { node: button, kind: 'style', group: spec.group }
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      onStyle?.(member.group, button)
     })
     return member
   }
@@ -384,11 +408,13 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     }
   }
 
-  function updateSettings(member, { list, row, rowIndex }) {
-    Object.assign(member, { list, row, index: rowIndex })
+  function updateSettings(member, { list, row, rowIndex, style = null }) {
+    Object.assign(member, { list, row, index: rowIndex, style })
     member.node.setAttribute('data-hcms-list', list.path.join('.'))
     member.node.setAttribute('data-hcms-row', String(rowIndex))
     member.button.setAttribute('aria-label', `Settings ${list.path.join('.')}.${rowIndex}`)
+    if (style && !member.styleItem.isConnected) member.menu.insertBefore(member.styleItem, member.menu.firstChild)
+    else if (!style) member.styleItem.remove()
   }
 
   function makeSettings(spec) {
@@ -402,6 +428,11 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     menu.setAttribute('role', 'menu')
     menu.setAttribute('aria-label', 'Item settings')
     menu.hidden = true
+    const styleItem = doc.createElement('button')
+    styleItem.type = 'button'
+    styleItem.setAttribute('role', 'menuitem')
+    styleItem.setAttribute('data-hcms-style-action', '')
+    styleItem.textContent = 'Style'
     const remove = doc.createElement('button')
     remove.type = 'button'
     remove.setAttribute('role', 'menuitem')
@@ -409,7 +440,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     remove.textContent = 'Delete'
     menu.appendChild(remove)
     node.append(button, menu)
-    const member = { node, button, menu, kind: 'settings' }
+    const member = { node, button, menu, styleItem, kind: 'settings' }
     updateSettings(member, spec)
     const show = () => {
       closeSettings()
@@ -417,7 +448,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
       menu.hidden = false
       button.setAttribute('aria-expanded', 'true')
       node.parentElement.classList.add('has-open-settings')
-      remove.focus({ preventScroll: true })
+      menu.querySelector('[role="menuitem"]').focus({ preventScroll: true })
       schedule()
     }
     button.addEventListener('click', (event) => {
@@ -438,6 +469,12 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
       closeSettings(true)
       onListAction?.({ action: 'remove', list: member.list, index: member.index, row: member.row })
     })
+    styleItem.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      closeSettings()
+      onStyle?.(member.style, member.button)
+    })
     return member
   }
 
@@ -445,6 +482,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     if (member.kind === 'handle') updateHandle(member, spec.target)
     else if (member.kind === 'row') updateRowControls(member, spec)
     else if (member.kind === 'settings') updateSettings(member, spec)
+    else if (member.kind === 'style') member.group = spec.group
   }
 
   function addDesired(desired, desiredIndex, el, spec, category) {
@@ -459,7 +497,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     spot.members.push(spec)
   }
 
-  function addListControls(desired, desiredIndex, list) {
+  function addListControls(desired, desiredIndex, list, rowStyles) {
     const rows = list.items || []
     rows.forEach((el, i) => {
       if (!isAnchorable(el)) return
@@ -467,7 +505,7 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
         kind: 'row', list, row: el, rowIndex: i, count: rows.length,
       }, 'item')
       addDesired(desired, desiredIndex, el, {
-        kind: 'settings', list, row: el, rowIndex: i,
+        kind: 'settings', list, row: el, rowIndex: i, style: rowStyles.get(el) || null,
       }, 'item')
     })
   }
@@ -481,7 +519,9 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
           ? makeHandle(spec.target)
           : spec.kind === 'row'
             ? makeRowControls(spec.list, spec.row, spec.rowIndex, spec.count)
-            : makeSettings(spec))
+            : spec.kind === 'style'
+              ? makeStyleChip(spec)
+              : makeSettings(spec))
       unused.delete(member)
       updateMember(member, spec)
       if (controlsHidden && member.kind !== 'handle') member.node.hidden = true
@@ -498,18 +538,26 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
     spot.members = next
   }
 
-  function reconcile(targetList, lists) {
+  function reconcile(targetList, lists, groups) {
     const desired = []
     const desiredIndex = new Map()
     const nextTargets = new Map()
     let nextHandleCount = 0
     for (const target of targetList || []) {
+      if (target.style) continue
       if (!nextTargets.has(target.el)) nextTargets.set(target.el, target)
       if (target.kind !== 'handle' || !isAnchorable(target.el)) continue
       addDesired(desired, desiredIndex, target.el, { kind: 'handle', target }, 'item')
       nextHandleCount++
     }
-    for (const list of lists || []) addListControls(desired, desiredIndex, list)
+    const rowStyles = new Map()
+    for (const group of groups || []) {
+      if (group.scope === 'row') rowStyles.set(group.el, group)
+      else if (group.scope === 'section' && isAnchorable(group.el)) {
+        addDesired(desired, desiredIndex, group.el, { kind: 'style', group }, 'style')
+      }
+    }
+    for (const list of lists || []) addListControls(desired, desiredIndex, list, rowStyles)
 
     const unused = new Set(placements)
     const visibility = new Map()
@@ -540,8 +588,10 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
       reconcileMembers(spot, wanted.members)
       spot.kind = spot.members.some((member) => member.kind === 'row')
         ? 'row'
-        : spot.members.some((member) => member.kind === 'handle') ? 'handle' : 'add'
-      spot.node.setAttribute('aria-label', spot.category === 'add' ? 'List controls' : 'Item controls')
+        : spot.members.some((member) => member.kind === 'handle')
+          ? 'handle'
+          : spot.members.some((member) => member.kind === 'style') ? 'style' : 'add'
+      spot.node.setAttribute('aria-label', spot.category === 'add' ? 'List controls' : spot.category === 'style' ? 'Style controls' : 'Item controls')
       next.push(spot)
     }
     for (const spot of unused) spot.node.remove()
@@ -580,8 +630,8 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction }) {
   }
 
   return {
-    setTargets(list, lists) {
-      reconcile(list, lists)
+    setTargets(list, lists, groups = []) {
+      reconcile(list, lists, groups)
       ghosts.setLists(lists)
       syncObservation()
       listen()

@@ -10,6 +10,7 @@
 
 import { createDomAdapter } from 'hyper-html-api/dom'
 import { ruleAttrIndex } from 'hyper-html-api/engine'
+import { styleRole } from './templates.js'
 
 const FIND_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 // templateAttr:null includes the hidden [cms-template] seed. A list that has been
@@ -44,22 +45,21 @@ const NATIVE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
 const NON_TEXT_TAGS = new Set([
   'IMG', 'INPUT', 'TEXTAREA', 'SELECT', 'OPTION', 'BR', 'HR', 'VIDEO', 'AUDIO',
   'IFRAME', 'EMBED', 'OBJECT', 'CANVAS', 'SOURCE', 'TRACK', 'AREA', 'COL', 'PARAM',
-  'BUTTON',
+  'BUTTON', 'STYLE', 'SCRIPT', 'LINK', 'META',
 ])
 
-export function resolveTargets(root, rules) {
-  return resolvePageTargets(root, rules)
-}
-
-function resolvePageTargets(root, rules) {
+// `doc` lets each scalar target say whether it is a style field (`style`:
+// 'page', 'section' or null). Without it every target is content.
+export function resolveTargets(root, rules, doc = null) {
   const targets = []
   const lists = []
   const adapter = createDomAdapter(root)
-  walk(adapter, root, rules, [], targets, lists)
+  const roleOf = doc ? (rule, path) => styleRole(rule, doc, path, rules) : () => null
+  walk(adapter, root, rules, [], targets, lists, roleOf)
   return { targets, lists }
 }
 
-function walk(adapter, ctx, rule, path, targets, lists) {
+function walk(adapter, ctx, rule, path, targets, lists, roleOf) {
   if (typeof rule === 'string') {
     // A scalar array ("ul.tags li[]"): every match is its own editable item, and
     // the run of them is a list that can be added to and removed from.
@@ -79,7 +79,7 @@ function walk(adapter, ctx, rule, path, targets, lists) {
     // "." and a bare "@attr" both address the context node itself, so they can
     // never fail to resolve and there is nothing to query.
     const el = !selector || selector === '.' ? ctx : find(adapter, ctx, selector)[0]
-    if (el) targets.push(describe(path, el, rule, attr))
+    if (el) targets.push(describe(path, el, rule, attr, roleOf(rule, path)))
     return
   }
 
@@ -87,13 +87,13 @@ function walk(adapter, ctx, rule, path, targets, lists) {
     const [selector, shape] = rule
     if (typeof selector !== 'string' || !selector) return
     const items = find(adapter, ctx, selector)
-    items.forEach((el, i) => walk(adapter, el, shape, [...path, i], targets, lists))
+    items.forEach((el, i) => walk(adapter, el, shape, [...path, i], targets, lists, roleOf))
     lists.push(makeList(adapter, ctx, path, selector, items, typeof shape === 'string'))
     return
   }
 
   if (rule && typeof rule === 'object') {
-    for (const [key, sub] of Object.entries(rule)) walk(adapter, ctx, sub, [...path, key], targets, lists)
+    for (const [key, sub] of Object.entries(rule)) walk(adapter, ctx, sub, [...path, key], targets, lists, roleOf)
   }
 }
 
@@ -109,8 +109,8 @@ function makeList(adapter, ctx, path, selector, items, scalar) {
   return { path, items, container, scalar }
 }
 
-function describe(path, el, rule, attr) {
-  return { path, el, rule, attr, kind: kindOf(el, attr), icon: iconOf(el, attr) }
+function describe(path, el, rule, attr, style = null) {
+  return { path, el, rule, attr, kind: kindOf(el, attr), icon: iconOf(el, attr), style }
 }
 
 function kindOf(el, attr) {
@@ -146,4 +146,46 @@ function find(adapter, ctx, selector, opts = FIND_OPTS) {
     // already surfaced. Skip the rule instead of taking the whole view down.
     return []
   }
+}
+
+// Style fields grouped by what they style: every page-level one together, the
+// ones inside a list row with that row, any other with the element it sits on.
+export function styleGroups(targets, lists) {
+  const groups = []
+  const byEl = new Map()
+  let page = null
+  for (const target of targets) {
+    if (!target.style) continue
+    const path = target.path.join('.')
+    if (target.style === 'page') {
+      if (!page) {
+        page = { scope: 'page', el: target.el, list: null, paths: [] }
+        groups.push(page)
+      }
+      page.paths.push(path)
+      continue
+    }
+    const owner = rowOf(target.path, lists)
+    const el = owner ? owner.row : target.el
+    let group = byEl.get(el)
+    if (!group) {
+      group = { scope: owner ? 'row' : 'section', el, list: owner ? owner.list : null, paths: [] }
+      byEl.set(el, group)
+      groups.push(group)
+    }
+    group.paths.push(path)
+  }
+  return groups
+}
+
+// The innermost list row a target path runs through, as { list, row }.
+function rowOf(path, lists) {
+  for (let i = path.length - 1; i >= 0; i--) {
+    if (typeof path[i] !== 'number') continue
+    const prefix = path.slice(0, i).join('.')
+    const list = lists.find((candidate) => candidate.path.join('.') === prefix)
+    const row = list && list.items[path[i]]
+    if (row) return { list, row }
+  }
+  return null
 }

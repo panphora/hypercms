@@ -36,7 +36,7 @@ import { applyUnresolvedState } from '../unresolved.js'
 import { refreshForm } from '../refresh.js'
 import { clearSessionOpen, markSessionOpen, reensureStyles } from '../shell.js'
 import { isAnchorable } from '../anchor.js'
-import { resolveTargets } from '../targets.js'
+import { resolveTargets, styleGroups } from '../targets.js'
 import { createContentView } from '../lib/content-dom.js'
 import { morph } from 'hyper-morph'
 import { place } from '../place.js'
@@ -90,6 +90,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
   // the first placement toward wherever the last field happened to sit.
   let activeTarget = null
   let activeHandle = null
+  let groupsNow = []
   let popMode = null
 
   // Build one binding: the editor, the marker, the snapshot hook, and the two
@@ -259,6 +260,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         // The handle and the page click are two doors to one room.
         onActivate: (target, handle) => this.activate(target, handle),
         onListAction: (op) => this.listAction(op),
+        onStyle: (group, handle) => this.openStyle(group, handle),
       })
       layer.setFollower(() => this.placePopover())
       host.closeEl.addEventListener('click', () => this.deactivate())
@@ -266,6 +268,12 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         event.preventDefault()
         event.stopPropagation()
         this.toggleControls()
+      })
+      host.pageStyleEl.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        const group = groupsNow.find((candidate) => candidate.scope === 'page')
+        if (group) this.openStyle(group, host.pageStyleEl)
       })
       // There is no drawer. What a field with no visual representation gets is
       // this one tap out to the view that edits everything.
@@ -449,10 +457,38 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       activeTarget = target
       activeHandle = handle || null
       popMode = null
+      host.popTitleEl.textContent = 'Edit content'
 
       // Unhide BEFORE measuring. A hidden popover has a zero rect, which places
       // it at the clamp instead of beside its anchor — the same trap as the 0px
       // textarea below, which was sized while the popover had no height.
+      host.popEl.hidden = false
+      host.formRoot.querySelectorAll(`.${ACTIVE_CLASS}`).forEach(autosizeIn)
+      this.placePopover()
+      focusFirst(leaf)
+    },
+
+    // A style popover shows exactly one group's style fields: the page's from
+    // the bar, a section's from its chip, a row's from its gear menu. The
+    // section and row ones sit beside what they style; the page one beside the
+    // button, because the whole page is no place to anchor a popover.
+    openStyle(group, handle) {
+      if (!group || !host) return
+      const leaf = revealPaths(this, host, group.paths)
+      if (!leaf) {
+        this.deactivate()
+        return
+      }
+      activeTarget = {
+        kind: 'style',
+        scope: group.scope,
+        el: group.scope === 'page' ? host.pageStyleEl : group.el,
+        path: group.paths[0].split('.'),
+        paths: group.paths,
+      }
+      activeHandle = handle || null
+      popMode = null
+      host.popTitleEl.textContent = group.scope === 'page' ? 'Page style' : 'Style'
       host.popEl.hidden = false
       host.formRoot.querySelectorAll(`.${ACTIVE_CLASS}`).forEach(autosizeIn)
       this.placePopover()
@@ -512,13 +548,23 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     syncTargets() {
       if (!layer) return
       const ctx = this.ctx
-      const { targets, lists } = resolveTargets(ctx.pageRoot, ctx.pageRules)
-      layer.setTargets(targets, lists)
+      const resolved = resolveTargets(ctx.pageRoot, ctx.pageRules, doc)
+      const lists = resolved.lists
+      const targets = resolved.targets.filter((target) => !target.style)
+      groupsNow = styleGroups(resolved.targets, lists)
+      host.pageStyleEl.hidden = !groupsNow.some((group) => group.scope === 'page')
+      layer.setTargets(resolved.targets, lists, groupsNow)
       const byEl = reconcileBindings(this, bindings, targets, doc)
       // An open popover holds its path the same way a binding does. Re-point it
       // at the target that now stands for the element it is anchored over, or
       // the popover keeps editing the row that inherited its old index.
-      if (activeTarget) {
+      if (activeTarget?.kind === 'style') {
+        const group = activeTarget.scope === 'page'
+          ? groupsNow.find((candidate) => candidate.scope === 'page')
+          : groupsNow.find((candidate) => candidate.el === activeTarget.el)
+        if (group) activeTarget = { ...activeTarget, paths: group.paths, path: group.paths[0].split('.') }
+        else this.deactivate()
+      } else if (activeTarget) {
         const candidates = byEl.get(activeTarget.el) || []
         const fresh = candidates.find((target) => sameTargetBinding(target, activeTarget)) ||
           candidates.find((target) => target.path.join('.') === activeTarget.path.join('.')) ||
@@ -645,7 +691,9 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
         this.deactivate()
         return
       }
-      const leaf = revealPath(this, host, activeTarget.path.join('.'))
+      const leaf = activeTarget.kind === 'style'
+        ? revealPaths(this, host, activeTarget.paths)
+        : revealPath(this, host, activeTarget.path.join('.'))
       if (!leaf) {
         this.deactivate()
         return
@@ -952,16 +1000,32 @@ function revealPath(view, host, path) {
         field.closest('[data-hcms-shape="object-array"], [data-hcms-shape="scalar-array"]') === item.parentElement.closest('[data-hcms-shape="object-array"]'))
     : [leaf]
   if (!fields.includes(leaf)) fields.push(leaf)
-  for (const field of fields) {
-    field.classList.add(ACTIVE_CLASS)
-    field.removeAttribute('draggable')
-    for (let el = field.parentElement; el; el = el.parentElement) {
-      el.classList.add(ONPATH_CLASS)
-      el.removeAttribute('draggable')
-      if (el === view.formRoot) break
-    }
-  }
+  for (const field of fields) markRevealed(view, field)
   return leaf
+}
+
+// Reveal exactly these fields, with no card siblings: a style popover shows
+// style fields only.
+function revealPaths(view, host, paths) {
+  clearPathClasses(host.root)
+  let first = null
+  for (const path of paths) {
+    const field = view.formRoot && view.formRoot.querySelector(`[data-hcms-path="${cssEscape(path)}"]`)
+    if (!field) continue
+    first = first || field
+    markRevealed(view, field)
+  }
+  return first
+}
+
+function markRevealed(view, field) {
+  field.classList.add(ACTIVE_CLASS)
+  field.removeAttribute('draggable')
+  for (let el = field.parentElement; el; el = el.parentElement) {
+    el.classList.add(ONPATH_CLASS)
+    el.removeAttribute('draggable')
+    if (el === view.formRoot) break
+  }
 }
 
 function clearPathClasses(root) {
@@ -1037,6 +1101,9 @@ function mountInlineHost(doc, theme) {
           <span class="mirk-button__label">Edit in the sidebar</span>
         </button>
       </div>
+      <button type="button" class="hcms-inline-page-style mirk-button mirk-button--small" data-hcms-page-style-open hidden>
+        <span class="mirk-button__label">Page style</span>
+      </button>
       <button type="button" class="hcms-inline-toggle mirk-button mirk-button--small" data-hcms-controls-toggle aria-pressed="false" hidden>
         <span class="mirk-button__label">Hide controls</span>
       </button>
@@ -1046,7 +1113,7 @@ function mountInlineHost(doc, theme) {
     <div class="hcms-inline-layer"></div>
     <div class="hcms-inline-pop" role="dialog" aria-label="Edit content" hidden>
       <div class="hcms-inline-pop-header">
-        <span>Edit content</span>
+        <span class="hcms-inline-pop-title">Edit content</span>
         <button type="button" class="hcms-inline-pop-close mirk-button mirk-button--small" aria-label="Close field editor">
           <span class="mirk-button__label">${inlineIcon('remove')}</span>
         </button>
@@ -1068,6 +1135,8 @@ function mountInlineHost(doc, theme) {
     popEl: root.querySelector('.hcms-inline-pop'),
     closeEl: root.querySelector('.hcms-inline-pop-close'),
     toggleEl: root.querySelector('[data-hcms-controls-toggle]'),
+    pageStyleEl: root.querySelector('[data-hcms-page-style-open]'),
+    popTitleEl: root.querySelector('.hcms-inline-pop-title'),
     destroy() { root.remove() },
   }
 }
