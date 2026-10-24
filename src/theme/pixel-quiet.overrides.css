@@ -458,6 +458,49 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
   color: var(--mirk-placeholder-color);
 }
 
+/* ---------- COLOR (@color) ----------
+   Swatch colors arrive as --hcms-swatch on each element's style, so a value
+   never becomes a selector or a class. The full palette is an 11-column grid
+   (one row per hue); a narrowed set wraps. */
+.hcms-color-row { display: flex; align-items: center; gap: 8px; }
+.hcms-color-current {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 12px 4px 4px; border: 1px solid var(--mirk-input-border); border-radius: 999px;
+  background: var(--mirk-input-bg); color: var(--mirk-fg); font: inherit; cursor: pointer;
+}
+.hcms-color--inline .hcms-color-current { cursor: default; }
+.hcms-color-chip, .hcms-color-swatch { background: var(--hcms-swatch, transparent); }
+.hcms-color-chip {
+  width: 20px; height: 20px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--mirk-fg) 20%, transparent);
+}
+.hcms-color[data-hcms-color-empty] .hcms-color-chip {
+  background: repeating-conic-gradient(var(--mirk-input-border) 0 25%, transparent 0 50%) 50% / 8px 8px;
+}
+.hcms-color-clear {
+  display: inline-flex; padding: 2px; border: 0; background: transparent;
+  color: var(--mirk-placeholder-color); cursor: pointer;
+}
+.hcms-color-clear:hover { color: var(--mirk-fg); }
+.hcms-color[data-hcms-color-empty] .hcms-color-clear { display: none; }
+.hcms-color-panel { margin-top: 8px; }
+.hcms-color-panel[hidden] { display: none; }
+.hcms-color-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+.hcms-color-grid--full { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 3px; }
+.hcms-color-swatch {
+  width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; cursor: pointer;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--mirk-fg) 15%, transparent);
+}
+.hcms-color-grid--full .hcms-color-swatch { width: auto; height: auto; aspect-ratio: 1; }
+.hcms-color-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--mirk-bg), 0 0 0 4px var(--mirk-fg); }
+.hcms-color-swatch:focus-visible { outline: 2px solid var(--mirk-focus-color); outline-offset: 2px; }
+.hcms-color-custom { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.hcms-color-native {
+  width: 32px; height: 28px; padding: 0; border: 1px solid var(--mirk-input-border);
+  border-radius: 4px; background: none; cursor: pointer;
+}
+.hcms-color-text { flex: 1; min-width: 0; }
+
 /* ---------- UPLOADING (spec §9) ----------
    One attribute, [data-hcms-uploading], set on the field for as long as the host
    has the bytes, plus --hcms-upload-progress carrying the percent. No markup of

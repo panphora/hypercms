@@ -5,6 +5,7 @@ import { buildItem, fileNameFromUrl, radioGroupName } from './form-builder.js'
 import { scaffold } from './scaffold.js'
 import { autosizeTextarea, enhanceFields } from './enhance.js'
 import { platform } from './platform.js'
+import { pickColor, clearColor, toggleColorPanel, customColor } from './color-control.js'
 
 const BOUND = new WeakSet()
 
@@ -57,6 +58,9 @@ export function bindEvents(ctx) {
     const target = e.target
     if (!target || !target.closest) return
     if (!target.closest('[data-hcms-form-root]')) return
+    // The color control's custom inputs commit on change, not per keystroke or
+    // per drag step: a commit rebuilds the form under the cursor.
+    if (target.matches('[data-hcms-color-input]')) return
     if (!target.matches('input, textarea, select, [contenteditable][data-hcms-field]')) return
     if (target.tagName === 'TEXTAREA') autosizeTextarea(target)
     // The upload picker fires `input` too, but its .value is the OS fake path
@@ -72,6 +76,11 @@ export function bindEvents(ctx) {
     const target = e.target
     if (!target || !target.closest) return
     if (!target.closest('[data-hcms-form-root]')) return
+    if (target.matches('[data-hcms-color-input]')) {
+      const field = customColor(target)
+      if (field) onScalarChange(field, ctx)
+      return
+    }
     if (target.matches('input[type="file"][data-hcms-upload]')) {
       onUploadChange(target, ctx)
       return
@@ -89,7 +98,7 @@ export function bindEvents(ctx) {
     const action = actionEl.getAttribute('data-hcms-action')
     // add/remove/move must live inside the form root; close inside the shell.
     // Ignore stray data-hcms-action attributes elsewhere on the page.
-    if (action === 'add' || action === 'remove' || action === 'move-up' || action === 'move-down' || action === 'clear-upload') {
+    if (action === 'add' || action === 'remove' || action === 'move-up' || action === 'move-down' || action === 'clear-upload' || action === 'color-pick' || action === 'color-clear' || action === 'color-panel') {
       if (!actionEl.closest('[data-hcms-form-root]')) return
     } else if (action === 'close') {
       if (!actionEl.closest('[data-hcms-shell]')) return
@@ -109,6 +118,11 @@ export function bindEvents(ctx) {
       onMove(itemEl, action === 'move-up' ? -1 : 1, ctx)
     } else if (action === 'clear-upload') {
       onClearUpload(actionEl, ctx)
+    } else if (action === 'color-pick' || action === 'color-clear') {
+      const field = action === 'color-pick' ? pickColor(actionEl) : clearColor(actionEl)
+      if (field) onScalarChange(field, ctx)
+    } else if (action === 'color-panel') {
+      toggleColorPanel(actionEl)
     } else if (action === 'close') {
       ctx.onCloseRequested?.()
     }

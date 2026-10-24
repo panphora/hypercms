@@ -194,6 +194,30 @@ const DEFAULT_TEMPLATES = {
       <div class="hcms-error" hidden></div>
     </label>
   `,
+  // @color: the hidden input is the field (the form commits it like any
+  // scalar); swatches, the current chip and the custom inputs are built and
+  // painted by color-control.js.
+  '@color': `
+    <div class="hcms-field hcms-color" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <input type="hidden" data-hcms-field />
+      <div class="hcms-color-row">
+        <button type="button" class="hcms-color-current" data-hcms-action="color-panel" aria-expanded="false">
+          <span class="hcms-color-chip"></span>
+          <span class="hcms-color-name"></span>
+        </button>
+        <button type="button" class="hcms-color-clear" data-hcms-action="color-clear" aria-label="Clear color">${CLOSE_ICON}</button>
+      </div>
+      <div class="hcms-color-panel" hidden>
+        <div class="hcms-color-grid"></div>
+        <div class="hcms-color-custom">
+          <input type="color" class="hcms-color-native" data-hcms-color-input="native" aria-label="Pick a custom color" />
+          <input class="mirk-input hcms-color-text" data-hcms-color-input="text" spellcheck="false" autocomplete="off" placeholder="Any CSS color" aria-label="Custom color" />
+        </div>
+      </div>
+      <div class="hcms-error" hidden></div>
+    </div>
+  `,
   '@chips': `
     <div class="hcms-field hcms-chips" data-hcms-shape="scalar-array">
       <span class="hcms-label" data-hcms-label></span>
@@ -247,7 +271,8 @@ export function injectComponentTemplate(doc, key) {
 // "true" helps nobody). @href is NOT inferred: editing a link/URL is far more
 // common than uploading a file, so an a@href rule stays a plain URL field and
 // the file upload is opt-in. Suffix is split like the engine (ruleAttrIndex,
-// see engine/extract.js). Returns a DEFAULT_TEMPLATES key.
+// see engine/extract.js). A custom property named --color or --color-* infers
+// the color picker. Returns a DEFAULT_TEMPLATES key.
 const PROP_TO_COMPONENT = { src: '@image', checked: '@checkbox', innerHTML: '@richtext' }
 // data-hcms-component values for scalar rules. "chips" is array-only (below).
 const SCALAR_COMPONENT_BY_NAME = {
@@ -260,6 +285,7 @@ const SCALAR_COMPONENT_BY_NAME = {
   textarea: '@textarea',
   number: '@number',
   richtext: '@richtext',
+  color: '@color',
 }
 // Every opt-in component injects on demand; only the 6 shape templates are
 // always present.
@@ -296,6 +322,7 @@ export function componentForScalarRule(rule, doc, pathArr, pageRules) {
   if (at >= 0) {
     const prop = rule.slice(at + 1)
     if (PROP_TO_COMPONENT[prop]) return PROP_TO_COMPONENT[prop]
+    if (/^--color(-|$)/.test(prop)) return '@color'
   }
   return '@scalar'
 }

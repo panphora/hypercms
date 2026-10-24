@@ -12,6 +12,7 @@ import {
   readCropOverride,
 } from './templates.js'
 import { fieldPropertyFor } from './form-rules.js'
+import { setupColorControl } from './color-control.js'
 
 // The visible label for a file field is the basename of its URL value; the
 // bound leaf still carries the full URL in href so it round-trips byte-stable.
@@ -100,6 +101,14 @@ function buildScalar(rule, pathArr, data, doc, pageRules) {
   stampContainerField(node, lastKey(pathArr))
   setLabel(node, lastKey(pathArr))
   populateScalarValue(node, data)
+  if (componentKey === '@color' && winnerKey === '@color') {
+    setupColorControl(node, {
+      value: data,
+      tokens: readOptionsOverride(rule, doc, pathArr, pageRules),
+      path: pathArr.join('.'),
+      doc,
+    })
+  }
   if (componentKey === '@file') syncFileLeafText(node)
   return node
 }
