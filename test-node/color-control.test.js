@@ -5,7 +5,7 @@ import { componentForScalarRule, injectDefaults, injectComponents } from '../src
 import { deriveFormRules } from '../src/form-rules.js'
 import { buildForm } from '../src/form-builder.js'
 import { bindEvents } from '../src/events.js'
-import { parseColorOptions } from '../src/color-control.js'
+import { isColorValue, parseColorOptions } from '../src/color-control.js'
 import { COLORS } from '../src/catalogs/colors.js'
 
 const valueOf = (id) => COLORS.find((c) => c.id === id).value
@@ -52,6 +52,24 @@ function commitCtx(doc, rules, formHost) {
 const click = (doc, el) => el.dispatchEvent(new doc.defaultView.MouseEvent('click', { bubbles: true }))
 const change = (doc, el) => el.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true }))
 const input = (doc, el) => el.dispatchEvent(new doc.defaultView.Event('input', { bubbles: true }))
+
+// jsdom ships no CSS.supports; a browser's parser closes an unclosed function at
+// the end of input, so this stand-in accepts exactly what that parser accepts.
+const BROWSER_CSS = {
+  supports: (prop, value) =>
+    /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\(/i.test(value) ||
+    /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value) ||
+    /^[a-z]+$/i.test(value),
+}
+const browserDoc = { defaultView: { CSS: BROWSER_CSS } }
+
+test('isColorValue: unbalanced and commented custom values are refused', () => {
+  assert.equal(isColorValue('oklch(50% 0.1 200', browserDoc), false)
+  assert.equal(isColorValue("'red", browserDoc), false)
+  assert.equal(isColorValue('red /* x */', browserDoc), false)
+  assert.equal(isColorValue('oklch(50% 0.1 200)'), true)
+  assert.equal(isColorValue('#155dfc'), true)
+})
 
 test('parseColorOptions: palette, hue, shade, ids, literal and custom', () => {
   const none = parseColorOptions(null, null)

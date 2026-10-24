@@ -109,6 +109,32 @@ test('the Page style group renders first and only holds the page-bound fields', 
   assert.equal(formHost.querySelector('[data-hcms-path="theme"]'), null, 'the emptied group is not rendered')
 })
 
+test('a root scalar rule renders one field, not one in the form and one in Page style', () => {
+  const doc = setupDoc('', 'style="--color-accent: #123456"')
+  const formHost = mountForm(doc, 'html@--color-accent', '#123456')
+
+  assert.equal(formHost.querySelector('[data-hcms-page-style]'), null, 'no page style group')
+  const bound = formHost.querySelectorAll('[data-hcms-path=""]')
+  assert.equal(bound.length, 1, 'the root scalar is rendered once')
+  assert.ok(bound[0].querySelector('[data-hcms-field]'), 'the root scalar carries its field')
+})
+
+test('a page-role field inside an inline template is not repeated in Page style', () => {
+  const doc = setupDoc(
+    '<template data-hcms-tpl="theme"><div><input data-hcms-field="accent"></div></template>',
+    'style="--color-accent: #123456"'
+  )
+  const rules = { theme: { accent: 'html@--color-accent' } }
+  const formHost = mountForm(doc, rules, { theme: { accent: '#123456' } })
+
+  assert.equal(
+    formHost.querySelectorAll('[data-hcms-path="theme.accent"]').length,
+    1,
+    'the inline template owns its field'
+  )
+  assert.equal(formHost.querySelector('[data-hcms-page-style]'), null, 'no page style group')
+})
+
 test('style fields come first inside a group', () => {
   const doc = setupDoc(FIXTURE_BODY, FIXTURE_HTML_ATTRS)
   const formHost = mountForm(doc, RULES, {

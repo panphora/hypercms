@@ -1,3 +1,4 @@
+import { checkCustomPropertyValue } from 'hyper-html-api/engine'
 import { COLORS, HUES, SHADES } from './catalogs/colors.js'
 
 // The @color component: swatches from the Tailwind palette plus an optional
@@ -26,7 +27,7 @@ function openPanels(doc) {
 // is there; without one (node tests) a conservative shape check stands in.
 export function isColorValue(value, doc) {
   const text = String(value ?? '').trim()
-  if (!text || UNSAFE.test(text)) return false
+  if (!text || UNSAFE.test(text) || checkCustomPropertyValue(text)) return false
   const css = doc?.defaultView?.CSS
   if (css && typeof css.supports === 'function') return css.supports('color', text)
   return HEX.test(text) || COLOR_FUNCTION.test(text) || /^[a-z]+$/i.test(text)

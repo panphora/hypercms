@@ -5,6 +5,7 @@ import {
   componentForScalarRule,
   winningScalarArrayComponent,
 } from './templates.js'
+import { getRuleAtPath } from './path.js'
 
 const TAG_PROP_MAP = {
   IMG: 'src',
@@ -134,7 +135,7 @@ export function deriveFormRules(pageRules, doc) {
     const key = pathArr.length ? pathArr[pathArr.length - 1] : null
     const fieldKey = typeof key === 'string' ? key : '__value'
     const inlineEl = findInlineFieldEl(pathArr, fieldKey)
-    if (inlineEl) return fieldSelectorFor(inlineEl, fieldKey)
+    if (inlineEl) return scopeRepeatedKey(pathArr, fieldKey, fieldSelectorFor(inlineEl, fieldKey))
     // No path-bound override: resolve the component this rule opts into
     // (@scalar / @image / @file) and derive the selector from THAT template's
     // leaf tag, so an @image field reads img@src and an @file field reads
@@ -233,6 +234,7 @@ export function deriveFormRules(pageRules, doc) {
     const candidates = [pathStr, wildcardKey]
     for (let i = pathArr.length - 1; i >= 0; i--) {
       const slice = pathArr.slice(0, i).map((s) => (typeof s === 'number' ? '*' : s))
+      if (shapeKindOf(getRuleAtPath(pageRules, slice)) === 'object') candidates.push(slice.join('.'))
       slice.push('*')
       candidates.push(slice.join('.'))
     }

@@ -698,7 +698,7 @@ export function buildTemplateMap(pageRules, doc) {
     const winningComp = shape === 'scalar-array' ? winningScalarArrayComponent(rule, pathArr, doc) : null
     const defaultKey =
       shape === 'scalar'
-        ? componentForScalarRule(rule, doc, pathArr)
+        ? componentForScalarRule(rule, doc, pathArr, pageRules)
         : (arrayComp && arrayComp.array) || SHAPE_TO_DEFAULT_KEY[shape] || '@scalar'
 
     let tpl =

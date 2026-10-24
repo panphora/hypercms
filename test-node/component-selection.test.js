@@ -168,6 +168,16 @@ test('buildTemplateMap: scalar component selection parity (image inferred, href 
   assert.equal(map.get('name').getAttribute('data-hcms-tpl'), '@scalar')
 })
 
+test('buildTemplateMap: a card variant rule maps to the variant component', () => {
+  const doc = setupDoc(
+    '<div class="card" data-layout="2" data-hcms-component:data-layout="variant" data-hcms-options:data-layout="1:cols-1 2:cols-2"></div>'
+  )
+  const rules = { cards: ['.card', { layout: '@data-layout' }] }
+  prepare(doc, rules)
+  const map = buildTemplateMap(rules, doc)
+  assert.equal(map.get('cards.*.layout').getAttribute('data-hcms-tpl'), '@variant')
+})
+
 test('fileNameFromUrl: basename, query-stripped, decoded', () => {
   assert.equal(fileNameFromUrl('/uploads/2026/report.pdf'), 'report.pdf')
   assert.equal(fileNameFromUrl('/u/a%20b.png?v=3'), 'a b.png')

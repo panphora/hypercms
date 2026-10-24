@@ -87,6 +87,32 @@ test('repeated keys: a global template whose root is the input still reads and w
   }
 })
 
+test('repeated keys: an inline object template reads and writes its own title', () => {
+  const dom = loadPage(`<!DOCTYPE html><html><head>
+    <script data-rules-name="cms" data-rules-version="1" type="application/json">{"a":{"title":"h1"},"b":{"title":"h2"}}</script>
+    </head><body>
+    <template data-hcms-tpl="a"><div><input data-hcms-field="title"></div></template>
+    <template data-hcms-tpl="b"><div><input data-hcms-field="title"></div></template>
+    <h1>One</h1><h2>Two</h2></body></html>`)
+  open()
+  try {
+    const doc = dom.window.document
+    const at = (path) => doc.querySelector(`[data-hcms-form-root] input[data-hcms-path="${path}"]`)
+    const a = at('a.title')
+    const b = at('b.title')
+    assert.equal(a.value, 'One')
+    assert.equal(b.value, 'Two')
+
+    b.value = 'Two edited'
+    b.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    assert.equal(doc.querySelector('h1').textContent, 'One')
+    assert.equal(doc.querySelector('h2').textContent, 'Two edited')
+  } finally {
+    close()
+    reset(dom)
+  }
+})
+
 test('repeated keys: reordering rows keeps every path shape in step with its new path', () => {
   const dom = loadPage(`<!DOCTYPE html><html><head>
     <script data-rules-name="cms" data-rules-version="1" type="application/json">{"cards":["#features .card",{"title":"h3"}]}</script>

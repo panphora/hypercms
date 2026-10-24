@@ -60,10 +60,14 @@ function buildPageStyle(pageRules, data, doc) {
 
   function collect(rule, value, pathArr) {
     if (typeof rule === 'string') {
-      if (styleRole(rule, doc, pathArr, pageRules) === 'page') fields.push([rule, pathArr, value])
+      if (pathArr.length && styleRole(rule, doc, pathArr, pageRules) === 'page') fields.push([rule, pathArr, value])
       return
     }
     if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return
+    if (pathArr.length) {
+      const tpl = resolveTemplate(pathArr, '@object', doc)
+      if (tpl && isInlineTemplate(tpl)) return
+    }
     for (const [k, child] of Object.entries(rule)) collect(child, value == null ? null : value[k], [...pathArr, k])
   }
 }
