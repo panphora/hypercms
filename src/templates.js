@@ -273,7 +273,7 @@ export function componentForScalarRule(rule, doc, pathArr, pageRules) {
   if (typeof rule !== 'string') return '@scalar'
   const at = ruleAttrIndex(rule)
   const host = hostSelectorOf(rule, at, pathArr, pageRules)
-  const override = readElementAttr(host, doc, 'data-hcms-component')
+  const override = readRuleAttr(rule, at, pathArr, pageRules, doc, 'data-hcms-component')
   if (override && SCALAR_COMPONENT_BY_NAME[override]) {
     const key = SCALAR_COMPONENT_BY_NAME[override]
     // Value guards check exactly the elements the engine binds: under an array
@@ -307,7 +307,7 @@ export function componentForScalarRule(rule, doc, pathArr, pageRules) {
 export function declaredComponentKey(rule, doc, pathArr, pageRules) {
   if (typeof rule !== 'string') return null
   const at = ruleAttrIndex(rule)
-  const name = readElementAttr(hostSelectorOf(rule, at, pathArr, pageRules), doc, 'data-hcms-component')
+  const name = readRuleAttr(rule, at, pathArr, pageRules, doc, 'data-hcms-component')
   return (name && SCALAR_COMPONENT_BY_NAME[name]) || null
 }
 
@@ -416,7 +416,7 @@ export function winningScalarArrayComponent(rule, pathArr, doc) {
 export function readOptionsOverride(rule, doc, pathArr, pageRules) {
   if (typeof rule !== 'string') return null
   const at = ruleAttrIndex(rule)
-  const raw = readElementAttr(hostSelectorOf(rule, at, pathArr, pageRules), doc, 'data-hcms-options')
+  const raw = readRuleAttr(rule, at, pathArr, pageRules, doc, 'data-hcms-options')
   if (raw == null) return null
   const tokens = raw.trim().split(/\s+/).filter(Boolean)
   return tokens.length ? tokens : null
@@ -428,7 +428,7 @@ export function readOptionsOverride(rule, doc, pathArr, pageRules) {
 export function readCropOverride(rule, doc, pathArr, pageRules) {
   if (typeof rule !== 'string') return null
   const at = ruleAttrIndex(rule)
-  return readElementAttr(hostSelectorOf(rule, at, pathArr, pageRules), doc, 'data-hcms-crop')
+  return readRuleAttr(rule, at, pathArr, pageRules, doc, 'data-hcms-crop')
 }
 
 function scalarSelectorOf(rule, at) {
@@ -491,6 +491,22 @@ function readElementAttr(selector, doc, attrName) {
     return null
   }
   return el && el.getAttribute ? el.getAttribute(attrName) : null
+}
+
+// The authoring attribute for ONE rule. An element can carry several rules
+// (<html> holds every theme property), so data-hcms-component:--color-accent
+// names the control for the @--color-accent rule alone and wins over the plain
+// attribute. The plain attribute never applies to a @--* rule: it describes the
+// element's own value, not a CSS variable stored on it.
+function readRuleAttr(rule, at, pathArr, pageRules, doc, attrName) {
+  const host = hostSelectorOf(rule, at, pathArr, pageRules)
+  const prop = at >= 0 ? rule.slice(at + 1) : null
+  if (prop) {
+    const scoped = readElementAttr(host, doc, `${attrName}:${prop}`)
+    if (scoped != null) return scoped
+    if (prop.startsWith('--')) return null
+  }
+  return readElementAttr(host, doc, attrName)
 }
 
 // Pre-inject the component templates this page's rules actually select, so
