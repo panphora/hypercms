@@ -218,6 +218,20 @@ const DEFAULT_TEMPLATES = {
       <div class="hcms-error" hidden></div>
     </div>
   `,
+  '@font': `
+    <div class="hcms-field hcms-font" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <input type="hidden" data-hcms-field />
+      <button type="button" class="hcms-font-current" data-hcms-action="font-panel" aria-haspopup="listbox" aria-expanded="false">
+        <span class="hcms-font-name"></span>
+        <span aria-hidden="true" class="hcms-font-chevron">›</span>
+      </button>
+      <div class="hcms-font-panel" hidden>
+        <div class="hcms-font-list" role="listbox"></div>
+      </div>
+      <div class="hcms-error" hidden></div>
+    </div>
+  `,
   '@chips': `
     <div class="hcms-field hcms-chips" data-hcms-shape="scalar-array">
       <span class="hcms-label" data-hcms-label></span>
@@ -272,7 +286,8 @@ export function injectComponentTemplate(doc, key) {
 // common than uploading a file, so an a@href rule stays a plain URL field and
 // the file upload is opt-in. Suffix is split like the engine (ruleAttrIndex,
 // see engine/extract.js). A custom property named --color or --color-* infers
-// the color picker. Returns a DEFAULT_TEMPLATES key.
+// the color picker; --font / --font-* infers the font menu. Returns a
+// DEFAULT_TEMPLATES key.
 const PROP_TO_COMPONENT = { src: '@image', checked: '@checkbox', innerHTML: '@richtext' }
 // data-hcms-component values for scalar rules. "chips" is array-only (below).
 const SCALAR_COMPONENT_BY_NAME = {
@@ -286,6 +301,7 @@ const SCALAR_COMPONENT_BY_NAME = {
   number: '@number',
   richtext: '@richtext',
   color: '@color',
+  font: '@font',
 }
 // Every opt-in component injects on demand; only the 6 shape templates are
 // always present.
@@ -323,6 +339,7 @@ export function componentForScalarRule(rule, doc, pathArr, pageRules) {
     const prop = rule.slice(at + 1)
     if (PROP_TO_COMPONENT[prop]) return PROP_TO_COMPONENT[prop]
     if (/^--color(-|$)/.test(prop)) return '@color'
+    if (/^--font(-|$)/.test(prop)) return '@font'
   }
   return '@scalar'
 }

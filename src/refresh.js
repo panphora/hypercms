@@ -8,6 +8,7 @@ import { findUnresolved, applyUnresolvedState, stripReadOnly } from './unresolve
 import { enhanceFields } from './enhance.js'
 import { platform } from './platform.js'
 import { rowIdentitySeeder } from './row-identity.js'
+import { reconcileFontsLink } from './fonts-link.js'
 
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 
@@ -54,6 +55,7 @@ function refreshPageForm(ctx, { ignoreActiveValue }) {
     doc: ctx.doc,
   })
   morphForm(ctx.formRoot, fragment, { ignoreActiveValue })
+  reconcileFontsLink(ctx, newData)
   seeder.seed(ctx.formRoot)
   // The morph can rebuild field nodes, dropping autosize heights and richclay
   // instances (instances are per-element); re-enhance whatever is new.

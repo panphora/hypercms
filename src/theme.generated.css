@@ -1512,6 +1512,34 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
 }
 .hcms-color-text { flex: 1; min-width: 0; }
 
+/* ---------- FONT (@font) ----------
+   Each option sets its own font-family inline, so the list previews every
+   family in its face once the editor-only preview stylesheet arrives. */
+.hcms-font-current {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  padding: 6px 10px; border: 1px solid var(--mirk-input-border); border-radius: 4px;
+  background: var(--mirk-input-bg); color: var(--mirk-fg); font: inherit; cursor: pointer; text-align: left;
+}
+.hcms-font-name { font-size: 15px; }
+.hcms-font-chevron { transform: rotate(90deg); color: var(--mirk-placeholder-color); }
+.hcms-font-panel { margin-top: 6px; }
+.hcms-font-panel[hidden] { display: none; }
+.hcms-font-list {
+  display: flex; flex-direction: column; max-height: 320px; overflow-y: auto;
+  border: 1px solid var(--mirk-input-border); border-radius: 4px; background: var(--mirk-input-bg);
+}
+.hcms-font-group {
+  padding: 8px 10px 4px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--mirk-placeholder-color);
+}
+.hcms-font-option {
+  padding: 6px 10px; border: 0; background: transparent; color: var(--mirk-fg);
+  font-size: 16px; text-align: left; cursor: pointer;
+}
+.hcms-font-option:hover { background: color-mix(in oklab, var(--mirk-fg) 8%, transparent); }
+.hcms-font-option[aria-selected="true"] { background: color-mix(in oklab, var(--mirk-fg) 14%, transparent); }
+.hcms-font-option:focus-visible { outline: 2px solid var(--mirk-focus-color); outline-offset: -2px; }
+
 /* ---------- UPLOADING (spec §9) ----------
    One attribute, [data-hcms-uploading], set on the field for as long as the host
    has the bytes, plus --hcms-upload-progress carrying the percent. No markup of

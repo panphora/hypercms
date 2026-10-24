@@ -6,6 +6,8 @@ import { scaffold } from './scaffold.js'
 import { autosizeTextarea, enhanceFields } from './enhance.js'
 import { platform } from './platform.js'
 import { pickColor, clearColor, toggleColorPanel, customColor } from './color-control.js'
+import { pickFont, toggleFontPanel } from './font-control.js'
+import { reconcileFontsLink } from './fonts-link.js'
 
 const BOUND = new WeakSet()
 
@@ -98,7 +100,7 @@ export function bindEvents(ctx) {
     const action = actionEl.getAttribute('data-hcms-action')
     // add/remove/move must live inside the form root; close inside the shell.
     // Ignore stray data-hcms-action attributes elsewhere on the page.
-    if (action === 'add' || action === 'remove' || action === 'move-up' || action === 'move-down' || action === 'clear-upload' || action === 'color-pick' || action === 'color-clear' || action === 'color-panel') {
+    if (action === 'add' || action === 'remove' || action === 'move-up' || action === 'move-down' || action === 'clear-upload' || action === 'color-pick' || action === 'color-clear' || action === 'color-panel' || action === 'font-pick' || action === 'font-panel') {
       if (!actionEl.closest('[data-hcms-form-root]')) return
     } else if (action === 'close') {
       if (!actionEl.closest('[data-hcms-shell]')) return
@@ -123,6 +125,11 @@ export function bindEvents(ctx) {
       if (field) onScalarChange(field, ctx)
     } else if (action === 'color-panel') {
       toggleColorPanel(actionEl)
+    } else if (action === 'font-pick') {
+      const field = pickFont(actionEl)
+      if (field) onScalarChange(field, ctx)
+    } else if (action === 'font-panel') {
+      toggleFontPanel(actionEl)
     } else if (action === 'close') {
       ctx.onCloseRequested?.()
     }
@@ -645,6 +652,7 @@ export function commit(newData, info, ctx) {
   if (result.ok) {
     ctx.lastFingerprint = fingerprint
     ctx.lastData = newData
+    reconcileFontsLink(ctx, newData)
     setError(ctx, null)
     ctx.dispatch?.('hcms:change', { data: newData, path: info.path, structural: !!info.structural })
     ctx.onChange?.(newData, info)

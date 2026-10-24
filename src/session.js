@@ -21,6 +21,7 @@ import {
 } from './events.js'
 import { installObserver } from './refresh.js'
 import { platform, onPlatformEvent, LIVESYNC_APPLIED } from './platform.js'
+import { reconcileFontsLink } from './fonts-link.js'
 
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 
@@ -131,6 +132,10 @@ export function createSession({ view, doc, pageRoot, opts = {}, onCloseRequested
 // through teardownSession.
 export function startSession(ctx) {
   ctx.updateFingerprint()
+
+  // A font set outside the CMS (the JSON API, a hand edit) left the fonts link
+  // behind; opening the CMS brings it back in step.
+  reconcileFontsLink(ctx, coerceBooleans(engine.extract(ctx.pageRoot, ctx.pageRules, ENGINE_OPTS), ctx.pageRules))
 
   ctx.observerHandle = installObserver({
     onRefresh: (changes) => ctx.view.refresh('observer', changes),
