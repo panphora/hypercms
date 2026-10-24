@@ -529,6 +529,23 @@ body.hcms-open.hcms-overlay { overflow: hidden; --hcms-toggle-display: none; }
 .hcms-font-option[aria-selected="true"] { background: color-mix(in oklab, var(--mirk-fg) 14%, transparent); }
 .hcms-font-option:focus-visible { outline: 2px solid var(--mirk-focus-color); outline-offset: -2px; }
 
+/* ---------- VARIANT (@variant) ----------
+   Native radios behind icon tiles: arrow keys move the choice, the tile with
+   the checked radio is the selected one. */
+.hcms-variant-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.hcms-variant-option {
+  position: relative; display: inline-flex; flex-direction: column; align-items: center; gap: 4px;
+  min-width: 64px; padding: 8px 10px; border: 1px solid var(--mirk-input-border); border-radius: 6px;
+  background: var(--mirk-input-bg); color: var(--mirk-placeholder-color); font-size: 12px; cursor: pointer;
+}
+.hcms-variant-option:hover { color: var(--mirk-fg); }
+.hcms-variant-option:has(input:checked) {
+  color: var(--mirk-fg); border-color: var(--mirk-fg);
+  box-shadow: inset 0 0 0 1px var(--mirk-fg);
+}
+.hcms-variant-option:has(input:focus-visible) { outline: 2px solid var(--mirk-focus-color); outline-offset: 2px; }
+.hcms-variant-icon { display: inline-flex; }
+
 /* ---------- UPLOADING (spec §9) ----------
    One attribute, [data-hcms-uploading], set on the field for as long as the host
    has the bytes, plus --hcms-upload-progress carrying the percent. No markup of

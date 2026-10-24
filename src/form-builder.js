@@ -14,6 +14,7 @@ import {
 import { fieldPropertyFor } from './form-rules.js'
 import { setupColorControl } from './color-control.js'
 import { setupFontControl } from './font-control.js'
+import { populateVariant } from './variant-control.js'
 
 // The visible label for a file field is the basename of its URL value; the
 // bound leaf still carries the full URL in href so it round-trips byte-stable.
@@ -89,6 +90,17 @@ function buildScalar(rule, pathArr, data, doc, pageRules) {
   const winnerKey = tpl.getAttribute?.('data-hcms-tpl')
   if ((componentKey === '@select' || componentKey === '@radio') && winnerKey === componentKey) {
     populateOptions(node, rule, pathArr, data, doc, componentKey, pageRules)
+  }
+  if (componentKey === '@variant' && winnerKey === '@variant') {
+    const tokens = readOptionsOverride(rule, doc, pathArr, pageRules)
+    if (!tokens) setFieldError(node, 'data-hcms-options required (value:icon tokens)')
+    const count = populateVariant(node, {
+      tokens,
+      value: data,
+      name: radioGroupName(pathArr.join('.')),
+      doc,
+    })
+    if (count === 0) node.querySelector('.hcms-variant-option')?.remove()
   }
   if (componentKey === '@image' && winnerKey === '@image') {
     const crop = readCropOverride(rule, doc, pathArr, pageRules)

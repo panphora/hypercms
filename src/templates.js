@@ -232,6 +232,21 @@ const DEFAULT_TEMPLATES = {
       <div class="hcms-error" hidden></div>
     </div>
   `,
+  // @variant: a radio group of layout choices, each an icon plus a label; the
+  // page's own CSS keys on the attribute the choice writes.
+  '@variant': `
+    <div class="hcms-field hcms-variant" data-hcms-shape="scalar">
+      <span class="hcms-label" data-hcms-label></span>
+      <div class="hcms-variant-row" role="radiogroup">
+        <label class="hcms-variant-option">
+          <input type="radio" class="mirk-sr-only" data-hcms-field />
+          <span class="hcms-variant-icon"></span>
+          <span class="hcms-variant-label"></span>
+        </label>
+      </div>
+      <div class="hcms-error" hidden></div>
+    </div>
+  `,
   '@chips': `
     <div class="hcms-field hcms-chips" data-hcms-shape="scalar-array">
       <span class="hcms-label" data-hcms-label></span>
@@ -302,6 +317,7 @@ const SCALAR_COMPONENT_BY_NAME = {
   richtext: '@richtext',
   color: '@color',
   font: '@font',
+  variant: '@variant',
 }
 // Every opt-in component injects on demand; only the 6 shape templates are
 // always present.
