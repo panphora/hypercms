@@ -14,11 +14,7 @@ function realApi() {
   return { open, close, isOpen, hasRules: (doc) => !!engine.findRules(doc, 'cms') }
 }
 
-// The remembered view outlives a spec: it is one localStorage entry for the
-// whole origin, and a spec that seeds it would otherwise decide what the next
-// one's first press does.
 function cleanupToggle() {
-  localStorage.removeItem('hcms.view')
   document.querySelector('[data-hcms-toggle-host]')?.remove()
   document.getElementById('hcms-toggle-style')?.remove()
   document.querySelector('[data-hcms-toggle-style]')?.remove()
@@ -139,9 +135,6 @@ describe('hypercms floating toggle', () => {
 
   it('click opens the real shell, click again closes it', async () => {
     await mountPage()
-    // A remembered view, so the press opens it. On a first run with both views
-    // available the same press opens the menu instead, which is its own spec.
-    localStorage.setItem('hcms.view', 'sidebar')
     window.__hyperclayEditMode = true
     maybeInjectToggle(realApi())
     const btn = document.querySelector('[data-hcms-toggle-host]')
@@ -165,7 +158,7 @@ describe('hypercms floating toggle', () => {
   // nothing lands on <body> at all.
   it('reads "Close editor" over an inline session, which sets no body class', async () => {
     await mountPage()
-    localStorage.setItem('hcms.view', 'inline')
+    page.querySelector('script[data-rules-name="cms"]').setAttribute('data-cms-view', 'inline')
     window.__hyperclayEditMode = true
     maybeInjectToggle(realApi())
     const host = document.querySelector('[data-hcms-toggle-host]')
@@ -267,16 +260,6 @@ describe('hypercms floating toggle', () => {
     const main = host.querySelector('.hcms-toggle__main')
     expect(getComputedStyle(host).position).to.equal('fixed')
     expect(rgb(getComputedStyle(main).backgroundColor).a).to.equal(1)
-    // The arrow and the menu are the same kind of target: `background: none`
-    // makes an arrow that is not there, and `position: static` drops the menu
-    // into the flow and shoves the page.
-    const arrow = host.querySelector('.hcms-toggle__arrow')
-    const menu = host.querySelector('.hcms-toggle__menu')
-    expect(rgb(getComputedStyle(arrow).backgroundColor).a).to.equal(1)
-    expect(getComputedStyle(menu).position).to.equal('absolute')
-    expect(getComputedStyle(menu).display).to.equal('none')
-    arrow.click()
-    expect(getComputedStyle(menu).display).to.equal('block')
   })
 
   it('composes the offset and the shift into one right edge', async () => {
@@ -293,7 +276,6 @@ describe('hypercms floating toggle', () => {
 
   it('publishes the shift from the real theme when the shell opens', async () => {
     await mountPage()
-    localStorage.setItem('hcms.view', 'sidebar')
     window.__hyperclayEditMode = true
     maybeInjectToggle(realApi())
     const host = document.querySelector('[data-hcms-toggle-host]')

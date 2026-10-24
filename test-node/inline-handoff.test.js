@@ -158,7 +158,7 @@ test('toggle: the main button closes an inline session', async () => {
   const dom = loadPage(VISIBLE_ONLY)
   const doc = dom.window.document
   setBox(doc.querySelector('.title'), 300, 40)
-  const host = injectToggle({ open, close, isOpen, views: ['sidebar', 'inline'] }, doc)
+  const host = injectToggle({ open, close, isOpen }, doc)
 
   open({ view: 'inline' })
   assert.equal(

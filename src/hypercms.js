@@ -53,17 +53,24 @@ const VIEWS = {
   inline: createInlineView,
 }
 
+// The page says how it wants to be edited, on the rules tag the session will
+// use: data-cms-view="inline". No tag to read it from (a literal rules object),
+// no attribute, or "sidebar" means the sidebar. An unknown value is a page
+// authoring mistake, not a caller error, so it warns and opens the sidebar.
+function declaredView(doc, rules) {
+  const source = rules !== undefined ? rules : 'cms'
+  if (typeof source !== 'string') return 'sidebar'
+  const declared = engine.findRules(doc, source)?.tagNode?.getAttribute?.('data-cms-view')
+  if (!declared || declared === 'sidebar') return 'sidebar'
+  if (VIEWS[declared]) return declared
+  console.warn(`hypercms: unknown data-cms-view "${declared}" on the rules tag, opening the sidebar`)
+  return 'sidebar'
+}
+
 export function open(opts = {}) {
   // Everything that can be rejected is rejected before anything is destroyed. A
   // bad view name or a missing page must not leave a caller with the session
   // they had already torn down.
-  // A bare open() means "make sure the editor is up", not "put it in the
-  // sidebar". Defaulting to sidebar turned every such call into a view switch.
-  const viewName = opts.view || (state.isOpen ? state.ctx.view.name : 'sidebar')
-  const makeView = VIEWS[viewName]
-  if (!makeView) {
-    throw new Error(`hypercms: unknown view "${viewName}" (expected ${Object.keys(VIEWS).join(' or ')})`)
-  }
   // A switch changes the presentation of one session, not the session. Someone
   // calling open({ view: 'sidebar' }) means "show me this in the sidebar"; they
   // are not restating the pageRoot, the rules and the callbacks they opened
@@ -71,12 +78,22 @@ export function open(opts = {}) {
   // document.body with the default rules tag and stops calling onChange.
   // state.opts holds the active session's options and teardown clears it, so it
   // has to be read here, before anything is torn down.
-  const effective = state.isOpen ? { ...state.opts, ...opts, view: viewName } : opts
+  const merged = state.isOpen ? { ...state.opts, ...opts } : opts
 
-  const pageRoot = effective.pageRoot || (typeof document !== 'undefined' ? document.body : null)
+  const pageRoot = merged.pageRoot || (typeof document !== 'undefined' ? document.body : null)
   if (!pageRoot) throw new Error('hypercms: no pageRoot available')
   const doc = pageRoot.ownerDocument || (typeof document !== 'undefined' ? document : null)
   if (!doc) throw new Error('hypercms: no document available')
+
+  // A bare open() means "make sure the editor is up", not "put it in the
+  // sidebar": with a session up it keeps that view, otherwise it opens the view
+  // the page declares.
+  const viewName = opts.view || (state.isOpen ? state.ctx.view.name : declaredView(doc, merged.rules))
+  const makeView = VIEWS[viewName]
+  if (!makeView) {
+    throw new Error(`hypercms: unknown view "${viewName}" (expected ${Object.keys(VIEWS).join(' or ')})`)
+  }
+  const effective = state.isOpen ? { ...merged, view: viewName } : opts
 
   // Reopening the view that is already up is a silent no-op, not a warning: a
   // host wiring a button to open({ view }) should be able to call it without
@@ -325,9 +342,6 @@ maybeInjectToggle({
   close,
   isOpen,
   getTheme: () => state.opts?.theme,
-  // The same map open() resolves a view name against, so the split button
-  // offers exactly the views this build can actually render.
-  views: Object.keys(VIEWS),
   hasRules: (doc) => !!engine.findRules(doc, 'cms'),
 })
 
