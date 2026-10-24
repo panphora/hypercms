@@ -54,6 +54,7 @@ import {
 import { installSnapshotHook } from '../hooks.js'
 import { createInlineLayer } from './inline-layer.js'
 import { inlineIcon } from '../inline-icons.js'
+import { contentRoot } from '../page-root.js'
 
 const HOST_TAG = 'hypercms-inline'
 
@@ -339,7 +340,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
     // per target: the target set is rebuilt on every refresh, and per-element
     // listeners would have to be torn down and reattached with it.
     bindPage() {
-      const root = this.ctx.pageRoot
+      const root = contentRoot(this.ctx.pageRoot)
       const hostRoot = host.root
 
       const onPointerOver = (event) => {
@@ -405,7 +406,7 @@ export function createInlineView({ doc, pageRoot, opts = {} }) {
       // carries it for.
       const onChanged = (event) => {
         const detail = event.detail
-        if (!detail || detail.pageRoot !== this.ctx.pageRoot || !detail.path) return
+        if (!detail || detail.pageRoot !== contentRoot(this.ctx.pageRoot) || !detail.path) return
         for (const binding of bindings.values()) {
           if (binding.path === detail.path) binding.written = true
         }

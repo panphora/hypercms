@@ -80,9 +80,9 @@ export function open(opts = {}) {
   // has to be read here, before anything is torn down.
   const merged = state.isOpen ? { ...state.opts, ...opts } : opts
 
-  const pageRoot = merged.pageRoot || (typeof document !== 'undefined' ? document.body : null)
+  const pageRoot = merged.pageRoot || (typeof document !== 'undefined' ? document : null)
   if (!pageRoot) throw new Error('hypercms: no pageRoot available')
-  const doc = pageRoot.ownerDocument || (typeof document !== 'undefined' ? document : null)
+  const doc = (pageRoot.nodeType === 9 ? pageRoot : pageRoot.ownerDocument) || (typeof document !== 'undefined' ? document : null)
   if (!doc) throw new Error('hypercms: no document available')
 
   // A bare open() means "make sure the editor is up", not "put it in the

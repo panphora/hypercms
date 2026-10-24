@@ -2,6 +2,7 @@ import { engine } from 'hyper-html-api'
 import { morph } from 'hyper-morph'
 import { fromString as pathFromString, getRuleAtPath } from './path.js'
 import { rowIdentityHooks } from './row-identity.js'
+import { contentRoot } from './page-root.js'
 
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 const ROLLBACK_UI = 'data-hcms-rollback-ui'
@@ -42,7 +43,7 @@ function applyPage(pageRoot, pageRules, newData, options) {
   // a specific container.
   const target = resolveStructuralTarget(pageRoot, pageRules, structuralPath)
   const subtreeSnapshot = target ? captureChildren(target) : null
-  const pageSnapshot = target ? null : captureNonShellSnapshot(pageRoot, shellRoot)
+  const pageSnapshot = target ? null : captureNonShellSnapshot(contentRoot(pageRoot), shellRoot)
   try {
     engine.apply(pageRoot, pageRules, newData, engineOpts)
     return { ok: true }
@@ -50,7 +51,7 @@ function applyPage(pageRoot, pageRules, newData, options) {
     if (subtreeSnapshot) {
       restoreChildren(target, subtreeSnapshot)
     } else if (pageSnapshot) {
-      restoreNonShellSnapshot(pageRoot, shellRoot, pageSnapshot)
+      restoreNonShellSnapshot(contentRoot(pageRoot), shellRoot, pageSnapshot)
     }
     return { ok: false, error: err }
   }

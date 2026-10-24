@@ -10,6 +10,7 @@ import { deriveFormRules } from './form-rules.js'
 import { warnUnmatchedTemplates } from './diagnostics.js'
 import { findUnresolved, stripReadOnly } from './unresolved.js'
 import { rowIdentitySeeder } from './row-identity.js'
+import { contentRoot } from './page-root.js'
 import {
   commit,
   commitWithUndo,
@@ -104,13 +105,13 @@ export function createSession({ view, doc, pageRoot, opts = {}, onCloseRequested
       // inline one without inspecting the DOM. Merged into the caller's detail
       // rather than replacing it: hcms:change still carries .data, hcms:error
       // still carries .error.
-      const payload = { ...(detail || {}), pageRoot, view: view.name }
+      const payload = { ...(detail || {}), pageRoot: contentRoot(pageRoot), view: view.name }
       const ev = new Ctor(name, { bubbles: true, cancelable: name === 'hcms:change', detail: payload })
       // A full-document morph (live sync, a version restore) can replace the
       // view root between mount and dispatch. Falling back to the page keeps the
       // event on the document instead of firing it into a detached tree where no
       // listener will ever see it.
-      const target = view.root && view.root.isConnected !== false ? view.root : pageRoot
+      const target = view.root && view.root.isConnected !== false ? view.root : contentRoot(pageRoot)
       target.dispatchEvent(ev)
     },
     onCloseRequested,

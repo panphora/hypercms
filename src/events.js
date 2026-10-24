@@ -5,6 +5,7 @@ import { buildItem, fileNameFromUrl, radioGroupName } from './form-builder.js'
 import { scaffold } from './scaffold.js'
 import { autosizeTextarea, enhanceFields } from './enhance.js'
 import { platform } from './platform.js'
+import { contentRoot } from './page-root.js'
 import { pickColor, clearColor, toggleColorPanel, customColor } from './color-control.js'
 import { pickFont, toggleFontPanel } from './font-control.js'
 import { reconcileFontsLink } from './fonts-link.js'
@@ -175,7 +176,7 @@ function resolveUnobservedProjection(ctx, pathStr) {
   const prop = rule.slice(at + 1)
   if (!UNOBSERVED_FIELD_PROPS.has(prop)) return null
   const selector = rule.slice(0, at)
-  const el = selector ? ctx.pageRoot.querySelector(selector) : ctx.pageRoot
+  const el = selector ? ctx.pageRoot.querySelector(selector) : contentRoot(ctx.pageRoot)
   if (!el) return null
   return { el, prop, oldValue: el[prop] }
 }
