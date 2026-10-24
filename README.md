@@ -56,7 +56,7 @@ cms.open({ rules: { title: '.title' } })  // a literal rules object, passed by h
 
 ## Auto-open with `?cms=true`
 
-Load any hypercms page with `?cms=true` in the URL and the CMS opens by itself once the DOM is ready — no trigger, no `cms.open()` call. The auto-open uses the host defaults (`document.body` as both `pageRoot` and `mountTo`), and it never double-mounts: if your page also calls `cms.open()`, the second open is a no-op.
+Load any hypercms page with `?cms=true` in the URL and the CMS opens by itself once the DOM is ready — no trigger, no `cms.open()` call. The auto-open uses the host defaults (the whole `document` as `pageRoot`, `document.body` as `mountTo`), and it never double-mounts: if your page also calls `cms.open()`, the second open is a no-op.
 
 When the user closes the CMS, hypercms rewrites the param to `cms=false` via `history.replaceState` (the param is kept, no reload), so refreshing or sharing the post-close URL does not auto-reopen:
 

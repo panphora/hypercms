@@ -6,7 +6,7 @@ import { deriveFormRules } from '../src/form-rules.js'
 import { buildForm } from '../src/form-builder.js'
 import { bindEvents } from '../src/events.js'
 import { parseFontOptions } from '../src/font-control.js'
-import { FONTS, fontBySlug, fontStack, fontsHref } from '../src/catalogs/fonts.js'
+import { FONTS, fontBySlug, fontStack, fontsHref, familyEntries, sameFamilies } from '../src/catalogs/fonts.js'
 import { loadPage, reset } from './_helpers.js'
 import { open, close, isOpen, refresh, api } from '../src/hypercms.js'
 
@@ -106,6 +106,10 @@ test('inference: --font / --font-* custom properties and an explicit component',
   assert.equal(componentForScalarRule('html@--font-heading', doc), '@font')
   assert.equal(componentForScalarRule('html@--font', doc), '@font')
   assert.equal(componentForScalarRule('html@--fontsize', doc), '@scalar')
+  assert.equal(componentForScalarRule('html@--font-weight-heading', doc), '@scalar')
+  assert.equal(componentForScalarRule('html@--font-size-base', doc), '@scalar')
+  assert.equal(componentForScalarRule('html@--color-scheme', doc), '@scalar')
+  assert.equal(componentForScalarRule('html@--color-accent', doc), '@color')
   assert.equal(componentForScalarRule('#s@data-face', doc), '@font')
 })
 
@@ -300,4 +304,63 @@ test('session: an author\'s own font link survives picking, syncing and clearing
     close()
   }
   reset(dom)
+})
+
+test('fonts link: a hand-written link keeps a family the catalog does not know', () => {
+  if (isOpen()) close()
+  const fraunces = "family=Fraunces:opsz,wght@9..144,400..700"
+  const href = `https://fonts.googleapis.com/css2?${fraunces}&family=Inter:wght@400..700&display=swap`
+  const dom = loadPage(
+    sessionFixture({
+      style: `--font-heading: 'Fraunces', ui-serif, serif; --font-body: ${INTER}`,
+      rules: '{ "theme": { "heading": "html@--font-heading", "body": "html@--font-body" } }',
+      head: `<link rel="stylesheet" data-hcms-fonts href="${href}" />`,
+    })
+  )
+  const doc = dom.window.document
+  open({ pageRoot: doc })
+  try {
+    const links = doc.querySelectorAll(FONTS_LINK)
+    assert.equal(links.length, 1)
+    assert.equal(links[0].getAttribute('href'), href, 'opening the editor leaves an equivalent link alone')
+
+    pickIn(doc, 'theme.body', 'Lora')
+    const after = links[0].getAttribute('href')
+    assert.ok(after.includes(fraunces), 'the hand-written family entry is kept verbatim')
+    assert.ok(after.includes('family=Lora:'), 'the picked catalog family is loaded')
+    assert.ok(!after.includes('family=Inter'), 'the replaced catalog family is gone')
+    assert.equal(links[0].hasAttribute('no-undo'), true, 'the CMS link is never an undo step')
+  } finally {
+    close()
+  }
+  reset(dom)
+})
+
+test('fonts link: a hand link for a catalog family is not rewritten on open', () => {
+  if (isOpen()) close()
+  const href = 'https://fonts.googleapis.com/css2?family=Inter&display=swap'
+  const dom = loadPage(
+    sessionFixture({
+      style: `--font-body: ${INTER}`,
+      rules: '{ "theme": { "body": "html@--font-body" } }',
+      head: `<link rel="stylesheet" data-hcms-fonts href="${href}" />`,
+    })
+  )
+  const doc = dom.window.document
+  open({ pageRoot: doc })
+  try {
+    const links = doc.querySelectorAll(FONTS_LINK)
+    assert.equal(links.length, 1)
+    assert.equal(links[0].getAttribute('href'), href)
+  } finally {
+    close()
+  }
+  reset(dom)
+})
+
+test('fontsHref keeps only families the page already loads, and family entries compare by name', () => {
+  assert.equal(fontsHref(["'Unknown Face', serif"], null), null)
+  assert.equal(familyEntries('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400&display=swap').get('open sans'), 'family=Open+Sans:wght@400')
+  assert.equal(sameFamilies('https://x/css2?family=Inter:wght@400', 'https://x/css2?family=Inter:ital,wght@0,100..900;1,100..900'), true)
+  assert.equal(sameFamilies('https://x/css2?family=Inter:wght@400', 'https://x/css2?family=Lora:wght@400'), false)
 })

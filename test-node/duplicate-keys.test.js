@@ -19,16 +19,28 @@ function rulesFor(rules) {
 
 test('duplicate keys: a repeated key is scoped by its path, a unique key stays bare', () => {
   const form = rulesFor({ a: { title: 'h1' }, b: { title: 'h2' }, intro: 'p' })
-  assert.equal(form.a.title, '[data-hcms-path="a.title"] textarea[data-hcms-field="title"]@value')
-  assert.equal(form.b.title, '[data-hcms-path="b.title"] textarea[data-hcms-field="title"]@value')
+  assert.equal(
+    form.a.title,
+    '[data-hcms-path-shape="a.title"] textarea[data-hcms-field="title"], textarea[data-hcms-field="title"][data-hcms-path-shape="a.title"]@value'
+  )
+  assert.equal(
+    form.b.title,
+    '[data-hcms-path-shape="b.title"] textarea[data-hcms-field="title"], textarea[data-hcms-field="title"][data-hcms-path-shape="b.title"]@value'
+  )
   assert.equal(form.intro, 'textarea[data-hcms-field="intro"]@value')
 })
 
 test('duplicate keys: inside a list row, a nested repeat is scoped by the path after the row', () => {
   const form = rulesFor({ cards: ['.card', { a: { title: 'h3' }, b: { title: 'h4' } }] })
   const item = form.cards[1]
-  assert.equal(item.a.title, '[data-hcms-path$=".a.title"] textarea[data-hcms-field="title"]@value')
-  assert.equal(item.b.title, '[data-hcms-path$=".b.title"] textarea[data-hcms-field="title"]@value')
+  assert.equal(
+    item.a.title,
+    '[data-hcms-path-shape="cards.*.a.title"] textarea[data-hcms-field="title"], textarea[data-hcms-field="title"][data-hcms-path-shape="cards.*.a.title"]@value'
+  )
+  assert.equal(
+    item.b.title,
+    '[data-hcms-path-shape="cards.*.b.title"] textarea[data-hcms-field="title"], textarea[data-hcms-field="title"][data-hcms-path-shape="cards.*.b.title"]@value'
+  )
 })
 
 test('duplicate keys: editing one group never writes into the other', () => {

@@ -404,7 +404,13 @@ export function createInlineLayer({ doc, layerEl, onActivate, onListAction, onSt
     } else if (event.key === 'Tab') closeSettings(true)
     else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) && openSettings.menu.contains(event.target)) {
       event.preventDefault()
-      openSettings.menu.querySelector('[role="menuitem"]').focus({ preventScroll: true })
+      const items = [...openSettings.menu.querySelectorAll('[role="menuitem"]')]
+      const at = items.indexOf(event.target)
+      const next = event.key === 'Home' ? 0
+        : event.key === 'End' ? items.length - 1
+        : at === -1 ? 0
+        : (at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+      items[next]?.focus({ preventScroll: true })
     }
   }
 

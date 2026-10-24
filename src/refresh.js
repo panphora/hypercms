@@ -9,6 +9,7 @@ import { enhanceFields } from './enhance.js'
 import { platform } from './platform.js'
 import { rowIdentitySeeder } from './row-identity.js'
 import { reconcileFontsLink } from './fonts-link.js'
+import { rootRules } from './page-root.js'
 
 const ENGINE_OPTS = { skip: '[data-hcms-shell]', templateAttr: 'cms-template' }
 
@@ -28,7 +29,7 @@ function refreshPageForm(ctx, { ignoreActiveValue }) {
     // (session.js hands found.rules to view.prepareRules) rather than
     // hardcoding one view's upgrade here — that undid a wider upgrade on the
     // first refresh, silently flattening rich text back to plain.
-    ctx.pageRules = ctx.view.prepareRules(found.rules)
+    ctx.pageRules = ctx.view.prepareRules(rootRules(found.rules, ctx.pageRoot))
     ctx.rulesTagNode = found.tagNode
   }
   // Re-derive formRules so schema changes (rule shape, template overrides) flow through.

@@ -1,6 +1,10 @@
 import { ruleAttrIndex } from 'hyper-html-api/engine'
 import { getRuleAtPath } from './path.js'
 
+// --font-* names that hold something other than a family (Tailwind 4 uses
+// --font-weight-*, many pages use --font-size-*), so they never get the font menu.
+const NOT_A_FAMILY = /^--font-(size|weight|style|stretch|variant|feature-settings|variation-settings|optical-sizing|kerning|synthesis|smoothing|palette|size-adjust|display)(-|$)/
+
 export function humanize(key) {
   return key
     .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -354,8 +358,8 @@ export function componentForScalarRule(rule, doc, pathArr, pageRules) {
   if (at >= 0) {
     const prop = rule.slice(at + 1)
     if (PROP_TO_COMPONENT[prop]) return PROP_TO_COMPONENT[prop]
-    if (/^--color(-|$)/.test(prop)) return '@color'
-    if (/^--font(-|$)/.test(prop)) return '@font'
+    if (/^--color(-|$)/.test(prop) && prop !== '--color-scheme') return '@color'
+    if (/^--font(-|$)/.test(prop) && !NOT_A_FAMILY.test(prop)) return '@font'
   }
   return '@scalar'
 }

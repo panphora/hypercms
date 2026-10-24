@@ -11,6 +11,12 @@ const TAG_PROP_MAP = {
   A: 'href',
 }
 
+// The path with every row index replaced by "*": what a field IS, whichever
+// row it sits in. Form rules scope repeated keys by it.
+export function shapeOf(pathArr) {
+  return pathArr.map((seg) => (typeof seg === 'number' || /^[0-9]+$/.test(String(seg)) ? '*' : String(seg))).join('.')
+}
+
 export function fieldPropertyFor(el) {
   if (!el) return 'value'
   const tag = (el.tagName || '').toUpperCase()
@@ -139,21 +145,19 @@ export function deriveFormRules(pageRules, doc) {
     return scopeRepeatedKey(pathArr, fieldKey, `input[data-hcms-field="${cssEscape(fieldKey)}"]@value`)
   }
 
-  // Two scalars with the same last key (hero.background, features.background)
-  // stamp the same data-hcms-field, so a bare key selector reads the first one
-  // for both and a commit copies one field's value into the other. A repeated
-  // key is scoped by the field's own data-hcms-path: exact outside a list, the
-  // part after the row inside one (the row selector already scopes the rest).
+  // Two scalars with the same last key (hero.background, features.background,
+  // or a card's title and its links' titles) stamp the same data-hcms-field, so
+  // a bare key selector reads the first one for all of them and a commit copies
+  // one field's value into another. A repeated key is scoped by the field's
+  // shape (its path with row indices as "*"), matched exactly, on the field
+  // itself or on the wrapper around it.
   function scopeRepeatedKey(pathArr, fieldKey, selector) {
     if ((leafKeyCounts.get(fieldKey) || 0) < 2) return selector
-    let row = -1
-    pathArr.forEach((seg, i) => {
-      if (seg === '*' || typeof seg === 'number') row = i
-    })
-    if (row === -1) return `[data-hcms-path="${cssEscape(pathArr.join('.'))}"] ${selector}`
-    const tail = pathArr.slice(row + 1)
-    if (tail.length < 2) return selector
-    return `[data-hcms-path$=".${cssEscape(tail.join('.'))}"] ${selector}`
+    const scope = `[data-hcms-path-shape="${cssEscape(shapeOf(pathArr))}"]`
+    const at = selector.lastIndexOf('@')
+    const sel = at === -1 ? selector : selector.slice(0, at)
+    const prop = at === -1 ? '' : selector.slice(at)
+    return `${scope} ${sel}, ${sel}${scope}${prop}`
   }
 
   function scalarArrayRule(rule, pathArr) {

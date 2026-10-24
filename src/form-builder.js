@@ -12,7 +12,7 @@ import {
   readCropOverride,
   styleRole,
 } from './templates.js'
-import { fieldPropertyFor } from './form-rules.js'
+import { fieldPropertyFor, shapeOf } from './form-rules.js'
 import { setupColorControl } from './color-control.js'
 import { setupFontControl } from './font-control.js'
 import { populateVariant } from './variant-control.js'
@@ -408,6 +408,7 @@ function cloneTemplate(tpl, doc) {
 
 function stampPath(node, pathArr) {
   node.setAttribute('data-hcms-path', pathArr.join('.'))
+  node.setAttribute('data-hcms-path-shape', shapeOf(pathArr))
 }
 
 function stampScalarField(node, key) {
@@ -557,6 +558,7 @@ function stampInlineFieldPaths(node, shape, parentPath) {
     if (shape && typeof shape === 'object' && !(key in shape)) return
     const childPath = [...parentPath, key].join('.')
     el.setAttribute('data-hcms-path', childPath)
+    el.setAttribute('data-hcms-path-shape', shapeOf([...parentPath, key]))
   })
 }
 

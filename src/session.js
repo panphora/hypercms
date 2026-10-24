@@ -10,7 +10,7 @@ import { deriveFormRules } from './form-rules.js'
 import { warnUnmatchedTemplates } from './diagnostics.js'
 import { findUnresolved, stripReadOnly } from './unresolved.js'
 import { rowIdentitySeeder } from './row-identity.js'
-import { contentRoot } from './page-root.js'
+import { contentRoot, rootRules } from './page-root.js'
 import {
   commit,
   commitWithUndo,
@@ -50,7 +50,7 @@ export function createSession({ view, doc, pageRoot, opts = {}, onCloseRequested
   // bare scalar rules whose page element contains child elements are rebound
   // through @innerHTML so links and inline formatting survive the round-trip, and
   // their form fields render the @richtext component.
-  const pageRules = view.prepareRules(found.rules)
+  const pageRules = view.prepareRules(rootRules(found.rules, pageRoot))
   const rulesTagNode = found.tagNode
 
   injectDefaults(doc)

@@ -260,6 +260,32 @@ test('inline style: a row gear menu offers Style above Delete', () => {
   }
 })
 
+test('inline style: settings menu arrows move between Style and Delete', () => {
+  const t = boot()
+  try {
+    const settings = t.layerEl.querySelector('.hcms-inline-settings[data-hcms-row="0"]')
+    const gear = settings.querySelector('[data-hcms-list-action="settings"]')
+    gear.dispatchEvent(new t.win.MouseEvent('click', { bubbles: true }))
+    const items = [...settings.querySelectorAll('[role="menuitem"]')]
+    const [styleItem, deleteItem] = items
+    const key = (target, name) =>
+      target.dispatchEvent(new t.win.KeyboardEvent('keydown', { key: name, bubbles: true }))
+
+    assert.equal(t.doc.activeElement, styleItem)
+    key(styleItem, 'ArrowDown')
+    assert.equal(t.doc.activeElement, deleteItem)
+    key(deleteItem, 'ArrowDown')
+    assert.equal(t.doc.activeElement, styleItem)
+    key(styleItem, 'End')
+    assert.equal(t.doc.activeElement, deleteItem)
+    key(deleteItem, 'Home')
+    assert.equal(t.doc.activeElement, styleItem)
+  } finally {
+    close()
+    reset(t.dom)
+  }
+})
+
 test('inline style: a page with no style fields keeps the old controls', () => {
   const plain = page('{"title":"h1","items":["li",{"name":"span"}]}', '<h1>Title</h1><ul><li><span>a</span></li></ul>')
   const t = boot(plain)

@@ -67,26 +67,60 @@ export function fontStack(font) {
   return `'${font.family}', ${font.fallback}`
 }
 
+// The first family a stack names, unquoted, or null for an empty stack.
+export function firstFamily(stack) {
+  if (stack == null) return null
+  const first = String(stack).split(',')[0].trim().replace(/^['"]|['"]$/g, '')
+  return first || null
+}
+
+// The family entries of a Google Fonts css2 URL, by lowercased family name:
+// "family=Fraunces:opsz@9..144" keyed "fraunces".
+export function familyEntries(href) {
+  const out = new Map()
+  if (!href) return out
+  const query = String(href).split('?')[1] || ''
+  for (const part of query.split('&')) {
+    if (!part.startsWith('family=')) continue
+    const name = decodeURIComponent(part.slice(7).split(':')[0].replace(/\+/g, ' ')).trim()
+    if (name) out.set(name.toLowerCase(), part)
+  }
+  return out
+}
+
+// Do two stylesheet URLs load the same families (whatever the axes)?
+export function sameFamilies(a, b) {
+  const x = familyEntries(a)
+  const y = familyEntries(b)
+  return x.size === y.size && [...x.keys()].every((k) => y.has(k))
+}
+
 // Which catalog font a stored stack starts with, or null when the first family
 // is not one of ours (an author's own stack, or the system choice).
 export function fontFromStack(stack) {
-  if (stack == null) return null
-  const first = String(stack).split(',')[0].trim().replace(/^['"]|['"]$/g, '')
-  return BY_FAMILY.get(first.toLowerCase()) || null
+  const first = firstFamily(stack)
+  return first ? BY_FAMILY.get(first.toLowerCase()) || null : null
 }
 
-// The one stylesheet URL for every catalog family in use: deduplicated, sorted
-// by family, display=swap. Null when none of the stacks names a catalog font,
-// which tells the caller to remove its link.
-export function fontsHref(stacks) {
-  const fonts = new Map()
+// The one stylesheet URL for every family in use: a catalog family with its
+// catalog request, and a family the catalog does not know with the entry the
+// page's existing link already had for it (an author's own font keeps
+// loading). Deduplicated, sorted by family, display=swap. Null when nothing is
+// left to load, which tells the caller to remove its link.
+export function fontsHref(stacks, existingHref = null) {
+  const kept = familyEntries(existingHref)
+  const entries = new Map()
   for (const stack of stacks || []) {
     const font = fontFromStack(stack)
-    if (font) fonts.set(font.family, font)
+    if (font) {
+      entries.set(font.family.toLowerCase(), `family=${font.family.replace(/ /g, '+')}:${font.request}`)
+      continue
+    }
+    const name = firstFamily(stack)
+    const entry = name && kept.get(name.toLowerCase())
+    if (entry) entries.set(name.toLowerCase(), entry)
   }
-  if (fonts.size === 0) return null
-  const families = [...fonts.values()]
-    .sort((a, b) => a.family.localeCompare(b.family))
-    .map((f) => `family=${f.family.replace(/ /g, '+')}:${f.request}`)
+  if (entries.size === 0) return null
+  const families = [...entries.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, e]) => e)
   return `https://fonts.googleapis.com/css2?${families.join('&')}&display=swap`
 }

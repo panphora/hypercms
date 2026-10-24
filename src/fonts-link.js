@@ -1,5 +1,5 @@
 import { componentForScalarRule } from './templates.js'
-import { fontsHref } from './catalogs/fonts.js'
+import { fontsHref, sameFamilies } from './catalogs/fonts.js'
 
 // The page's one Google Fonts stylesheet is derived from its font fields: the
 // families they hold, nothing else. Recomputed after commits and refreshes, so
@@ -63,6 +63,10 @@ export function syncFontsLink(doc, href) {
     link.setAttribute('no-undo', '')
     pre.after(link)
   }
+  // The CMS derives this link from the font fields, so its changes are never
+  // undo steps of their own, including on a link the author wrote by hand.
+  if (!link.hasAttribute('no-undo')) link.setAttribute('no-undo', '')
+  if (!pre.hasAttribute('no-undo')) pre.setAttribute('no-undo', '')
   if (link.getAttribute('href') !== href) link.setAttribute('href', href)
 }
 
@@ -70,5 +74,10 @@ export function reconcileFontsLink(ctx, data) {
   if (!ctx?.doc || ctx.pageRules == null) return
   const { stacks, found } = fontStacksIn(ctx.pageRules, data, ctx.doc)
   if (!found) return
-  syncFontsLink(ctx.doc, fontsHref(stacks))
+  const current = ctx.doc.head?.querySelector(LINK)?.getAttribute('href') || null
+  const href = fontsHref(stacks, current)
+  // A link that already loads exactly these families stays as it is, so
+  // opening the editor or an undo never rewrites the author's own URL.
+  if (href && current && sameFamilies(current, href)) return
+  syncFontsLink(ctx.doc, href)
 }
