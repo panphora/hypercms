@@ -81,7 +81,29 @@ function cssEscape(value) {
 
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
+// How many scalar leaves, anywhere in the rules, end in each key.
+function countLeafKeys(pageRules) {
+  const counts = new Map()
+  walk(pageRules, null)
+  return counts
+
+  function walk(rule, key) {
+    if (typeof rule === 'string') {
+      if (typeof key === 'string' && !rule.endsWith('[]')) counts.set(key, (counts.get(key) || 0) + 1)
+      return
+    }
+    if (Array.isArray(rule)) {
+      walk(rule[1], null)
+      return
+    }
+    if (rule && typeof rule === 'object') {
+      for (const [k, child] of Object.entries(rule)) walk(child, k)
+    }
+  }
+}
+
 export function deriveFormRules(pageRules, doc) {
+  const leafKeyCounts = countLeafKeys(pageRules)
   return derive(pageRules, [])
 
   function derive(rule, pathArr) {
@@ -113,8 +135,25 @@ export function deriveFormRules(pageRules, doc) {
     // a@href, while a plain scalar still respects a global @scalar override
     // (e.g. a <textarea>) instead of assuming <input>.
     const shapeEl = findShapeFieldEl(componentForScalarRule(rule, doc, pathArr, pageRules), fieldKey)
-    if (shapeEl) return fieldSelectorFor(shapeEl, fieldKey)
-    return `input[data-hcms-field="${cssEscape(fieldKey)}"]@value`
+    if (shapeEl) return scopeRepeatedKey(pathArr, fieldKey, fieldSelectorFor(shapeEl, fieldKey))
+    return scopeRepeatedKey(pathArr, fieldKey, `input[data-hcms-field="${cssEscape(fieldKey)}"]@value`)
+  }
+
+  // Two scalars with the same last key (hero.background, features.background)
+  // stamp the same data-hcms-field, so a bare key selector reads the first one
+  // for both and a commit copies one field's value into the other. A repeated
+  // key is scoped by the field's own data-hcms-path: exact outside a list, the
+  // part after the row inside one (the row selector already scopes the rest).
+  function scopeRepeatedKey(pathArr, fieldKey, selector) {
+    if ((leafKeyCounts.get(fieldKey) || 0) < 2) return selector
+    let row = -1
+    pathArr.forEach((seg, i) => {
+      if (seg === '*' || typeof seg === 'number') row = i
+    })
+    if (row === -1) return `[data-hcms-path="${cssEscape(pathArr.join('.'))}"] ${selector}`
+    const tail = pathArr.slice(row + 1)
+    if (tail.length < 2) return selector
+    return `[data-hcms-path$=".${cssEscape(tail.join('.'))}"] ${selector}`
   }
 
   function scalarArrayRule(rule, pathArr) {
