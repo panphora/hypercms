@@ -10,6 +10,7 @@ import {
   declaredComponentKey,
   readOptionsOverride,
   readCropOverride,
+  styleRole,
 } from './templates.js'
 import { fieldPropertyFor } from './form-rules.js'
 import { setupColorControl } from './color-control.js'
@@ -31,9 +32,53 @@ export function fileNameFromUrl(url) {
 
 export function buildForm({ pageRules, formRules: _formRules, data, doc }) {
   const fragment = doc.createDocumentFragment()
+  const pageStyle = buildPageStyle(pageRules, data, doc)
+  if (pageStyle) fragment.appendChild(pageStyle)
   const root = buildNode(pageRules, [], data, doc, pageRules)
   if (root) fragment.appendChild(root)
   return fragment
+}
+
+// Page style fields, gathered from wherever their rules sit (outside lists)
+// into one group that renders first. Each field keeps its own data-hcms-path.
+function buildPageStyle(pageRules, data, doc) {
+  const fields = []
+  collect(pageRules, data, [])
+  if (!fields.length) return null
+  const tpl = findTemplate(doc, '@object')
+  if (!tpl) return null
+  const node = cloneTemplate(tpl, doc)
+  node.setAttribute('data-hcms-page-style', '')
+  const label = node.querySelector('[data-hcms-label]')
+  if (label) label.textContent = 'Page style'
+  const slot = node.querySelector('.hcms-object-fields') || node
+  for (const [rule, pathArr, value] of fields) {
+    const field = buildNode(rule, pathArr, value, doc, pageRules)
+    if (field) slot.appendChild(field)
+  }
+  return node
+
+  function collect(rule, value, pathArr) {
+    if (typeof rule === 'string') {
+      if (styleRole(rule, doc, pathArr, pageRules) === 'page') fields.push([rule, pathArr, value])
+      return
+    }
+    if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return
+    for (const [k, child] of Object.entries(rule)) collect(child, value == null ? null : value[k], [...pathArr, k])
+  }
+}
+
+// Style fields first, each group keeping its own order; page style fields are
+// left out here because buildPageStyle renders them.
+function orderedEntries(shape, pathArr, doc, pageRules) {
+  const style = []
+  const content = []
+  for (const [k, child] of Object.entries(shape)) {
+    const role = styleRole(child, doc, [...pathArr, k], pageRules)
+    if (role === 'page') continue
+    ;(role ? style : content).push([k, child])
+  }
+  return [...style, ...content]
 }
 
 // pageRules rides alongside doc so a scalar bound to its own context element
@@ -242,11 +287,12 @@ function buildObject(rule, pathArr, data, doc, pageRules) {
   }
 
   const slot = requireSlot(node, '.hcms-object-fields', tpl, pathArr)
-  for (const [k, child] of Object.entries(rule)) {
+  for (const [k, child] of orderedEntries(rule, pathArr, doc, pageRules)) {
     const childData = data == null ? null : data[k]
     const childNode = buildNode(child, [...pathArr, k], childData, doc, pageRules)
     if (childNode) slot.appendChild(childNode)
   }
+  if (pathArr.length && !slot.children.length && Object.keys(rule).length) return null
   return node
 }
 
@@ -289,7 +335,7 @@ function buildObjectArrayItem(itemShape, pathArr, data, doc, pageRules) {
 
   const slot = requireSlot(node, '.hcms-card-fields', tpl, pathArr)
   if (itemShape && typeof itemShape === 'object' && !Array.isArray(itemShape)) {
-    for (const [k, child] of Object.entries(itemShape)) {
+    for (const [k, child] of orderedEntries(itemShape, pathArr, doc, pageRules)) {
       const childData = data == null ? null : data[k]
       const childNode = buildNode(child, [...pathArr, k], childData, doc, pageRules)
       if (childNode) slot.appendChild(childNode)

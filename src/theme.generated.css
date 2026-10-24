@@ -1925,6 +1925,9 @@ tr.hcms-shell.hcms-inline-ghost { display: table-row; }
 .hcms-inline .hcms-form [data-hcms-path] { display: none; }
 .hcms-inline .hcms-form [data-hcms-path].is-hcms-inline-onpath,
 .hcms-inline .hcms-form [data-hcms-path].is-hcms-inline-active { display: block; }
+/* The Page style group has no data path of its own: hide it like a path until
+   a reveal marks it on-path. */
+.hcms-inline .hcms-form [data-hcms-page-style]:not(.is-hcms-inline-onpath) { display: none; }
 
 .hcms-inline .hcms-form .is-hcms-inline-onpath,
 .hcms-inline .hcms-form {

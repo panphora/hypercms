@@ -371,6 +371,20 @@ export function declaredComponentKey(rule, doc, pathArr, pageRules) {
   return (name && SCALAR_COMPONENT_BY_NAME[name]) || null
 }
 
+// Style fields (color, font, variant) are grouped apart from content. One bound
+// to html, body or :root outside any list styles the whole page ('page'); any
+// other styles its own element ('section'). Content fields return null.
+const STYLE_COMPONENTS = new Set(['@color', '@font', '@variant'])
+const PAGE_HOSTS = new Set(['html', 'body', ':root'])
+
+export function styleRole(rule, doc, pathArr, pageRules) {
+  if (typeof rule !== 'string' || rule.endsWith('[]')) return null
+  if (!STYLE_COMPONENTS.has(componentForScalarRule(rule, doc, pathArr, pageRules))) return null
+  const inList = Array.isArray(pathArr) && pathArr.some((s) => s === '*' || typeof s === 'number')
+  const selector = scalarSelectorOf(rule, ruleAttrIndex(rule)).trim()
+  return !inList && PAGE_HOSTS.has(selector) ? 'page' : 'section'
+}
+
 // A number input physically rejects any value that isn't a plain number — it
 // reads back '' — and the whole-form commit would then blank the page value on
 // the next edit of ANY field. When any bound value isn't number-shaped, fall
