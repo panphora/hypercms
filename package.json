@@ -21,6 +21,7 @@
   "exports": {
     ".": "./src/hypercms.js",
     "./styles.css": "./src/theme.generated.css",
+    "./catalogs": "./src/catalogs/index.js",
     "./theme.css": "./src/theme.generated.css"
   },
   "files": [
@@ -32,6 +33,7 @@
     "dist/*.js"
   ],
   "scripts": {
+    "build:palette": "node scripts/build-palette.js",
     "build:theme": "node scripts/build-theme.js",
     "build:js": "node scripts/build-js.js --standalone",
     "build:preview": "node scripts/build-js.js --standalone --hyper-morph-source=../hyper-morph/src/index.js --hyper-html-api-source=../hyper-html-api",
