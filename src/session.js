@@ -97,6 +97,7 @@ export function createSession({ view, doc, pageRoot, opts = {}, onCloseRequested
     onError: opts.onError,
     confirmRemove: opts.confirmRemove,
     previouslyFocused: doc.activeElement,
+    quiesced: false,
     dispatch(name, detail) {
       const Ctor = (doc.defaultView && doc.defaultView.CustomEvent) || (typeof CustomEvent !== 'undefined' ? CustomEvent : null)
       if (!Ctor) return
@@ -240,6 +241,47 @@ function clearState() {
   state.ctx = null
   state.opts = null
   globalCommitTarget.ctx = null
+}
+
+export function modeLifecycle(win) {
+  const scope = win || (typeof window !== 'undefined' ? window : null)
+  const lifecycle = scope && scope.clay ? scope.clay.modeLifecycle : null
+  return lifecycle && typeof lifecycle.canWrite === 'function' ? lifecycle : null
+}
+
+export function canWriteNow(win) {
+  const lifecycle = modeLifecycle(win)
+  if (!lifecycle) return true
+  try {
+    return lifecycle.canWrite() !== false
+  } catch (_) {
+    return false
+  }
+}
+
+const UPLOADING_SELECTOR = '[data-hcms-uploading]'
+
+export function pendingWork(ctx) {
+  if (!ctx) return []
+  const pending = []
+  if (ctx.uploads && ctx.uploads.size > 0) pending.push('upload')
+  if (ctx.pageRoot && typeof ctx.pageRoot.querySelector === 'function' && ctx.pageRoot.querySelector(UPLOADING_SELECTOR)) {
+    pending.push('preview')
+  }
+  return pending
+}
+
+export function quiesceSession(ctx) {
+  if (!ctx || ctx.closed) return { ok: true }
+  const pending = pendingWork(ctx)
+  if (pending.length) return { ok: false, code: 'pending-input', pending }
+  ctx.quiesced = true
+  return { ok: true }
+}
+
+export function resumeSession(ctx) {
+  if (!ctx || ctx.closed) return
+  ctx.quiesced = false
 }
 
 const globalCommitTarget = { ctx: null }

@@ -18,6 +18,7 @@
 // #hcms-toggle rule outranks on specificity.
 
 import { reensureStyles } from './shell.js'
+import { modeLifecycle } from './session.js'
 
 const TOGGLE_ID = 'hcms-toggle'
 const HOST_ATTR = 'data-hcms-toggle-host'
@@ -340,11 +341,23 @@ export function injectToggle({ open, close, isOpen, getTheme = () => null }, doc
   })
   pin(main, { background: SURFACE_VAR })
 
+  function requestMode(mode) {
+    const win = doc.defaultView
+    if (!modeLifecycle(win)) return null
+    const setMode = win.clay && win.clay.setMode
+    if (typeof setMode !== 'function') return null
+    return setMode.call(win.clay, mode)
+  }
+
   async function mainAction() {
     if (isOpen()) {
+      const exit = requestMode('view')
+      if (exit) return exit
       close()
       return
     }
+    const enter = requestMode('edit')
+    if (enter) return enter
     return open()
   }
 

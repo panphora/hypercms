@@ -20,6 +20,11 @@ import {
   teardownSession,
   nextSearchAfterClose,
   shouldAutoOpenFromSearch,
+  modeLifecycle,
+  canWriteNow,
+  pendingWork,
+  quiesceSession,
+  resumeSession,
 } from './session.js'
 import { findLeafField, writeFieldValue } from './events.js'
 import { maybeInjectToggle } from './toggle.js'
@@ -68,6 +73,18 @@ function declaredView(doc, rules) {
 }
 
 export function open(opts = {}) {
+  return openSession(opts)
+}
+
+function modeExit(doc) {
+  const win = doc && doc.defaultView
+  if (!modeLifecycle(win)) return null
+  const setMode = win.clay && win.clay.setMode
+  if (typeof setMode !== 'function') return null
+  return setMode.call(win.clay, 'view')
+}
+
+function openSession(opts = {}, admitted = false) {
   // Everything that can be rejected is rejected before anything is destroyed. A
   // bad view name or a missing page must not leave a caller with the session
   // they had already torn down.
@@ -84,6 +101,7 @@ export function open(opts = {}) {
   if (!pageRoot) throw new Error('hypercms: no pageRoot available')
   const doc = (pageRoot.nodeType === 9 ? pageRoot : pageRoot.ownerDocument) || (typeof document !== 'undefined' ? document : null)
   if (!doc) throw new Error('hypercms: no document available')
+  if (!admitted && !canWriteNow(doc.defaultView)) return { ok: false, code: 'not-allowed' }
 
   // A bare open() means "make sure the editor is up", not "put it in the
   // sidebar": with a session up it keeps that view, otherwise it opens the view
@@ -104,7 +122,7 @@ export function open(opts = {}) {
   let carriedFocus = null
   let previous = null
   if (state.isOpen) {
-    if (state.ctx.view.name === viewName) return
+    if (state.ctx.view.name === viewName) return { ok: true, view: viewName }
     carriedFocus = state.ctx.previouslyFocused
     previous = state.ctx.view.name
     teardownSession(state.ctx, { restoreFocus: false, updateUrl: false, reason: 'switch' })
@@ -118,8 +136,8 @@ export function open(opts = {}) {
     doc,
     pageRoot,
     opts: effective,
-    onCloseRequested: () => close(),
-    onViewRequested: (name) => open({ view: name }),
+    onCloseRequested: () => modeExit(doc) || close(),
+    onViewRequested: (name) => openSession({ view: name }, true),
   })
   // Where focus was before the FIRST open, carried across the switch. Closing
   // the second view should return the person where they started, not to
@@ -151,11 +169,19 @@ export function open(opts = {}) {
     teardownSession(ctx, { dispatch: false, restoreFocus: !!carriedFocus, updateUrl: false })
     throw err
   }
+  return { ok: true, view: viewName }
 }
 
 export function close() {
-  if (!state.isOpen) return
+  if (!state.isOpen) return { ok: false, code: 'no-session' }
+  const doc = state.ctx.doc
+  if (modeLifecycle(doc && doc.defaultView)) {
+    const pending = pendingWork(state.ctx)
+    if (pending.length) return { ok: false, code: 'pending-input', pending }
+    if (!canWriteNow(doc && doc.defaultView)) return { ok: false, code: 'busy' }
+  }
   teardownSession(state.ctx)
+  return { ok: true }
 }
 
 export function refresh() {
@@ -174,13 +200,58 @@ export function currentView() {
   return state.isOpen && state.ctx ? state.ctx.view.name : null
 }
 
+export function prepareModeLease({ doc, pageRoot, opts = {} } = {}) {
+  let owned = null
+  let disposed = false
+  return {
+    ready: Promise.resolve(),
+    enable() {
+      if (disposed) return
+      const target = { ...opts }
+      if (pageRoot) target.pageRoot = pageRoot
+      if (!target.pageRoot) target.pageRoot = (doc && doc.body) || doc || null
+      openSession(target, true)
+      owned = state.ctx
+    },
+    quiesce() {
+      if (disposed || !owned || state.ctx !== owned) return { ok: true }
+      return quiesceSession(owned)
+    },
+    resume() {
+      if (disposed || !owned || state.ctx !== owned) return
+      resumeSession(owned)
+    },
+    dispose() {
+      if (disposed) return
+      disposed = true
+      if (owned && state.ctx === owned) teardownSession(owned)
+      owned = null
+    },
+  }
+}
+
+export function modeParticipant(options = {}) {
+  return {
+    id: 'hypercms',
+    order: 1000,
+    prepare() {
+      return prepareModeLease(options)
+    },
+  }
+}
+
+function assertAdmitting() {
+  if (!state.isOpen) throw new Error('hypercms: cms is not open')
+  if (state.ctx.quiesced) throw new Error('hypercms: the CMS is not admitting new changes')
+}
+
 export const api = {
   getData() {
     if (!state.isOpen) return null
     return extractFormData(state.ctx)
   },
   setValue(path, value) {
-    if (!state.isOpen) throw new Error('hypercms: cms is not open')
+    assertAdmitting()
     const ctx = state.ctx
     const pathArr = pathUtil.fromString(path)
     const rule = pathUtil.getRuleAtPath(ctx.pageRules, pathArr)
@@ -194,11 +265,11 @@ export const api = {
     commit(extractFormData(ctx), { path, structural: false }, ctx)
   },
   addItem(arrayPath) {
-    if (!state.isOpen) throw new Error('hypercms: cms is not open')
+    assertAdmitting()
     evOnAdd(arrayPath, state.ctx)
   },
   removeItem(itemPath) {
-    if (!state.isOpen) throw new Error('hypercms: cms is not open')
+    assertAdmitting()
     const ctx = state.ctx
     const pathArr = pathUtil.fromString(itemPath)
     // Validate path: must be an array item — last segment is a non-negative
@@ -218,7 +289,7 @@ export const api = {
   },
   refresh,
   _commit() {
-    if (!state.isOpen) return
+    if (!state.isOpen || state.ctx.quiesced) return
     const ctx = state.ctx
     restampAllSiblings(ctx.formRoot)
     return commitWithUndo('Update', () =>
@@ -249,6 +320,7 @@ export function maybeAutoOpen() {
   if (state.isOpen) return
   whenReady(() => {
     if (state.isOpen) return
+    if (!canWriteNow()) return
     try {
       open()
     } catch (err) {
@@ -350,6 +422,8 @@ const cms = {
   close,
   refresh,
   api,
+  prepareModeLease,
+  modeParticipant,
   get isOpen() { return state.isOpen },
   currentView,
   // Power-user exports (mostly for testing + advanced integration)
