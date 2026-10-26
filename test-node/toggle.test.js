@@ -472,8 +472,8 @@ test('injectToggle: pressing the closed button calls open() with no arguments', 
 // open().
 // ---------------------------------------------------------------------------
 
-function clayApi(mode, setMode) {
-  return { mode, setMode, modeLifecycle: { canWrite: () => true } }
+function clayApi(mode, setMode, canEdit = true) {
+  return { mode, setMode, canEdit, modeLifecycle: { canWrite: () => true } }
 }
 
 // maybeInjectToggle defers to DOMContentLoaded while the document is still
@@ -487,7 +487,7 @@ test('maybeInjectToggle: a view-boot ClayJS page mounts the toggle for an admin'
   try {
     dom.window.document.cookie = 'isAdminOfCurrentResource=1'
     dom.window.__hyperclayEditMode = false
-    dom.window.clay = clayApi('view', () => Promise.resolve({ ok: true, mode: 'edit', changed: true }))
+    dom.window.clay = clayApi('view', () => Promise.resolve({ ok: true, mode: 'edit', changed: true }), true)
     await ready(dom)
     maybeInjectToggle(spyApi())
     assert.ok(dom.window.document.querySelector('[data-hcms-toggle-host]'), 'the toggle is the way into editing')
@@ -498,14 +498,81 @@ test('maybeInjectToggle: a view-boot ClayJS page mounts the toggle for an admin'
   }
 })
 
-test('maybeInjectToggle: a ClayJS page without the admin cookie still gets nothing', async () => {
+test('maybeInjectToggle: a ClayJS page ClayJS does not let you edit gets nothing', async () => {
   const dom = setupDom()
   try {
     dom.window.__hyperclayEditMode = false
-    dom.window.clay = clayApi('view', () => Promise.resolve({ ok: true, mode: 'edit', changed: true }))
+    dom.window.clay = clayApi('view', () => Promise.resolve({ ok: true, mode: 'edit', changed: true }), false)
     await ready(dom)
     maybeInjectToggle(spyApi())
     assert.equal(dom.window.document.querySelector('[data-hcms-toggle-host]'), null)
+  } finally {
+    dom.window.close()
+    delete globalThis.window
+    delete globalThis.document
+  }
+})
+
+test('maybeInjectToggle: a managed page in edit mounts on clay.canEdit, without a cookie', async () => {
+  const dom = setupDom()
+  try {
+    dom.window.__hyperclayEditMode = true
+    dom.window.clay = clayApi('edit', () => Promise.resolve({ ok: true, mode: 'view', changed: true }), true)
+    await ready(dom)
+    maybeInjectToggle(spyApi())
+    assert.ok(dom.window.document.querySelector('[data-hcms-toggle-host]'), 'the permission alone decides it')
+  } finally {
+    dom.window.close()
+    delete globalThis.window
+    delete globalThis.document
+  }
+})
+
+test('maybeInjectToggle: an owner in view with ?editmode=false still mounts on clay.canEdit', async () => {
+  const dom = setupDom('http://localhost/page?editmode=false')
+  try {
+    dom.window.document.cookie = 'isAdminOfCurrentResource=1'
+    dom.window.__hyperclayEditMode = false
+    dom.window.clay = clayApi('view', () => Promise.resolve({ ok: true, mode: 'edit', changed: true }), true)
+    await ready(dom)
+    maybeInjectToggle(spyApi())
+    assert.ok(dom.window.document.querySelector('[data-hcms-toggle-host]'), 'ClayJS still lets them enter edit live')
+  } finally {
+    dom.window.close()
+    delete globalThis.window
+    delete globalThis.document
+  }
+})
+
+test('maybeInjectToggle: a later clay:capabilitychange that grants editing mounts the toggle', async () => {
+  const dom = setupDom()
+  try {
+    dom.window.clay = clayApi('view', () => Promise.resolve({ ok: true, mode: 'edit', changed: true }), false)
+    await ready(dom)
+    maybeInjectToggle(spyApi())
+    const doc = dom.window.document
+    assert.equal(doc.querySelector('[data-hcms-toggle-host]'), null)
+    dom.window.clay.canEdit = true
+    doc.dispatchEvent(new dom.window.Event('clay:capabilitychange'))
+    assert.ok(doc.querySelector('[data-hcms-toggle-host]'), 'the permission arrived after load')
+  } finally {
+    dom.window.close()
+    delete globalThis.window
+    delete globalThis.document
+  }
+})
+
+test('maybeInjectToggle: losing clay.canEdit takes the toggle away again', async () => {
+  const dom = setupDom()
+  try {
+    dom.window.clay = clayApi('view', () => Promise.resolve({ ok: true, mode: 'edit', changed: true }), true)
+    await ready(dom)
+    maybeInjectToggle(spyApi())
+    const doc = dom.window.document
+    assert.ok(doc.querySelector('[data-hcms-toggle-host]'))
+    dom.window.clay.canEdit = false
+    doc.dispatchEvent(new dom.window.Event('clay:capabilitychange'))
+    assert.equal(doc.querySelector('[data-hcms-toggle-host]'), null)
   } finally {
     dom.window.close()
     delete globalThis.window

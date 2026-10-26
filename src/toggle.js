@@ -3,7 +3,7 @@
 // affordance, and nothing reopens it). Injected at page load when the visitor
 // may edit AND the page actually has cms rules, so regular visitors and
 // rules-less pages (hypercms rides in broad presets) never see it. On a ClayJS
-// page "may edit" is the admin cookie alone: view mode is where the toggle is
+// page "may edit" is clay.canEdit alone: view mode is where the toggle is
 // needed most, since it is the way into editing.
 // Runtime-only chrome: no-save + snapshot-remove keep it out of every save and
 // snapshot (a static no-save element written into the file would be stripped
@@ -418,17 +418,36 @@ export function injectToggle({ open, close, isOpen, getTheme = () => null }, doc
 // parsing (the rules tag or <body> may not exist yet).
 export function maybeInjectToggle(api) {
   if (typeof window === 'undefined' || typeof document === 'undefined') return
-  // On a ClayJS page the toggle is the way INTO editing, so an admin gets it in
-  // view too, where the boot global only ever says false. Without ClayJS the
-  // global keeps deciding, exactly as before.
+  // On a ClayJS page the toggle is the way INTO editing, so it is mounted exactly
+  // when ClayJS says the person may edit (clay.canEdit), in view as well as in
+  // edit. That permission can arrive after load, and ClayJS announces every
+  // change of it with clay:capabilitychange on the document: the first change to
+  // canEdit === true mounts, and losing it afterwards takes the toggle away.
+  // Without ClayJS the boot global keeps deciding, exactly as before.
   const clay = window.clay
   const managed = !!clay && typeof clay.setMode === 'function'
-  const forced = managed ? null : (window.__hyperclayEditMode != null ? window.__hyperclayEditMode : null)
-  if (!detectEditMode({ search: window.location.search, cookie: document.cookie, forced })) return
   const run = () => { if (document.body && api.hasRules(document)) injectToggle(api) }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', run, { once: true })
-  } else {
-    run()
+  const atDomReady = (fn) => {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', fn, { once: true })
+    } else {
+      fn()
+    }
   }
+  if (managed) {
+    const sync = () => {
+      if (window.clay && window.clay.canEdit === true) {
+        run()
+        return
+      }
+      const host = document.querySelector(`[${HOST_ATTR}]`)
+      if (host) host.remove()
+    }
+    atDomReady(sync)
+    document.addEventListener('clay:capabilitychange', sync)
+    return
+  }
+  const forced = window.__hyperclayEditMode != null ? window.__hyperclayEditMode : null
+  if (!detectEditMode({ search: window.location.search, cookie: document.cookie, forced })) return
+  atDomReady(run)
 }
