@@ -460,8 +460,9 @@ In hyperclayjs apps, drag works out of the box (hypercms's object-array template
 
 ## The floating toggle
 
-In edit mode, on a page that has a cms rules tag, hypercms injects a floating
-"Edit content" button in the bottom-right corner. It is runtime-only chrome: it
+On a page that has a cms rules tag, hypercms injects a floating "Edit content"
+button in the bottom-right corner: in edit mode, and on a ClayJS page for an
+admin in view too, where pressing it switches to edit and then opens the CMS. It is runtime-only chrome: it
 carries `no-save`, `snapshot-remove` and `save-ignore`, so it never reaches the
 saved file and never marks the page dirty.
 

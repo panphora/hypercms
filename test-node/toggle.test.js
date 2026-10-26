@@ -464,6 +464,135 @@ test('injectToggle: pressing the closed button calls open() with no arguments', 
   dom.window.close()
 })
 
+// ---------------------------------------------------------------------------
+// ClayJS: the mount follows the admin, not the boot mode, and the click always
+// ends with the CMS open. A view boot sets window.__hyperclayEditMode = false,
+// which used to suppress the mount for the life of the page, and
+// clay.setMode('edit') used to answer with a truthy promise that short-circuited
+// open().
+// ---------------------------------------------------------------------------
+
+function clayApi(mode, setMode) {
+  return { mode, setMode, modeLifecycle: { canWrite: () => true } }
+}
+
+// maybeInjectToggle defers to DOMContentLoaded while the document is still
+// parsing, which is where a fresh JSDOM starts.
+const ready = (dom) => dom.window.document.readyState !== 'loading'
+  ? Promise.resolve()
+  : new Promise((resolve) => dom.window.document.addEventListener('DOMContentLoaded', resolve, { once: true }))
+
+test('maybeInjectToggle: a view-boot ClayJS page mounts the toggle for an admin', async () => {
+  const dom = setupDom()
+  try {
+    dom.window.document.cookie = 'isAdminOfCurrentResource=1'
+    dom.window.__hyperclayEditMode = false
+    dom.window.clay = clayApi('view', () => Promise.resolve({ ok: true, mode: 'edit', changed: true }))
+    await ready(dom)
+    maybeInjectToggle(spyApi())
+    assert.ok(dom.window.document.querySelector('[data-hcms-toggle-host]'), 'the toggle is the way into editing')
+  } finally {
+    dom.window.close()
+    delete globalThis.window
+    delete globalThis.document
+  }
+})
+
+test('maybeInjectToggle: a ClayJS page without the admin cookie still gets nothing', async () => {
+  const dom = setupDom()
+  try {
+    dom.window.__hyperclayEditMode = false
+    dom.window.clay = clayApi('view', () => Promise.resolve({ ok: true, mode: 'edit', changed: true }))
+    await ready(dom)
+    maybeInjectToggle(spyApi())
+    assert.equal(dom.window.document.querySelector('[data-hcms-toggle-host]'), null)
+  } finally {
+    dom.window.close()
+    delete globalThis.window
+    delete globalThis.document
+  }
+})
+
+test('maybeInjectToggle: without ClayJS the boot global still decides', async () => {
+  const dom = setupDom()
+  try {
+    dom.window.__hyperclayEditMode = false
+    await ready(dom)
+    maybeInjectToggle(spyApi())
+    assert.equal(dom.window.document.querySelector('[data-hcms-toggle-host]'), null)
+  } finally {
+    dom.window.close()
+    delete globalThis.window
+    delete globalThis.document
+  }
+})
+
+test('the toggle in view switches first, then opens the CMS', async () => {
+  const dom = setupDom()
+  try {
+    const order = []
+    let settle
+    dom.window.clay = clayApi('view', (mode) => {
+      order.push(`setMode:${mode}`)
+      return new Promise((resolve) => {
+        settle = () => resolve({ ok: true, mode: 'edit', changed: true })
+      })
+    })
+    const host = injectToggle(spyApi({ open: () => order.push('open') }), dom.window.document)
+
+    host.click()
+    await tick()
+    assert.deepEqual(order, ['setMode:edit'], 'the CMS waits for the switch to commit')
+    settle()
+    await tick()
+    assert.deepEqual(order, ['setMode:edit', 'open'])
+  } finally {
+    dom.window.close()
+    delete globalThis.window
+    delete globalThis.document
+  }
+})
+
+test('the toggle in view leaves the CMS closed when the switch is refused', async () => {
+  const dom = setupDom()
+  try {
+    const calls = []
+    dom.window.clay = clayApi('view', (mode) => {
+      calls.push(`setMode:${mode}`)
+      return Promise.resolve({ ok: false, mode: 'view', code: 'busy' })
+    })
+    const host = injectToggle(spyApi({ open: () => calls.push('open') }), dom.window.document)
+
+    host.click()
+    await tick()
+    assert.deepEqual(calls, ['setMode:edit'], 'a page that never became writable cannot host the CMS')
+  } finally {
+    dom.window.close()
+    delete globalThis.window
+    delete globalThis.document
+  }
+})
+
+test('the toggle in edit opens the CMS directly, without asking for the mode', async () => {
+  const dom = setupDom()
+  try {
+    const calls = []
+    dom.window.clay = clayApi('edit', (mode) => {
+      calls.push(`setMode:${mode}`)
+      return Promise.resolve({ ok: true, mode: 'edit', changed: false })
+    })
+    const host = injectToggle(spyApi({ open: () => calls.push('open') }), dom.window.document)
+
+    host.click()
+    await tick()
+    assert.deepEqual(calls, ['open'])
+  } finally {
+    dom.window.close()
+    delete globalThis.window
+    delete globalThis.document
+  }
+})
+
 test('injectToggle: the toggle never reads or writes localStorage', async () => {
   const dom = setupDom()
   const boom = () => { throw new Error('the toggle must not touch localStorage') }

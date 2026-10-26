@@ -285,12 +285,13 @@ test('standalone: the shell\u0027s close button still closes directly', () => {
   dom.window.close()
 })
 
-test('toggle: managed page asks ClayJS for the mode instead of opening the CMS itself', async () => {
+test('toggle: managed page in view asks ClayJS for edit, then opens the CMS', async () => {
   const gate = admission(false)
   const calls = []
   const cmsCalls = []
   const dom = setupDom({ lifecycle: gate.lifecycle })
-  dom.window.clay.setMode = (mode) => { calls.push(mode); return Promise.resolve({ ok: true }) }
+  dom.window.clay.mode = 'view'
+  dom.window.clay.setMode = (mode) => { calls.push(mode); return Promise.resolve({ ok: true, mode: 'edit', changed: true }) }
   let openState = false
   const host = injectToggle({
     open: () => cmsCalls.push('open'),
@@ -301,13 +302,13 @@ test('toggle: managed page asks ClayJS for the mode instead of opening the CMS i
   host.click()
   await new Promise((r) => setTimeout(r, 0))
   assert.deepEqual(calls, ['edit'])
-  assert.deepEqual(cmsCalls, [], 'admission closed: no direct open')
+  assert.deepEqual(cmsCalls, ['open'], 'the switch committed, so the CMS opens')
 
   openState = true
   host.click()
   await new Promise((r) => setTimeout(r, 0))
   assert.deepEqual(calls, ['edit', 'view'])
-  assert.deepEqual(cmsCalls, [])
+  assert.deepEqual(cmsCalls, ['open'], 'leaving is the mode switch, not a direct close')
   dom.window.close()
 })
 

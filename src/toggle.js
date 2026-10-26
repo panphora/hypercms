@@ -1,8 +1,10 @@
 // Floating bottom-right button that toggles the CMS open/closed, so a page
 // owner can reopen the CMS after closing it (the shell's X is the only other
-// affordance, and nothing reopens it). Injected at page load only when the
-// visitor is in edit mode AND the page actually has cms rules, so regular
-// visitors and rules-less pages (hypercms rides in broad presets) never see it.
+// affordance, and nothing reopens it). Injected at page load when the visitor
+// may edit AND the page actually has cms rules, so regular visitors and
+// rules-less pages (hypercms rides in broad presets) never see it. On a ClayJS
+// page "may edit" is the admin cookie alone: view mode is where the toggle is
+// needed most, since it is the way into editing.
 // Runtime-only chrome: no-save + snapshot-remove keep it out of every save and
 // snapshot (a static no-save element written into the file would be stripped
 // from disk on the first save), save-ignore keeps it out of autosave/undo,
@@ -349,6 +351,13 @@ export function injectToggle({ open, close, isOpen, getTheme = () => null }, doc
     return setMode.call(win.clay, mode)
   }
 
+  // The mode the page is actually in. clay.mode is a live getter over the
+  // committed facts, so it answers the same in view and after a live switch.
+  function currentMode() {
+    const win = doc.defaultView
+    return win && win.clay ? win.clay.mode : null
+  }
+
   async function mainAction() {
     if (isOpen()) {
       const exit = requestMode('view')
@@ -356,8 +365,16 @@ export function injectToggle({ open, close, isOpen, getTheme = () => null }, doc
       close()
       return
     }
+    // Already in edit: the CMS is the only thing left to do, and the page is
+    // already writable.
+    if (currentMode() === 'edit') return open()
+    // In view the switch comes first and the CMS only after it committed. A
+    // refusal (busy, not-allowed, save-failed) leaves the CMS closed, since a
+    // page that never became writable cannot host it.
     const enter = requestMode('edit')
-    if (enter) return enter
+    if (!enter) return open()
+    const receipt = await enter
+    if (receipt && receipt.ok === false) return
     return open()
   }
 
@@ -401,7 +418,12 @@ export function injectToggle({ open, close, isOpen, getTheme = () => null }, doc
 // parsing (the rules tag or <body> may not exist yet).
 export function maybeInjectToggle(api) {
   if (typeof window === 'undefined' || typeof document === 'undefined') return
-  const forced = window.__hyperclayEditMode != null ? window.__hyperclayEditMode : null
+  // On a ClayJS page the toggle is the way INTO editing, so an admin gets it in
+  // view too, where the boot global only ever says false. Without ClayJS the
+  // global keeps deciding, exactly as before.
+  const clay = window.clay
+  const managed = !!clay && typeof clay.setMode === 'function'
+  const forced = managed ? null : (window.__hyperclayEditMode != null ? window.__hyperclayEditMode : null)
   if (!detectEditMode({ search: window.location.search, cookie: document.cookie, forced })) return
   const run = () => { if (document.body && api.hasRules(document)) injectToggle(api) }
   if (document.readyState === 'loading') {
