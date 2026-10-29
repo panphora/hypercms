@@ -422,6 +422,8 @@ const cms = {
   close,
   refresh,
   api,
+  // Whether this page declares CMS rules, so a launcher outside the CMS knows to offer it.
+  hasRules: (doc = document) => !!engine.findRules(doc, 'cms'),
   prepareModeLease,
   modeParticipant,
   get isOpen() { return state.isOpen },

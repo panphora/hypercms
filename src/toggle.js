@@ -435,8 +435,15 @@ export function maybeInjectToggle(api) {
     }
   }
   if (managed) {
+    // A page that loads ClayJS's menu opens the CMS from there, so the toggle stays away
+    // while that menu is planned, and comes back only if the menu fails to load.
+    let menuFailed = false
+    const menuOwnsLauncher = () => {
+      const plugins = window.clay && window.clay.plugins
+      return !menuFailed && Array.isArray(plugins) && plugins.includes('menu')
+    }
     const sync = () => {
-      if (window.clay && window.clay.canEdit === true) {
+      if (window.clay && window.clay.canEdit === true && !menuOwnsLauncher()) {
         run()
         return
       }
@@ -445,6 +452,11 @@ export function maybeInjectToggle(api) {
     }
     atDomReady(sync)
     document.addEventListener('clay:capabilitychange', sync)
+    document.addEventListener('clay:plugin-failed', (event) => {
+      if (!event.detail || event.detail.plugin !== 'menu') return
+      menuFailed = true
+      sync()
+    })
     return
   }
   const forced = window.__hyperclayEditMode != null ? window.__hyperclayEditMode : null

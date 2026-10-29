@@ -674,3 +674,75 @@ test('injectToggle: the toggle never reads or writes localStorage', async () => 
   assert.deepEqual(calls, ['open'])
   dom.window.close()
 })
+
+// A page that loads ClayJS's menu opens the CMS from a menu item, so the floating
+// toggle stays away while the menu is planned, and comes back only if the menu
+// fails to load.
+function menuClay(plugins, canEdit = true) {
+  return {
+    ...clayApi('edit', () => Promise.resolve({ ok: true, mode: 'edit', changed: true }), canEdit),
+    plugins,
+  }
+}
+
+const teardownDom = (dom) => {
+  dom.window.close()
+  delete globalThis.window
+  delete globalThis.document
+}
+
+test('maybeInjectToggle: with the menu plugin planned the toggle never mounts', async () => {
+  const dom = setupDom()
+  try {
+    dom.window.clay = menuClay(['menu', 'cms'])
+    await ready(dom)
+    maybeInjectToggle(spyApi())
+    const doc = dom.window.document
+    assert.equal(doc.querySelector('[data-hcms-toggle-host]'), null, 'the menu owns the launcher')
+    doc.dispatchEvent(new dom.window.Event('clay:capabilitychange'))
+    assert.equal(doc.querySelector('[data-hcms-toggle-host]'), null, 'a later permission does not bring it back')
+  } finally {
+    teardownDom(dom)
+  }
+})
+
+test('maybeInjectToggle: a failed menu plugin restores the toggle', async () => {
+  const dom = setupDom()
+  try {
+    dom.window.clay = menuClay(['menu', 'cms'])
+    await ready(dom)
+    maybeInjectToggle(spyApi())
+    const doc = dom.window.document
+    assert.equal(doc.querySelector('[data-hcms-toggle-host]'), null)
+    doc.dispatchEvent(new dom.window.CustomEvent('clay:plugin-failed', { detail: { plugin: 'menu' } }))
+    assert.ok(doc.querySelector('[data-hcms-toggle-host]'), 'no menu means the toggle is the only launcher')
+  } finally {
+    teardownDom(dom)
+  }
+})
+
+test('maybeInjectToggle: another plugin failing leaves the toggle away', async () => {
+  const dom = setupDom()
+  try {
+    dom.window.clay = menuClay(['menu', 'cms'])
+    await ready(dom)
+    maybeInjectToggle(spyApi())
+    const doc = dom.window.document
+    doc.dispatchEvent(new dom.window.CustomEvent('clay:plugin-failed', { detail: { plugin: 'sync' } }))
+    assert.equal(doc.querySelector('[data-hcms-toggle-host]'), null)
+  } finally {
+    teardownDom(dom)
+  }
+})
+
+test('maybeInjectToggle: without the menu plugin the toggle mounts as before', async () => {
+  const dom = setupDom()
+  try {
+    dom.window.clay = menuClay(['cms'])
+    await ready(dom)
+    maybeInjectToggle(spyApi())
+    assert.ok(dom.window.document.querySelector('[data-hcms-toggle-host]'), 'the regression check')
+  } finally {
+    teardownDom(dom)
+  }
+})
