@@ -74,6 +74,42 @@
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-30
+
+### Added
+- `data-cms-view="inline"` on a page's CMS rules tag declares how the page is edited. Without it, the page opens in the sidebar.
+- `cms.open({ view })` overrides the declared view, and `?cms=true` auto-open follows the declaration.
+- `data-hcms-component:<prop>`, `data-hcms-options:<prop>` and `data-hcms-crop:<prop>` target the rule bound to that property and win over the plain attribute, so one element can carry several controlled rules. The plain attribute never applies to an `@--*` custom-property rule.
+- A color picker for rules bound to `--color` or `--color-*`, or marked with `data-hcms-component:<prop>="color"`: swatches from the full Tailwind palette plus a custom picker, writing Tailwind's exact oklch value. `data-hcms-options` narrows it to swatches, hues, shades or literal colors and keeps the custom picker only with `"custom"`, and twelve or fewer swatches show inline. The current value stays visible and selected, and invalid custom input shows an error instead of writing.
+- A font menu for rules bound to `--font` or `--font-*`, or marked with `data-hcms-component:<prop>="font"`: the 40 catalog families plus System, each shown in its own face. Picking one writes its full stack, and a stack that is not a catalog font shows as Current font and is never rewritten.
+- The page's `link[data-hcms-fonts]` is derived from the font fields and recomputed after every commit, refresh and session start, so undo, live sync and outside edits all end with the right families loaded. It carries `no-undo` and is saved with the page.
+- `hypercms/catalogs` exports the 286 Tailwind colors, 40 Google Fonts families with the axis request each supports, and `fontStack`, `fontFromStack` and `fontsHref`.
+- A variant control: `data-hcms-component:<attr>="variant"` with `data-hcms-options` tokens like `"2:cols-2"` builds a native radio group of icon tiles. Choosing one writes only that attribute, so the page's own CSS does the layout. Icons come from a fixed catalog in code.
+- `cms.hasRules()` tells a launcher whether the page declares CMS rules.
+- HyperCMS exposes `prepare`, `quiesce` and `dispose` for ownership, and defers open and auto-open to ClayJS write admission. An upload or preview blocks exit.
+- On a ClayJS page the Edit content button appears whenever the person may edit, in view or edit, and follows `clay.canEdit` as it changes. Pressing it switches to edit and opens the CMS, and it steps aside while ClayJS's menu is planned and returns if the menu fails to load.
+
+### Changed
+- The floating toggle now only opens and closes the editing view.
+- The default page root is the whole document, so a rule on `html` or `body` such as `html@--color-accent` is read and written. Event payloads still use `<body>`.
+- Style fields come first in the sidebar form. Color, font and variant fields bound to `html`, `body` or `:root` render together in a Page style group at the top, and style fields come before content fields inside every other group and list card. Data paths are unchanged.
+- In the inline view, style fields are no longer hover or click targets and get no pencil. A section's style fields open from a Style chip in its top-left corner, a list row's from Style in its gear menu, and the page's from a Page style button in the bar, and each popover shows exactly that group's fields. Style, script, link and meta elements are never text targets.
+- The fonts link keeps an existing entry for a family the catalog lacks and is left alone when it already loads the families in use, and author font links are never touched.
+- `--font-size-*`, `--font-weight-*` and `--color-scheme` no longer get font or color pickers.
+
+### Fixed
+- Fields that share a key no longer overwrite each other. A repeated key is scoped by its `data-hcms-path`, exact outside a list and the part after the row inside one, with row indices as `*`. Unique keys keep their bare selector.
+- A card's title and its links' titles no longer share a selector, and a template whose root is the input reads again.
+- A plain object's inline template is found at its own path, so two objects with their own templates no longer read each other's fields.
+- The Page style group no longer duplicates a root scalar rule or objects an inline template renders.
+- A list row's variant control resolves when the template map is built.
+- The color picker refuses a typed value that the engine's custom property check refuses, such as a function left unclosed.
+- Bare rules (`@x` and `.`) address `<body>` as before.
+- Arrow keys move through the row menu.
+
+### Removed
+- The toggle's arrow and view menu, and the remembered per-browser view choice.
+
 ## [0.11.6] - 2026-10-22
 
 ### Changed
